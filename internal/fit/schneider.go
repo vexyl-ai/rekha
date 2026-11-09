@@ -343,3 +343,49 @@ func reparameterize(pts []geom.Vec2, u []float64, bez Cubic) []float64 {
 	}
 	return out
 }
+
+// FitOne fits a single cubic to pts with end tangents t0 (pointing into
+// the curve at pts[0]) and t1 (pointing into the curve at the last point,
+// i.e. backwards): Schneider's least squares under chord-length
+// parameters, then Newton reparameterisation to convergence. It never
+// splits; the caller decides whether the fit is good enough.
+func FitOne(pts []geom.Vec2, t0, t1 geom.Vec2) Cubic {
+	n := len(pts)
+	if n < 2 {
+		p := geom.Vec2{}
+		if n == 1 {
+			p = pts[0]
+		}
+		return Cubic{p, p, p, p}
+	}
+	u := chordLength(pts)
+	bez := generateBezier(pts, u, t0, t1)
+	bestSq, _, _ := maxError(pts, bez, u)
+	best := bez
+	// Alternating reparameterisation and solve converges linearly, about
+	// a tenth of the remaining error per round; the budget below reaches
+	// a few hundredths of a pixel on a 50 px cubic, enough for a merge
+	// candidate that refinement re-optimises anyway.
+	for i := 0; i < fitOneRounds; i++ {
+		for k := 0; k < fitOneNewton; k++ {
+			u = reparameterize(pts, u, bez)
+		}
+		bez = generateBezier(pts, u, t0, t1)
+		maxSq, _, _ := maxError(pts, bez, u)
+		if maxSq >= bestSq*(1-fitOneStall) {
+			break
+		}
+		best, bestSq = bez, maxSq
+		if maxSq < fitOneStop {
+			break
+		}
+	}
+	return best
+}
+
+const (
+	fitOneRounds = 300
+	fitOneNewton = 4
+	fitOneStop   = 1e-12 // squared pixels: converged
+	fitOneStall  = 1e-4  // relative improvement per round below which it stops
+)

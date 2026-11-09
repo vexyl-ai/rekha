@@ -83,6 +83,7 @@ func pieceIndices(b Bezigon, j int) [5]int {
 // any of its points, in pixels.
 func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options) float64 {
 	n := b.N()
+	j = ((j % n) + n) % n
 	idx := pieceIndices(b, j)
 	// The piece's points may move moveLimit from where they start; the
 	// window covers that reach plus a pad, so the curve (inside the convex
