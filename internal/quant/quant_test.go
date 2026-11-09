@@ -53,12 +53,46 @@ func TestWuRecoversThreeClusters(t *testing.T) {
 	}
 }
 
+// Cells within the tolerance of a cluster join it; a cell further away
+// gets its own entry however few pixels it holds.
 func TestWuToleranceStopsAtTwo(t *testing.T) {
 	red, blue := colour.FromSRGB8(255, 0, 0), colour.FromSRGB8(0, 0, 255)
-	mid := colour.OKLab{L: (red.L + blue.L) / 2, A: (red.A + blue.A) / 2, B: (red.B + blue.B) / 2}
-	cells := []Cell{{Lab: red, Weight: 1000}, {Lab: blue, Weight: 1000}, {Lab: mid, Weight: 40}}
+	nearRed := colour.OKLab{L: red.L + 0.03, A: red.A, B: red.B}
+	cells := []Cell{{Lab: red, Weight: 1000}, {Lab: blue, Weight: 1000}, {Lab: nearRed, Weight: 40}}
 	if pal := Wu(cells, 16, 0.08); len(pal) != 2 {
 		t.Fatalf("got %d entries %v, want 2", len(pal), pal)
+	}
+	mid := colour.OKLab{L: (red.L + blue.L) / 2, A: (red.A + blue.A) / 2, B: (red.B + blue.B) / 2}
+	cells = []Cell{{Lab: red, Weight: 1000}, {Lab: blue, Weight: 1000}, {Lab: mid, Weight: 40}}
+	if pal := Wu(cells, 16, 0.08); len(pal) != 3 {
+		t.Fatalf("got %d entries %v, want 3", len(pal), pal)
+	}
+}
+
+// A small subject must not be averaged into a large background: a 20×20
+// black square on a 256×256 white canvas is 0.6 % of the pixels, and a
+// weight-normalised stop would call the single box "within tolerance".
+func TestWuKeepsSmallFeature(t *testing.T) {
+	cells := []Cell{cluster([3]uint8{255, 255, 255}, 256*256-400), cluster([3]uint8{0, 0, 0}, 400)}
+	if pal := Wu(cells, 0, 0.08); len(pal) != 2 {
+		t.Fatalf("got %d entries %v, want black and white", len(pal), pal)
+	}
+	// Likewise a small red/blue object on a lightly noisy background.
+	cells = nil
+	for i := 0; i < 64; i++ {
+		v := uint8(230 + i%16)
+		cells = append(cells, cluster([3]uint8{v, uint8(235 + i/16*4), uint8(240 + i%8)}, 1000))
+	}
+	cells = append(cells, cluster([3]uint8{220, 30, 30}, 500), cluster([3]uint8{30, 60, 220}, 500))
+	pal := Wu(cells, 0, 0.08)
+	for _, want := range [][3]uint8{{220, 30, 30}, {30, 60, 220}} {
+		best := 10.0
+		for _, p := range pal {
+			best = min(best, colour.Dist(p, colour.FromSRGB8(want[0], want[1], want[2])))
+		}
+		if best > 0.02 {
+			t.Errorf("%v not in palette (nearest %.3f): %v", want, best, pal)
+		}
 	}
 }
 
@@ -151,5 +185,27 @@ func TestCellCentreEndpointsExact(t *testing.T) {
 				t.Fatalf("bits %d: centre of cell %d maps to cell %d", bits, idx, CellIndex(r, g, b, bits))
 			}
 		}
+	}
+}
+
+// Between its two nearest entries a cell is labelled by the sRGB midpoint,
+// where anti-aliasing mixes, not by the OKLab midpoint (grey 100 between
+// black and white), which would thin every dark shape on a light ground.
+func TestLookupSplitsAtSRGBMidpoint(t *testing.T) {
+	pal := []colour.OKLab{colour.FromSRGB8(0, 0, 0), colour.FromSRGB8(255, 255, 255)}
+	l := NewLookup(pal, 7)
+	if got := l.Nearest[CellIndex(120, 120, 120, 7)]; got != 0 {
+		t.Fatalf("grey 120 labelled %d, want black", got)
+	}
+	if got := l.Nearest[CellIndex(136, 136, 136, 7)]; got != 1 {
+		t.Fatalf("grey 136 labelled %d, want white", got)
+	}
+	// Blend is the share of the label's colour in the mix, 128..255: grey
+	// 136 is just over half white.
+	if b := l.Blend[CellIndex(136, 136, 136, 7)]; b < 130 || b > 145 {
+		t.Fatalf("grey 136 blend %d, want about 136", b)
+	}
+	if b := l.Blend[CellIndex(250, 250, 250, 7)]; b < 245 {
+		t.Fatalf("grey 250 blend %d", b)
 	}
 }

@@ -103,15 +103,25 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 		subpaths[i][k] = svg.Subpath{Segs: segments(layers[i].contours[k].Pts, o)}
 	})
 
+	mergeable := false
 	for i, l := range layers {
 		fill := colour.FromSRGB8(s.Palette[l.colour].R, s.Palette[l.colour].G, s.Palette[l.colour].B).Hex()
 		// Stacked outers of one colour share a <path>; cutout keeps one
-		// path per shape, as Phase 1 did.
-		if n := len(res.Paths); stacked && n > 0 && res.Paths[n-1].Fill == fill {
+		// path per shape, as Phase 1 did. A layer with holes (an extended
+		// region around a pocket) stays alone: a later shape of the same
+		// colour inside the pocket would cancel under nonzero winding.
+		outersOnly := true
+		for _, c := range l.contours {
+			if c.Area2 < 0 {
+				outersOnly = false
+			}
+		}
+		if n := len(res.Paths); stacked && mergeable && outersOnly && n > 0 && res.Paths[n-1].Fill == fill {
 			res.Paths[n-1].Subpaths = append(res.Paths[n-1].Subpaths, subpaths[i]...)
 			continue
 		}
 		res.Paths = append(res.Paths, svg.Path{Fill: fill, Subpaths: subpaths[i]})
+		mergeable = stacked && outersOnly
 	}
 	return res, nil
 }
@@ -147,7 +157,11 @@ func (s *Segmentation) layers(o Options) []layer {
 				}
 			}
 		}
-		perColour[i] = contour.BuildShapes(contour.Trace(bm, o.TurnPolicy), minArea)
+		if o.Preset == PresetBW {
+			perColour[i] = contour.BuildShapes(contour.Trace(bm, o.TurnPolicy), minArea)
+		} else {
+			perColour[i] = contour.BuildShapes(contour.TraceFunc(bm, s.saddle(label)), minArea)
+		}
 		bufs.Put(bm)
 	})
 	var out []layer
@@ -328,6 +342,26 @@ func fillOuter(pts []geom.Point, w, h int, set func(x, y int)) {
 				set(x, y0+i)
 			}
 		}
+	}
+}
+
+// saddle returns the per-vertex saddle rule for tracing colour c: at a
+// 2×2 checkerboard of c against one other colour d, the lower palette
+// index stays connected and the other is cut, so the two colours' contours
+// never both claim the corner and every pixel lies inside exactly one
+// shape. Against two different colours, c connects.
+func (s *Segmentation) saddle(c uint8) func(x, y int) bool {
+	w := s.Width
+	return func(x, y int) bool {
+		nw, ne := s.Labels[(y-1)*w+x-1], s.Labels[(y-1)*w+x]
+		sw, se := s.Labels[y*w+x-1], s.Labels[y*w+x]
+		var d1, d2 uint8
+		if nw == c {
+			d1, d2 = ne, sw
+		} else {
+			d1, d2 = nw, se
+		}
+		return d1 != d2 || c < d1
 	}
 }
 

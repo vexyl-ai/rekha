@@ -70,6 +70,14 @@ func outgoing(b *bitmap.Bitmap, x, y, d int) bool {
 // Trace returns every closed crack loop in b, sorted by Pts[0] (y, then x).
 func Trace(b *bitmap.Bitmap, policy TurnPolicy) []Contour {
 	turnLeft := resolvePolicy(b, policy)
+	return TraceFunc(b, func(_, _ int) bool { return turnLeft })
+}
+
+// TraceFunc is Trace with the saddle decision made per vertex: turnLeft
+// reports, for the vertex (x, y) of a 2×2 checkerboard, whether the two
+// foreground pixels stay connected. Callers tracing one colour of many use
+// it to resolve every saddle the same way from each colour's side.
+func TraceFunc(b *bitmap.Bitmap, turnLeft func(x, y int) bool) []Contour {
 	vw := b.W + 1
 	visited := make([]bool, 4*vw*(b.H+1))
 	key := func(x, y, d int) int { return 4*(y*vw+x) + d }
@@ -112,7 +120,7 @@ func resolvePolicy(b *bitmap.Bitmap, p TurnPolicy) bool {
 	}
 }
 
-func walk(b *bitmap.Bitmap, x, y, d int, turnLeft bool, visited []bool, key func(x, y, d int) int) []geom.Point {
+func walk(b *bitmap.Bitmap, x, y, d int, turnLeft func(x, y int) bool, visited []bool, key func(x, y, d int) int) []geom.Point {
 	var pts []geom.Point
 	for {
 		visited[key(x, y, d)] = true
@@ -124,7 +132,7 @@ func walk(b *bitmap.Bitmap, x, y, d int, turnLeft bool, visited []bool, key func
 		hasL, hasR, hasS := outgoing(b, x, y, left), outgoing(b, x, y, right), outgoing(b, x, y, d)
 		switch {
 		case hasL && hasR:
-			if turnLeft {
+			if turnLeft(x, y) {
 				d = left
 			} else {
 				d = right

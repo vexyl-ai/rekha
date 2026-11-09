@@ -6,12 +6,15 @@ import (
 	"github.com/vexyl-ai/rekha/internal/colour"
 )
 
-// Lookup maps every cell at Bits per channel to its nearest and second
-// nearest palette entries and to Blend, the share of the cell's colour
-// attributable to the nearest entry when the colour is projected onto the
-// OKLab segment between the two: 255 means entirely the nearest colour,
-// 128 means halfway. Blend is the soft coverage mask later phases refine
-// boundaries with.
+// Lookup maps every cell at Bits per channel to a palette entry, to the
+// runner-up and to Blend, the share of the entry's colour in the cell
+// when the colour is projected onto the sRGB segment between the two:
+// 255 means entirely the entry's colour, 128 means halfway. The two
+// candidates are the nearest entries in OKLab; between them the cell goes
+// to whichever side of the sRGB midpoint it falls, because anti-aliasing
+// mixes colours in sRGB and the OKLab midpoint of black and white is grey
+// 100, which would thin every dark shape on a light ground. Blend is the
+// soft coverage mask later phases refine boundaries with.
 type Lookup struct {
 	Bits                   int
 	Nearest, Second, Blend []uint8
@@ -21,27 +24,38 @@ type Lookup struct {
 func NewLookup(palette []colour.OKLab, bits int) *Lookup {
 	n := 1 << (3 * bits)
 	l := &Lookup{Bits: bits, Nearest: make([]uint8, n), Second: make([]uint8, n), Blend: make([]uint8, n)}
+	srgb := make([][3]float64, len(palette))
+	for i, p := range palette {
+		r, g, b := p.ToSRGB8()
+		srgb[i] = [3]float64{float64(r), float64(g), float64(b)}
+	}
 	for idx := 0; idx < n; idx++ {
 		r, g, b := CellCentre(idx, bits)
 		c := colour.FromSRGB8(r, g, b)
 		n1, n2 := nearest(palette, c)
+		t := project(srgb[n1], srgb[n2], [3]float64{float64(r), float64(g), float64(b)})
+		if t > 0.5 {
+			n1, n2, t = n2, n1, 1-t
+		}
 		l.Nearest[idx], l.Second[idx] = uint8(n1), uint8(n2)
-		l.Blend[idx] = blend(palette[n1], palette[n2], c)
+		l.Blend[idx] = uint8(math.Round((1 - t) * 255))
 	}
 	return l
 }
 
-// blend projects c onto the segment p1→p2 and returns the share of p1,
-// in 128..255.
-func blend(p1, p2, c colour.OKLab) uint8 {
-	dl, da, db := p2.L-p1.L, p2.A-p1.A, p2.B-p1.B
-	den := float64(dl*dl) + float64(da*da) + float64(db*db)
-	if den == 0 {
-		return 255
+// project returns where c falls along the segment p1→p2, 0 at p1 and 1 at
+// p2, clamped to [0, 1]; 0 when the segment is degenerate.
+func project(p1, p2, c [3]float64) float64 {
+	var num, den float64
+	for i := range p1 {
+		d := p2[i] - p1[i]
+		num += float64((c[i] - p1[i]) * d)
+		den += float64(d * d)
 	}
-	t := (float64((c.L-p1.L)*dl) + float64((c.A-p1.A)*da) + float64((c.B-p1.B)*db)) / den
-	t = math.Min(math.Max(t, 0), 0.5)
-	return uint8(math.Round((1 - t) * 255))
+	if den == 0 {
+		return 0
+	}
+	return math.Min(math.Max(num/den, 0), 1)
 }
 
 // Map fills labels, second and blend (one byte per pixel) from rgb (3

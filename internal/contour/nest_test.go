@@ -50,3 +50,20 @@ func TestNestRingDepths(t *testing.T) {
 		t.Fatalf("side by side parents %v, want %v", got, want)
 	}
 }
+
+// TraceFunc lets the caller resolve each saddle: the same checkerboard
+// comes out as one 8-connected diagonal or as two separate pixels.
+func TestTraceFuncResolvesSaddlesPerVertex(t *testing.T) {
+	bm := bitmap.Parse([]string{
+		"#.",
+		".#",
+	})
+	joined := TraceFunc(bm, func(x, y int) bool { return true })
+	if len(joined) != 1 {
+		t.Fatalf("joined: %d contours, want 1", len(joined))
+	}
+	split := TraceFunc(bm, func(x, y int) bool { return x != 1 || y != 1 })
+	if len(split) != 2 {
+		t.Fatalf("split: %d contours, want 2", len(split))
+	}
+}

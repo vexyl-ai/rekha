@@ -1,12 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-<path fill="#020202" d="M0 0H10V256H0Z"/>
-<path fill="#0c0c0c" d="M4 0H26V256H4Z"/>
+<path fill="#040404" d="M0 0H14V256H0Z"/>
+<path fill="#0e0e0e" d="M8 0H26V256H8Z"/>
 <path fill="#1c1c1c" d="M20 0H42V256H20Z"/>
-<path fill="#2e2e2e" d="M36 0H62V256H36Z"/>
-<path fill="#464646" d="M56 0H90V256H56Z"/>
-<path fill="#666666" d="M84 0H126V256H84Z"/>
-<path fill="#888888" d="M120 0H158V256H120Z"/>
-<path fill="#aaaaaa" d="M152 0H194V256H152Z"/>
-<path fill="#cccccc" d="M188 0H226V256H188Z"/>
-<path fill="#eeeeee" d="M220 0H256V256H220Z"/>
+<path fill="#2c2c2c" d="M36 0H58V256H36Z"/>
+<path fill="#3c3c3c" d="M52 0H74V256H52Z"/>
+<path fill="#4c4c4c" d="M68 0H90V256H68Z"/>
+<path fill="#5c5c5c" d="M84 0H106V256H84Z"/>
+<path fill="#6e6e6e" d="M100 0H126V256H100Z"/>
+<path fill="#808080" d="M120 0H142V256H120Z"/>
+<path fill="#929292" d="M136 0H162V256H136Z"/>
+<path fill="#a8a8a8" d="M156 0H186V256H156Z"/>
+<path fill="#c0c0c0" d="M180 0H210V256H180Z"/>
+<path fill="#d6d6d6" d="M204 0H230V256H204Z"/>
+<path fill="#e8e8e8" d="M224 0H246V256H224Z"/>
+<path fill="#f8f8f8" d="M240 0H256V256H240Z"/>
 </svg>

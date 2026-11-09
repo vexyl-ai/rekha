@@ -118,13 +118,37 @@ func (m *moments) split(bx box) (box, box, bool) {
 	return best1, best2, found
 }
 
+// coherentShare is the share of a box's far mass (cells beyond tol from
+// its centroid) that one cell must hold for the box to count as hiding a
+// subject: anti-aliasing bands and noise spread their far mass over many
+// cells, a small flat shape puts it all in one. coherentMin is the least
+// weight such a cell needs.
+const (
+	coherentShare = 0.25
+	coherentMin   = 4
+)
+
+// wuBox is a live histogram box with the cells it holds.
+type wuBox struct {
+	box
+	cells []int
+	done  bool // within tolerance
+	dead  bool // no cut leaves both halves with weight
+}
+
 // Wu builds a palette by variance-minimising box splitting over a 3-D
 // histogram of OKLab, in the manner of Wu (1991). Starting from one box
-// around all cells it repeatedly splits the box with the largest sum of
-// squared error, at the cut that reduces total error most, and stops when
-// there are maxK boxes (MaxColors when maxK is 0), when the largest box's
-// RMS radius sqrt(SSE/weight) is below tol, or when no box can be split.
-// The palette is the box centroids, in split order.
+// around all cells it repeatedly splits, among the boxes not yet within
+// tolerance, the one with the largest sum of squared error, at the cut
+// that reduces total error most. It stops when there are maxK boxes
+// (MaxColors when maxK is 0), when every box is within tolerance, or when
+// no remaining box can be split. The palette is the box centroids, in
+// split order.
+//
+// A box is within tolerance when its RMS radius sqrt(SSE/weight) is below
+// tol and none of its far cells is coherent (see coherentShare): the RMS
+// test alone lets a large background absorb a small subject, since weight
+// normalisation hides anything under (tol/distance)² of the pixels.
 func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 	if len(cells) == 0 {
 		return nil
@@ -133,36 +157,66 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		maxK = MaxColors
 	}
 	m := newMoments(cells)
-	boxes := []box{{0, wuBins, 0, wuBins, 0, wuBins}}
-	dead := []bool{false}
+	bins := make([][3]int, len(cells))
+	all := make([]int, len(cells))
+	for i, c := range cells {
+		bins[i] = [3]int{bin(c.Lab.L, 0, 1), bin(c.Lab.A, -wuAB, wuAB), bin(c.Lab.B, -wuAB, wuAB)}
+		all[i] = i
+	}
+	within := func(bx box, idx []int) bool {
+		w, sse, c := m.stats(bx)
+		if w == 0 {
+			return true
+		}
+		if math.Sqrt(sse/w) >= tol {
+			return false
+		}
+		far, heaviest := 0, 0
+		for _, i := range idx {
+			if colour.Dist(cells[i].Lab, c) > tol {
+				far += cells[i].Weight
+				heaviest = max(heaviest, cells[i].Weight)
+			}
+		}
+		return heaviest < coherentMin || float64(heaviest) < coherentShare*float64(far)
+	}
+	inside := func(bx box, b [3]int) bool {
+		return b[0] >= bx.l0 && b[0] < bx.l1 && b[1] >= bx.a0 && b[1] < bx.a1 && b[2] >= bx.b0 && b[2] < bx.b1
+	}
+	root := box{0, wuBins, 0, wuBins, 0, wuBins}
+	boxes := []wuBox{{box: root, cells: all, done: within(root, all)}}
 	for len(boxes) < maxK {
 		best, bestSSE := -1, -1.0
 		for i, bx := range boxes {
-			if dead[i] {
+			if bx.dead || bx.done {
 				continue
 			}
-			if _, sse, _ := m.stats(bx); sse > bestSSE {
+			if _, sse, _ := m.stats(bx.box); sse > bestSSE {
 				best, bestSSE = i, sse
 			}
 		}
 		if best < 0 {
 			break
 		}
-		if w, _, _ := m.stats(boxes[best]); math.Sqrt(bestSSE/w) < tol {
-			break
-		}
-		lo, hi, ok := m.split(boxes[best])
+		lo, hi, ok := m.split(boxes[best].box)
 		if !ok {
-			dead[best] = true
+			boxes[best].dead = true
 			continue
 		}
-		boxes[best] = lo
-		boxes = append(boxes, hi)
-		dead = append(dead, false)
+		var loCells, hiCells []int
+		for _, i := range boxes[best].cells {
+			if inside(lo, bins[i]) {
+				loCells = append(loCells, i)
+			} else {
+				hiCells = append(hiCells, i)
+			}
+		}
+		boxes[best] = wuBox{box: lo, cells: loCells, done: within(lo, loCells)}
+		boxes = append(boxes, wuBox{box: hi, cells: hiCells, done: within(hi, hiCells)})
 	}
 	pal := make([]colour.OKLab, 0, len(boxes))
 	for _, bx := range boxes {
-		if w, _, c := m.stats(bx); w > 0 {
+		if w, _, c := m.stats(bx.box); w > 0 {
 			pal = append(pal, c)
 		}
 	}

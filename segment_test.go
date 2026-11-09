@@ -122,3 +122,30 @@ func TestSegmentDeterministic(t *testing.T) {
 		t.Fatal("two segmentations differ")
 	}
 }
+
+// A small logo on a large canvas must survive quantisation under the
+// colour presets: the reviewer found a 20×20 square on 256² vanishing.
+func TestSegmentKeepsSmallSubject(t *testing.T) {
+	for _, tc := range []struct {
+		canvas, side int
+		preset       Preset
+	}{{256, 20, PresetPoster}, {1024, 40, PresetPoster}, {1024, 40, PresetPhoto}} {
+		img := image.NewNRGBA(image.Rect(0, 0, tc.canvas, tc.canvas))
+		for i := 0; i < len(img.Pix); i += 4 {
+			img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = 255, 255, 255, 255
+		}
+		o := tc.canvas / 2
+		for y := o; y < o+tc.side; y++ {
+			for x := o; x < o+tc.side; x++ {
+				img.SetNRGBA(x, y, color.NRGBA{0, 0, 0, 255})
+			}
+		}
+		s, err := Segment(img, PresetOptions(tc.preset))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(s.Palette) != 2 {
+			t.Errorf("%d² canvas, %d² square, %s: palette %v, want black and white", tc.canvas, tc.side, tc.preset, s.Palette)
+		}
+	}
+}
