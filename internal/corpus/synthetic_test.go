@@ -24,8 +24,8 @@ func TestAllNamesUnique(t *testing.T) {
 		}
 		seen[s.Name] = true
 	}
-	if len(seen) != 10 {
-		t.Fatalf("got %d synthetics, want 10", len(seen))
+	if len(seen) != 13 {
+		t.Fatalf("got %d synthetics, want 13", len(seen))
 	}
 }
 

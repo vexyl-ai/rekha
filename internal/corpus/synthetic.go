@@ -20,10 +20,14 @@ type Synthetic struct {
 }
 
 var (
-	black = color.NRGBA{0, 0, 0, 255}
-	white = color.NRGBA{255, 255, 255, 255}
-	red   = color.NRGBA{220, 30, 30, 255}
-	blue  = color.NRGBA{30, 60, 220, 255}
+	black  = color.NRGBA{0, 0, 0, 255}
+	white  = color.NRGBA{255, 255, 255, 255}
+	red    = color.NRGBA{220, 30, 30, 255}
+	blue   = color.NRGBA{30, 60, 220, 255}
+	green  = color.NRGBA{40, 160, 60, 255}
+	yellow = color.NRGBA{240, 200, 30, 255}
+	purple = color.NRGBA{130, 40, 160, 255}
+	navy   = color.NRGBA{20, 30, 60, 255}
 )
 
 // All returns the fixed list of synthetics, in a fixed order.
@@ -59,6 +63,29 @@ func All() []Synthetic {
 					img.SetNRGBA(x, y, color.NRGBA{v, v, v, 255})
 				}
 			}
+		}},
+		{"poster-discs", func(img *image.NRGBA) {
+			// Five overlapping anti-aliased discs in five flat colours.
+			cols := []color.NRGBA{red, blue, green, yellow, purple}
+			for i, c := range cols {
+				a := -math.Pi/2 + 2*math.Pi*float64(i)/5
+				fill(img, disc(128+56*math.Cos(a), 128+56*math.Sin(a), 60), c, 4)
+			}
+		}},
+		{"aa-abut", func(img *image.NRGBA) {
+			// Red and blue meeting along an anti-aliased diagonal.
+			fill(img, func(_, _ float64) bool { return true }, red, 1)
+			fill(img, func(x, y float64) bool { return x+y >= Size }, blue, 4)
+		}},
+		{"logo-holes", func(img *image.NRGBA) {
+			// Two letter-like shapes with holes, in two colours, on a third
+			// background colour: an O-like ring and a B-like block.
+			fill(img, func(_, _ float64) bool { return true }, navy, 1)
+			fill(img, roundedRect(40, 64, 120, 192, 24), red, 4)
+			fill(img, roundedRect(64, 92, 96, 164, 12), navy, 4)
+			fill(img, roundedRect(144, 64, 224, 192, 16), blue, 4)
+			fill(img, rect(164, 84, 204, 120), navy, 4)
+			fill(img, rect(164, 136, 204, 172), navy, 4)
 		}},
 		{"noisy-disc", func(img *image.NRGBA) {
 			fill(img, disc(128, 128, 96), black, 4)
