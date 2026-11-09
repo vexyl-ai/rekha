@@ -9,6 +9,10 @@ import (
 const (
 	maxIterations = 4
 	minFitPoints  = 4
+	// tangentWindow is how many points on each side feed a tangent
+	// estimate. Traced pixel boundaries zigzag, so adjacent points alone
+	// give directions quantised to multiples of 45°.
+	tangentWindow = 8
 )
 
 // FitOpen fits pts with the given unit end tangents: t0 points into the
@@ -64,10 +68,12 @@ func FitClosed(pts []geom.Vec2, maxErr float64) []Segment {
 	for i := 0; i <= n; i++ {
 		run = append(run, pts[(far+i)%n])
 	}
-	t := pts[(far+1)%n].Sub(pts[(far+n-1)%n]).Norm()
-	if t == (geom.Vec2{}) {
-		t = pts[(far+1)%n].Sub(pts[far]).Norm()
+	k := min(tangentWindow, n/2)
+	window := make([]geom.Vec2, 0, 2*k+1)
+	for i := -k; i <= k; i++ {
+		window = append(window, pts[(far+i+n)%n])
 	}
+	t := lineDirection(window)
 	if n+1 < minFitPoints {
 		return []Segment{line(run[0], run[n])}
 	}
@@ -84,6 +90,21 @@ func reverse(p []geom.Vec2) []geom.Vec2 {
 
 // lineDirection returns the unit direction of the least-squares line
 // through pts (principal axis), oriented from pts[0] toward the last point.
+// centerTangent estimates the forward tangent at pts[i] from up to
+// tangentWindow neighbours on each side.
+func centerTangent(pts []geom.Vec2, i int) geom.Vec2 {
+	k := min(tangentWindow, i, len(pts)-1-i)
+	if k < 1 {
+		k = 1
+	}
+	lo, hi := max(i-k, 0), min(i+k, len(pts)-1)
+	t := lineDirection(pts[lo : hi+1])
+	if t == (geom.Vec2{}) {
+		t = pts[hi].Sub(pts[lo]).Norm()
+	}
+	return t
+}
+
 func lineDirection(pts []geom.Vec2) geom.Vec2 {
 	var mean geom.Vec2
 	for _, p := range pts {
@@ -117,9 +138,13 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 		*out = append(*out, line(pts[0], pts[n-1]))
 		return
 	}
+	if straight(pts, errSq) {
+		*out = append(*out, line(pts[0], pts[n-1]))
+		return
+	}
 	u := chordLength(pts)
 	bez := generateBezier(pts, u, t0, t1)
-	maxSq, split := maxError(pts, bez, u)
+	maxSq, _ := maxError(pts, bez, u)
 	if maxSq <= errSq {
 		*out = append(*out, Segment{P: bez})
 		return
@@ -131,22 +156,53 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 	for i := 0; i < maxIterations; i++ {
 		u = reparameterize(pts, u, bez)
 		bez = generateBezier(pts, u, t0, t1)
-		maxSq, split = maxError(pts, bez, u)
+		maxSq, _ = maxError(pts, bez, u)
 		if maxSq <= errSq {
 			*out = append(*out, Segment{P: bez})
 			return
 		}
 	}
-	// Split at the worst point with a shared centre tangent.
-	if split <= 0 || split >= n-1 {
-		split = n / 2
-	}
-	tc := pts[split-1].Sub(pts[split+1]).Norm() // points "backwards" at split
-	if tc == (geom.Vec2{}) {
-		tc = pts[split-1].Sub(pts[split]).Norm()
-	}
+	// Split at the chord-length midpoint with a shared centre tangent.
+	// Schneider splits at the worst point, but on noisy pixel boundaries
+	// that lands near an end and shatters the run into tiny pieces;
+	// balanced halves converge in a few levels.
+	split := midpoint(pts)
+	tc := centerTangent(pts, split).Scale(-1) // points "backwards" at split
 	fitCubic(pts[:split+1], t0, tc, errSq, out)
 	fitCubic(pts[split:], tc.Scale(-1), t1, errSq, out)
+}
+
+// straight reports whether every point lies within sqrt(errSq) of the
+// chord from the first point to the last.
+func straight(pts []geom.Vec2, errSq float64) bool {
+	a, b := pts[0], pts[len(pts)-1]
+	ab := b.Sub(a)
+	l2 := ab.Dot(ab)
+	for _, p := range pts[1 : len(pts)-1] {
+		ap := p.Sub(a)
+		var d2 float64
+		if l2 == 0 {
+			d2 = ap.Dot(ap)
+		} else {
+			cross := ab.X*ap.Y - ab.Y*ap.X
+			d2 = cross * cross / l2
+		}
+		if d2 > errSq {
+			return false
+		}
+	}
+	return true
+}
+
+// midpoint returns the index of the point nearest half the run's chord
+// length, clamped so both halves keep at least two points.
+func midpoint(pts []geom.Vec2) int {
+	u := chordLength(pts)
+	i := 0
+	for i < len(u)-1 && u[i] < 0.5 {
+		i++
+	}
+	return max(1, min(i, len(pts)-2))
 }
 
 func chordLength(pts []geom.Vec2) []float64 {

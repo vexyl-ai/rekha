@@ -58,7 +58,7 @@ func distToSegs(p geom.Vec2, segs []Segment) float64 {
 }
 
 func TestFitRecoversCubic(t *testing.T) {
-	c := Cubic{{0, 0}, {30, 60}, {70, 60}, {100, 0}}
+	c := Cubic{{X: 0, Y: 0}, {X: 30, Y: 60}, {X: 70, Y: 60}, {X: 100, Y: 0}}
 	pts := sample(c, 50)
 	t0 := c[1].Sub(c[0]).Norm()
 	t1 := c[2].Sub(c[3]).Norm()
@@ -76,7 +76,7 @@ func TestFitRecoversCubic(t *testing.T) {
 func TestFitLineIsSingleSegment(t *testing.T) {
 	var pts []geom.Vec2
 	for i := 0; i < 20; i++ {
-		pts = append(pts, geom.Vec2{float64(i) * 2, float64(i) * 3})
+		pts = append(pts, geom.Vec2{X: float64(i) * 2, Y: float64(i) * 3})
 	}
 	segs := FitRun(pts, 0.5)
 	if len(segs) != 1 {
@@ -90,11 +90,11 @@ func TestFitLineIsSingleSegment(t *testing.T) {
 }
 
 func TestFitFewPointsIsLine(t *testing.T) {
-	segs := FitRun([]geom.Vec2{{0, 0}, {1, 1}, {2, 0}}, 0.1)
+	segs := FitRun([]geom.Vec2{{X: 0, Y: 0}, {X: 1, Y: 1}, {X: 2, Y: 0}}, 0.1)
 	if len(segs) != 1 || !segs[0].Line {
 		t.Fatalf("got %+v", segs)
 	}
-	if segs[0].P[0] != (geom.Vec2{0, 0}) || segs[0].P[3] != (geom.Vec2{2, 0}) {
+	if segs[0].P[0] != (geom.Vec2{X: 0, Y: 0}) || segs[0].P[3] != (geom.Vec2{X: 2, Y: 0}) {
 		t.Fatalf("line endpoints %v %v", segs[0].P[0], segs[0].P[3])
 	}
 }
@@ -103,7 +103,7 @@ func TestFitCircleWithinTolerance(t *testing.T) {
 	var pts []geom.Vec2
 	for i := 0; i < 200; i++ {
 		a := 2 * math.Pi * float64(i) / 200
-		pts = append(pts, geom.Vec2{50 * math.Cos(a), 50 * math.Sin(a)})
+		pts = append(pts, geom.Vec2{X: 50 * math.Cos(a), Y: 50 * math.Sin(a)})
 	}
 	segs := FitClosed(pts, 0.5)
 	if len(segs) > 8 {
@@ -124,13 +124,70 @@ func TestFitCircleWithinTolerance(t *testing.T) {
 func TestFitSplitsOnSharpError(t *testing.T) {
 	var pts []geom.Vec2
 	for i := 0; i <= 20; i++ {
-		pts = append(pts, geom.Vec2{float64(i), float64(20 - i)})
+		pts = append(pts, geom.Vec2{X: float64(i), Y: float64(20 - i)})
 	}
 	for i := 1; i <= 20; i++ {
-		pts = append(pts, geom.Vec2{float64(20 + i), float64(i)})
+		pts = append(pts, geom.Vec2{X: float64(20 + i), Y: float64(i)})
 	}
 	segs := FitRun(pts, 0.1)
 	if len(segs) < 2 {
 		t.Fatalf("got %d segments, want ≥ 2", len(segs))
+	}
+}
+
+// digitalCircle returns the integer-grid boundary of a disc of radius r:
+// the loop of pixel corners visited by walking the quantised circle, which
+// zigzags like a real traced contour.
+func digitalCircle(r float64) []geom.Vec2 {
+	var pts []geom.Vec2
+	steps := int(2 * math.Pi * r * 4)
+	for i := 0; i < steps; i++ {
+		a := 2 * math.Pi * float64(i) / float64(steps)
+		p := geom.Vec2{X: math.Round(r * math.Cos(a)), Y: math.Round(r * math.Sin(a))}
+		if len(pts) == 0 || pts[len(pts)-1] != p {
+			pts = append(pts, p)
+		}
+	}
+	if pts[0] == pts[len(pts)-1] {
+		pts = pts[:len(pts)-1]
+	}
+	return pts
+}
+
+// A quantised circle fitted at tolerance 1.5 (1 px plus the half-pixel
+// the integer corners sit off the true edge) must come out round: radial
+// deviation stays near the quantisation error and a handful of cubics
+// suffice. Zigzag tangents at split points, or lopsided splits, produce
+// visible lumps and many extra segments.
+func TestFitClosedDigitalCircleIsRound(t *testing.T) {
+	for _, r := range []float64{16, 48, 96, 300} {
+		segs := FitClosed(digitalCircle(r), 1.5)
+		if len(segs) > 8 {
+			t.Errorf("r=%v: segments = %d, want <= 8", r, len(segs))
+		}
+		worst := 0.0
+		for _, s := range segs {
+			for k := 0; k <= 20; k++ {
+				d := math.Abs(s.P.At(float64(k)/20).Len() - r)
+				worst = math.Max(worst, d)
+			}
+		}
+		if worst > 1.25 {
+			t.Errorf("r=%v: max radial deviation = %.2f, want <= 1.25", r, worst)
+		}
+	}
+}
+
+// A run whose points all lie within tolerance of its chord is a line, even
+// when the supplied end tangents disagree with it: straight edges must
+// not come out as cubics with collinear control points.
+func TestFitOpenStraightRunIsLine(t *testing.T) {
+	var pts []geom.Vec2
+	for i := 0; i <= 40; i++ {
+		pts = append(pts, geom.Vec2{X: float64(i), Y: float64(i % 2)}) // 1 px zigzag
+	}
+	segs := FitOpen(pts, geom.Vec2{X: 1, Y: 0.3}.Norm(), geom.Vec2{X: -1, Y: 0.3}.Norm(), 1.0)
+	if len(segs) != 1 || !segs[0].Line {
+		t.Fatalf("got %+v, want one Line segment", segs)
 	}
 }

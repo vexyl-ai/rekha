@@ -1,6 +1,10 @@
 package rekha
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/vexyl-ai/rekha/internal/contour"
+)
 
 // Mode selects the output geometry.
 type Mode string
@@ -22,6 +26,17 @@ const (
 	PresetPhoto  Preset = "photo"
 )
 
+// TurnPolicy decides how a boundary walk resolves a 2×2 checkerboard.
+type TurnPolicy = contour.TurnPolicy
+
+// Turn policies.
+const (
+	TurnMinority = contour.Minority
+	TurnMajority = contour.Majority
+	TurnBlack    = contour.Black
+	TurnWhite    = contour.White
+)
+
 // Options controls a trace. One struct backs the CLI, the HTTP API and the
 // WebAssembly entry point; Validate is the single source of truth for ranges.
 type Options struct {
@@ -31,6 +46,13 @@ type Options struct {
 	ColorPrecision int // bits; 1..8
 	PathPrecision  int // decimals; 0..8
 	MaxColors      int // 0 = unlimited (bw forces 2); 0..256
+
+	Threshold         float64    // 0..1; pixels darker than this are foreground
+	AutoThreshold     bool       // choose Threshold with Otsu's method
+	TurnPolicy        TurnPolicy // checkerboard resolution
+	SimplifyTolerance float64    // px; 0..10
+	CornerThreshold   float64    // degrees; 0..180
+	FitTolerance      float64    // px; 0.01..10
 }
 
 // DefaultOptions returns the bw/spline defaults.
@@ -42,6 +64,12 @@ func DefaultOptions() Options {
 		ColorPrecision: 6,
 		PathPrecision:  2,
 		MaxColors:      0,
+
+		Threshold:         0.5,
+		TurnPolicy:        TurnMinority,
+		SimplifyTolerance: 0.75,
+		CornerThreshold:   60,
+		FitTolerance:      1.0,
 	}
 }
 
@@ -77,6 +105,30 @@ func (o Options) Validate() error {
 	}
 	if err := inRange("MaxColors", o.MaxColors, 0, 256); err != nil {
 		return err
+	}
+	if err := inRangeF("Threshold", o.Threshold, 0, 1); err != nil {
+		return err
+	}
+	switch o.TurnPolicy {
+	case TurnMinority, TurnMajority, TurnBlack, TurnWhite:
+	default:
+		return &ValidationError{"TurnPolicy", fmt.Sprintf("unknown value %q", string(o.TurnPolicy))}
+	}
+	if err := inRangeF("SimplifyTolerance", o.SimplifyTolerance, 0, 10); err != nil {
+		return err
+	}
+	if err := inRangeF("CornerThreshold", o.CornerThreshold, 0, 180); err != nil {
+		return err
+	}
+	if err := inRangeF("FitTolerance", o.FitTolerance, 0.01, 10); err != nil {
+		return err
+	}
+	return nil
+}
+
+func inRangeF(field string, v, lo, hi float64) error {
+	if v < lo || v > hi || v != v {
+		return &ValidationError{field, fmt.Sprintf("%g out of range %g..%g", v, lo, hi)}
 	}
 	return nil
 }

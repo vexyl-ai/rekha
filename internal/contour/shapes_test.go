@@ -67,7 +67,7 @@ func TestShapesSorted(t *testing.T) {
 	if len(shapes) != 3 {
 		t.Fatalf("got %d", len(shapes))
 	}
-	want := []geom.Point{{4, 0}, {1, 1}, {4, 2}}
+	want := []geom.Point{{X: 4, Y: 0}, {X: 1, Y: 1}, {X: 4, Y: 2}}
 	for i, s := range shapes {
 		if s.Outer.Pts[0] != want[i] {
 			t.Fatalf("shape %d starts at %v, want %v", i, s.Outer.Pts[0], want[i])

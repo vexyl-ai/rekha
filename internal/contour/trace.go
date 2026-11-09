@@ -42,7 +42,7 @@ const (
 	dirN
 )
 
-var step = [4]geom.Point{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}
+var step = [4]geom.Point{{X: 1, Y: 0}, {X: 0, Y: 1}, {X: -1, Y: 0}, {X: 0, Y: -1}}
 
 // Edges are directed so that foreground lies on the walker's right. With
 // y pointing down that makes outer boundaries clockwise on screen and

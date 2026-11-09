@@ -14,7 +14,7 @@ func TestSinglePixel(t *testing.T) {
 		t.Fatalf("got %d contours", len(cs))
 	}
 	c := cs[0]
-	if c.Area2 != 2 || len(c.Pts) != 4 || c.Pts[0] != (geom.Point{0, 0}) {
+	if c.Area2 != 2 || len(c.Pts) != 4 || c.Pts[0] != (geom.Point{X: 0, Y: 0}) {
 		t.Fatalf("contour %+v", c)
 	}
 }

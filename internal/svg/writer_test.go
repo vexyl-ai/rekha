@@ -28,10 +28,10 @@ func TestFormatNum(t *testing.T) {
 
 func TestPathDataSquareUsesHV(t *testing.T) {
 	p := Path{Fill: "#000000", Subpaths: []Subpath{{Segs: []fit.Segment{
-		ln(geom.Vec2{0, 0}, geom.Vec2{1, 0}),
-		ln(geom.Vec2{1, 0}, geom.Vec2{1, 1}),
-		ln(geom.Vec2{1, 1}, geom.Vec2{0, 1}),
-		ln(geom.Vec2{0, 1}, geom.Vec2{0, 0}),
+		ln(geom.Vec2{X: 0, Y: 0}, geom.Vec2{X: 1, Y: 0}),
+		ln(geom.Vec2{X: 1, Y: 0}, geom.Vec2{X: 1, Y: 1}),
+		ln(geom.Vec2{X: 1, Y: 1}, geom.Vec2{X: 0, Y: 1}),
+		ln(geom.Vec2{X: 0, Y: 1}, geom.Vec2{X: 0, Y: 0}),
 	}}}}
 	if got := PathData(p, 2); got != "M0 0H1V1H0Z" {
 		t.Fatalf("got %q", got)
@@ -40,8 +40,8 @@ func TestPathDataSquareUsesHV(t *testing.T) {
 
 func TestPathDataNegativeNoSpace(t *testing.T) {
 	p := Path{Subpaths: []Subpath{{Segs: []fit.Segment{
-		ln(geom.Vec2{0, 0}, geom.Vec2{-1, -2}),
-		ln(geom.Vec2{-1, -2}, geom.Vec2{0, 0}),
+		ln(geom.Vec2{X: 0, Y: 0}, geom.Vec2{X: -1, Y: -2}),
+		ln(geom.Vec2{X: -1, Y: -2}, geom.Vec2{X: 0, Y: 0}),
 	}}}}
 	if got := PathData(p, 2); got != "M0 0L-1-2Z" {
 		t.Fatalf("got %q", got)
@@ -49,8 +49,8 @@ func TestPathDataNegativeNoSpace(t *testing.T) {
 }
 
 func TestPathDataCubic(t *testing.T) {
-	c := fit.Segment{P: fit.Cubic{{0, 0}, {1, 2}, {3, 2}, {4, 0}}}
-	p := Path{Subpaths: []Subpath{{Segs: []fit.Segment{c, ln(geom.Vec2{4, 0}, geom.Vec2{0, 0})}}}}
+	c := fit.Segment{P: fit.Cubic{{X: 0, Y: 0}, {X: 1, Y: 2}, {X: 3, Y: 2}, {X: 4, Y: 0}}}
+	p := Path{Subpaths: []Subpath{{Segs: []fit.Segment{c, ln(geom.Vec2{X: 4, Y: 0}, geom.Vec2{X: 0, Y: 0})}}}}
 	if got := PathData(p, 1); got != "M0 0C1 2 3 2 4 0Z" {
 		t.Fatalf("got %q", got)
 	}
@@ -58,10 +58,10 @@ func TestPathDataCubic(t *testing.T) {
 
 func TestWriteDocument(t *testing.T) {
 	p := Path{Fill: "#000000", Subpaths: []Subpath{{Segs: []fit.Segment{
-		ln(geom.Vec2{0, 0}, geom.Vec2{2, 0}),
-		ln(geom.Vec2{2, 0}, geom.Vec2{2, 2}),
-		ln(geom.Vec2{2, 2}, geom.Vec2{0, 2}),
-		ln(geom.Vec2{0, 2}, geom.Vec2{0, 0}),
+		ln(geom.Vec2{X: 0, Y: 0}, geom.Vec2{X: 2, Y: 0}),
+		ln(geom.Vec2{X: 2, Y: 0}, geom.Vec2{X: 2, Y: 2}),
+		ln(geom.Vec2{X: 2, Y: 2}, geom.Vec2{X: 0, Y: 2}),
+		ln(geom.Vec2{X: 0, Y: 2}, geom.Vec2{X: 0, Y: 0}),
 	}}}}
 	var buf bytes.Buffer
 	if err := Write(&buf, 2, 2, []Path{p}, 2); err != nil {

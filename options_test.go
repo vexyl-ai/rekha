@@ -25,6 +25,12 @@ func TestValidateRejects(t *testing.T) {
 		{"colorprec-9", func(o *Options) { o.ColorPrecision = 9 }, "ColorPrecision"},
 		{"pathprec-9", func(o *Options) { o.PathPrecision = 9 }, "PathPrecision"},
 		{"maxcolors-257", func(o *Options) { o.MaxColors = 257 }, "MaxColors"},
+		{"threshold-high", func(o *Options) { o.Threshold = 1.1 }, "Threshold"},
+		{"threshold-neg", func(o *Options) { o.Threshold = -0.1 }, "Threshold"},
+		{"turnpolicy", func(o *Options) { o.TurnPolicy = "spiral" }, "TurnPolicy"},
+		{"simplify-big", func(o *Options) { o.SimplifyTolerance = 11 }, "SimplifyTolerance"},
+		{"corner-big", func(o *Options) { o.CornerThreshold = 181 }, "CornerThreshold"},
+		{"fit-zero", func(o *Options) { o.FitTolerance = 0 }, "FitTolerance"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
