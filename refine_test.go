@@ -202,3 +202,41 @@ func TestRefineCutoutNeverLoses(t *testing.T) {
 		}
 	}
 }
+
+// TestRefineThinLineStaysInBox: a 1-px anti-aliased line refined under bw
+// keeps every point of its outline within half a pixel of the line's
+// box; the priors must not knot the caps or run handles past the ends.
+func TestRefineThinLineStaysInBox(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for i := range img.Pix {
+		img.Pix[i] = 255
+	}
+	for x := 8; x < 56; x++ {
+		img.SetNRGBA(x, 30, color.NRGBA{0, 0, 0, 255})
+		img.SetNRGBA(x, 29, color.NRGBA{200, 200, 200, 255})
+		img.SetNRGBA(x, 31, color.NRGBA{200, 200, 200, 255})
+	}
+	o := PresetOptions(PresetBW)
+	o.Refine.Enabled = true
+	s, err := Segment(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.Finish(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const x0, y0, x1, y1 = 8 - 0.5, 29 - 0.5, 56 + 0.5, 32 + 0.5
+	for _, p := range r.Paths {
+		for _, sp := range p.Subpaths {
+			for _, sg := range sp.Segs {
+				for i := 0; i <= 8; i++ {
+					q := sg.P.At(float64(i) / 8)
+					if q.X < x0 || q.X > x1 || q.Y < y0 || q.Y > y1 {
+						t.Fatalf("outline point %v outside the line's box; segment %v", q, sg.P)
+					}
+				}
+			}
+		}
+	}
+}

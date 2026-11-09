@@ -119,3 +119,27 @@ func TestLocalDataEnergyDeltaMatchesGlobal(t *testing.T) {
 		t.Fatalf("global delta %v local delta %v", global, local)
 	}
 }
+
+// TestMergePassWithinBudget: however many merges are accepted, the data
+// energy ends no more than mergeRise above where the pass started.
+func TestMergePassWithinBudget(t *testing.T) {
+	img := Window{X0: 0, Y0: 0, W: 64, H: 64}
+	for _, seed := range []uint64{1, 3, 5} {
+		src := smoothBezigon(seed, 6)
+		b := Bezigon{Pts: append([]geom.Vec2(nil), src.Pts...)}
+		for b.N() < 24 {
+			b = splitSegment(b, b.N()-1)
+			b = splitSegment(b, 0)
+		}
+		m := maskOf(src, img)
+		o := Options{Sweeps: 1, MaxIter: 30, Weights: DefaultWeights}
+		l0 := math.Max(b.Length(), 1)
+		before := dataOf(b, m, img, l0)
+		out := mergePass(b, m, img, l0, o, &scratch{})
+		after := dataOf(out, m, img, l0)
+		t.Logf("seed %d: %d → %d segments, energy %.4g → %.4g", seed, b.N(), out.N(), before, after)
+		if after > before*(1+mergeRise)+1e-9 {
+			t.Errorf("seed %d: energy rose %.2f%%", seed, 100*(after/before-1))
+		}
+	}
+}

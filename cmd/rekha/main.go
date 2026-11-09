@@ -54,7 +54,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Float64Var(&o.FitTolerance, "fit-tolerance", o.FitTolerance, "curve fitting tolerance in px (0.01-10)")
 	fs.BoolVar(&o.Refine.Enabled, "refine", o.Refine.Enabled, "optimise the fitted curves against the image's anti-aliasing (spline mode)")
 	fs.IntVar(&o.Refine.Sweeps, "refine-passes", o.Refine.Sweeps, "refinement sweeps over each contour (1-10)")
-	fs.Float64Var(&o.CutoutStroke, "cutout-stroke", o.CutoutStroke, "stroke width in px hiding seams between cutout shapes (0-4, 0 = none)")
+	fs.Float64Var(&o.CutoutStroke, "cutout-stroke", o.CutoutStroke, "stroke width in px hiding seams between cutout shapes when enlarged (0-4, 0 = none; thickens edges at 1:1)")
 	fs.StringVar(&output, "output", "", "output path (single input only; - for stdout)")
 	fs.StringVar(&output, "o", "", "alias for --output")
 	fs.BoolVar(&showVersion, "version", false, "print version and exit")

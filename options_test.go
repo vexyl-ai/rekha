@@ -153,7 +153,7 @@ func TestValidateRefineRanges(t *testing.T) {
 }
 
 func TestPresetCutoutStroke(t *testing.T) {
-	for p, want := range map[Preset]float64{PresetBW: 0, PresetPoster: 0.5, PresetPhoto: 0.5} {
+	for p, want := range map[Preset]float64{PresetBW: 0, PresetPoster: 0, PresetPhoto: 0} {
 		if got := PresetOptions(p).CutoutStroke; got != want {
 			t.Errorf("%s: CutoutStroke %v, want %v", p, got, want)
 		}

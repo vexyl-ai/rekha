@@ -14,7 +14,7 @@ func (c Cubic) At(t float64) geom.Vec2 {
 	b := 3 * mt * mt * t
 	cc := 3 * mt * t * t
 	d := t * t * t
-	return geom.Vec2{X: a*c[0].X + b*c[1].X + cc*c[2].X + d*c[3].X, Y: a*c[0].Y + b*c[1].Y + cc*c[2].Y + d*c[3].Y}
+	return geom.Vec2{X: float64(a*c[0].X) + float64(b*c[1].X) + float64(cc*c[2].X) + float64(d*c[3].X), Y: float64(a*c[0].Y) + float64(b*c[1].Y) + float64(cc*c[2].Y) + float64(d*c[3].Y)}
 
 }
 

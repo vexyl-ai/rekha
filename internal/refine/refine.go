@@ -197,18 +197,18 @@ func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options, sc
 					cov = 1
 				}
 				d := cov - float64(target[c])
-				data += float64(weight[c]) * d * d
+				data += float64(float64(weight[c]) * d * d)
 				c++
 			}
 		}
 		data *= scale
 		w := o.Weights
-		e := data + w.Apt*AnglePrior(b, j, j+1, j+2) + w.Hpt*HandlePrior(b, j, j+1) + w.Lpt*LengthPrior(b, j, j+1)/l0
+		e := data + float64(w.Apt*AnglePrior(b, j, j+1, j+2)) + float64(w.Hpt*HandlePrior(b, j, j+1)) + float64(w.Opt*HandleOrderPrior(b, j, j+1)) + w.Lpt*LengthPrior(b, j, j+1)/l0
 		if w.Spt != 0 {
 			for k := 0; k < 2*Flatten; k++ {
 				poly[(Flatten*j+k)%np] = moving[k]
 			}
-			e += w.Spt * selfIntersection(poly, Flatten*j, Flatten*(j+2), cand, cum)
+			e += float64(w.Spt * selfIntersection(poly, Flatten*j, Flatten*(j+2), cand, cum))
 		}
 		return data, e
 	}

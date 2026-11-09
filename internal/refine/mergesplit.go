@@ -97,9 +97,13 @@ func windowAround(img Window, boxes ...bounds) Window {
 // mergePass tries every joint whose angle is below mergeAngle: the two
 // segments become one cubic fitted to their flattened points, the pieces
 // around it are re-optimised, and the result stands if the data energy
-// rises by less than mergeRise. Never below two segments.
+// stays within mergeRise of where the pass started, globally and over
+// the merge's own window. Never below two segments.
 func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch) Bezigon {
+	// Every accepted merge is judged against the energy the pass started
+	// with, so the whole pass costs at most mergeRise.
 	before := dataEnergy(b, m, img, l0)
+	budget := float64(before * (1 + mergeRise))
 	for j := 0; j < b.N() && b.N() > 2; {
 		if AnglePrior(b, j) >= mergeAngle {
 			j++
@@ -112,8 +116,14 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 		// Only segments j-2..j+1 of b (k-1..k+1 of cand) changed: the
 		// energy moves by the local difference.
 		wl := windowAround(img, segmentsBox(b, j-2, j+1), segmentsBox(cand, k-1, k+1))
-		after := before - localDataEnergy(b, m, wl, l0) + localDataEnergy(cand, m, wl, l0)
-		if after <= before*(1+mergeRise) {
+		localBefore, localAfter := localDataEnergy(b, m, wl, l0), localDataEnergy(cand, m, wl, l0)
+		after := before - localBefore + localAfter
+		// The merge must also hold locally: a long outline's budget would
+		// otherwise pay for rounding off one corner. The local allowance
+		// is mergeRise of the local energy plus an RMS edge error of
+		// √splitFloor px over the merged segment.
+		localBudget := float64(localBefore*(1+mergeRise)) + float64(DataScale*DataScale*splitFloor)*math.Max(LengthPrior(cand, k), 1)/l0
+		if after <= budget && localAfter <= localBudget {
 			b, before = cand, after
 			// Joint j is gone; the joint now at index k is the merged
 			// segment's start, which the next iteration examines.
@@ -220,7 +230,7 @@ func segmentResidual(cov []float32, m Mask, img Window, c fit.Cubic) float64 {
 		for x := ix0; x < ix1; x++ {
 			target, w := m.At(x, y)
 			d := float64(cov[(y-img.Y0)*img.W+(x-img.X0)] - target)
-			resid += float64(w) * d * d
+			resid += float64(float64(w) * d * d)
 		}
 	}
 	return resid

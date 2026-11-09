@@ -76,7 +76,7 @@ type Options struct {
 	Hierarchical   Hierarchical
 
 	Refine       RefineOptions // spline mode only
-	CutoutStroke float64       // px, 0..4; cutout polygon/spline paths are stroked in their fill to hide seams
+	CutoutStroke float64       // px, 0..4, default 0; cutout polygon/spline paths are stroked in their fill to hide seams
 }
 
 // RefineOptions controls the Phase 3 refinement of spline output: each
@@ -120,14 +120,12 @@ func PresetOptions(p Preset) Options {
 		o.MaxColors = 0
 		o.ColorTolerance = 0.08
 		o.Hierarchical = HierarchicalStacked
-		o.CutoutStroke = 0.5
 	case PresetPhoto:
 		o.MaxColors = 0
 		o.ColorTolerance = 0.04
 		o.FilterSpeckle = 16
 		o.FitTolerance = 1.5
 		o.Hierarchical = HierarchicalStacked
-		o.CutoutStroke = 0.5
 	}
 	return o
 }

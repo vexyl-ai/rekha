@@ -240,18 +240,19 @@ func TestRunRefineFlag(t *testing.T) {
 }
 
 func TestRunCutoutStrokeFlag(t *testing.T) {
-	code, out, errb := runStdin(t, logoPNG, "--preset", "poster", "--hierarchical", "cutout")
+	code, out, errb := runStdin(t, logoPNG, "--preset", "poster", "--hierarchical", "cutout", "--cutout-stroke", "0.5")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errb)
 	}
 	if !strings.Contains(out, `stroke-width="0.5"`) {
-		t.Fatalf("default poster cutout should carry stroke-width 0.5: %.300q", out)
+		t.Fatalf("--cutout-stroke 0.5 should carry stroke-width 0.5: %.300q", out)
 	}
-	code, out, errb = runStdin(t, logoPNG, "--preset", "poster", "--hierarchical", "cutout", "--cutout-stroke", "0")
+	// The stroke is opt-in: cutout output without the flag is the Phase 2 output.
+	code, out, errb = runStdin(t, logoPNG, "--preset", "poster", "--hierarchical", "cutout")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errb)
 	}
 	if strings.Contains(out, "stroke") {
-		t.Fatalf("--cutout-stroke 0 should emit no stroke attributes: %.300q", out)
+		t.Fatalf("default cutout should emit no stroke attributes: %.300q", out)
 	}
 }

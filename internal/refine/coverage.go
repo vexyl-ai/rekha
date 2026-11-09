@@ -55,7 +55,7 @@ func accumulateEdge(p0, p1 geom.Vec2, win Window, acc []float32) {
 		if yb <= ya {
 			continue
 		}
-		xa, xb := p0.X+(ya-p0.Y)*dxdy, p0.X+(yb-p0.Y)*dxdy
+		xa, xb := p0.X+float64((ya-p0.Y)*dxdy), p0.X+float64((yb-p0.Y)*dxdy)
 		row := acc[y*win.W : (y+1)*win.W]
 		accumulateRow(row, xa, ya, xb, yb, dir, win.W)
 	}
@@ -82,7 +82,7 @@ func accumulateRow(row []float32, xa, ya, xb, yb, dir float64, w int) {
 			d *= (x1 - x0) / span
 		}
 		if d != 0 {
-			xmf := 0.5*(x0+x1) - float64(cell)
+			xmf := float64(0.5*(x0+x1)) - float64(cell)
 			add(row, cell, w, d*(1-xmf))
 			add(row, cell+1, w, d*xmf)
 		}

@@ -74,14 +74,14 @@ func minimize(x0 []float64, f func([]float64) float64, ok func(x, xn []float64) 
 		halvings := 0
 		for ; halvings < maxHalvings; halvings++ {
 			for i := range x {
-				xn[i] = x[i] + step*d[i]
+				xn[i] = x[i] + float64(step*d[i])
 			}
 			if ok != nil && !ok(x, xn) {
 				step /= 2
 				continue
 			}
 			fn = f(xn)
-			if finite(fn) && fn <= fx+armijoC*step*gd {
+			if finite(fn) && fn <= fx+float64(armijoC*step*gd) {
 				accepted = true
 				break
 			}
@@ -146,7 +146,7 @@ func direction(g []float64, sHist, yHist [][]float64, d []float64) {
 func dot(a, b []float64) float64 {
 	s := 0.0
 	for i := range a {
-		s += a[i] * b[i]
+		s += float64(a[i] * b[i])
 	}
 	return s
 }
@@ -154,7 +154,7 @@ func dot(a, b []float64) float64 {
 // axpy does y += a·x.
 func axpy(y []float64, a float64, x []float64) {
 	for i := range y {
-		y[i] += a * x[i]
+		y[i] += float64(a * x[i])
 	}
 }
 

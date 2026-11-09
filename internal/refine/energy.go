@@ -19,6 +19,7 @@ type Weights struct {
 	Apt float64 // angle variation: absolute joint angles (L1 corner sparsity)
 	Hpt float64 // short handles: inverse barrier on handle lengths
 	Lpt float64 // curve length
+	Opt float64 // handle order: handles projected onto the chord must lie within it, in order
 }
 
 // DefaultWeights are the paper's defaults (§5.1) except Hpt, raised from
@@ -28,7 +29,10 @@ type Weights struct {
 // barely sees) rather than wait for the anchor's own piece; the cusp then
 // sits behind the 1/length barrier for good. At 0.5 the hook costs more
 // than it saves, and square corners survive refinement within 0.05 px.
-var DefaultWeights = Weights{Spt: 1.0, Apt: 0.08, Hpt: 0.5, Lpt: 0.1}
+// Opt (not in the paper) is 0.1: on the goal images it cuts the total
+// handle-order violation from 107 px to 2 px at the same PSNR, where 1.0
+// strands the gross-loop fixture.
+var DefaultWeights = Weights{Spt: 1.0, Apt: 0.08, Hpt: 0.5, Lpt: 0.1, Opt: 0.1}
 
 // minHandle floors handle lengths in the barrier so a collapsed handle
 // gives a huge but finite energy.
@@ -53,7 +57,7 @@ func DataEnergy(cov []float32, m Mask, win Window, l0 float64) float64 {
 		for x := 0; x < win.W; x++ {
 			target, w := m.At(win.X0+x, win.Y0+y)
 			d := DataScale * float64(cov[y*win.W+x]-target)
-			e += float64(w) * d * d
+			e += float64(float64(w) * d * d)
 		}
 	}
 	return e / math.Max(l0, 1)
@@ -90,8 +94,16 @@ func angleBetween(a, b geom.Vec2) float64 {
 	return math.Acos(min(max(a.Dot(b)/(la*lb), -1), 1))
 }
 
+// handleFloor is the fraction of a segment's chord beyond which the
+// short-handle barrier stops rewarding a longer handle (the barrier is
+// shifted so it reaches zero there): the barrier is there to keep
+// handles from collapsing, not to grow them, and left unbounded it
+// swings the handles of a short segment out sideways.
+const handleFloor = 1.0 / 3
+
 // HandlePrior is the inverse barrier Σ 1/‖handle‖ over both handles of
-// each segment (eq. 15); all segments when none are given.
+// each segment (eq. 15), zero from handleFloor of the chord outwards;
+// all segments when none are given.
 func HandlePrior(b Bezigon, segs ...int) float64 {
 	n := b.N()
 	if n == 0 {
@@ -103,7 +115,40 @@ func HandlePrior(b Bezigon, segs ...int) float64 {
 	e := 0.0
 	for _, j := range segs {
 		c := b.Segment(j)
-		e += 1/math.Max(c[1].Sub(c[0]).Len(), minHandle) + 1/math.Max(c[3].Sub(c[2]).Len(), minHandle)
+		floor := math.Max(handleFloor*c[3].Sub(c[0]).Len(), minHandle)
+		e += math.Max(0, 1/math.Max(c[1].Sub(c[0]).Len(), minHandle)-1/floor)
+		e += math.Max(0, 1/math.Max(c[3].Sub(c[2]).Len(), minHandle)-1/floor)
+	}
+	return e
+}
+
+// HandleOrderPrior is the sum, over the segments (all when none are
+// given), of how far in pixels each handle's projection onto the chord
+// falls outside it or past the other handle's: zero for a cubic whose
+// handles run forward along the chord in order, positive for crossed,
+// reversed or overshooting handles, which knot the curve. Linear, like
+// the self-intersection prior: a squared penalty's gradient on a grossly
+// knotted start overpowers the data and strands it bent. A segment with
+// a chord shorter than minHandle is left alone.
+func HandleOrderPrior(b Bezigon, segs ...int) float64 {
+	n := b.N()
+	if n == 0 {
+		return 0
+	}
+	if len(segs) == 0 {
+		segs = all(n)
+	}
+	e := 0.0
+	for _, j := range segs {
+		c := b.Segment(j)
+		chord := c[3].Sub(c[0])
+		l := chord.Len()
+		if l < minHandle {
+			continue
+		}
+		u1, u2 := c[1].Sub(c[0]).Dot(chord)/l, c[2].Sub(c[0]).Dot(chord)/l
+		v := math.Max(0, -u1) + math.Max(0, u1-l) + math.Max(0, -u2) + math.Max(0, u2-l) + math.Max(0, u1-u2)
+		e += v
 	}
 	return e
 }
@@ -229,8 +274,8 @@ func selfIntersection(pts []geom.Vec2, lo, hi int, cand []int, cum []float64) fl
 			if cum == nil {
 				cum = arcLengths(pts, nil)
 			}
-			sa := cum[i] + ta*(cum[i+1]-cum[i])
-			sb := cum[k] + tb*(cum[k+1]-cum[k])
+			sa := cum[i] + float64(ta*(cum[i+1]-cum[i]))
+			sb := cum[k] + float64(tb*(cum[k+1]-cum[k]))
 			arc := math.Abs(sb - sa)
 			e += math.Min(arc, cum[n]-arc)
 		}
@@ -259,7 +304,7 @@ func segmentCross(a0, a1, b0, b1 geom.Vec2) (ta, tb float64, ok bool) {
 // Prior is the weighted sum of the four priors over the whole bezigon,
 // the length prior relative to l0, the initial length (see PriorAt).
 func (w Weights) Prior(b Bezigon, l0 float64) float64 {
-	return w.Spt*SelfIntersectionPrior(b) + w.Apt*AnglePrior(b) + w.Hpt*HandlePrior(b) + w.Lpt*LengthPrior(b)/math.Max(l0, 1)
+	return float64(w.Spt*SelfIntersectionPrior(b)) + float64(w.Apt*AnglePrior(b)) + float64(w.Hpt*HandlePrior(b)) + float64(w.Opt*HandleOrderPrior(b)) + w.Lpt*LengthPrior(b)/math.Max(l0, 1)
 }
 
 // The length prior is measured relative to the initial length l0, as the

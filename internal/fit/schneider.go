@@ -292,11 +292,11 @@ func generateBezier(pts []geom.Vec2, u []float64, t0, t1 geom.Vec2) Cubic {
 		x0 += a0.Dot(tmp)
 		x1 += a1.Dot(tmp)
 	}
-	det := c00*c11 - c01*c01
+	det := float64(c00*c11) - float64(c01*c01)
 	var al, ar float64
 	if math.Abs(det) > 1e-12 {
-		al = (x0*c11 - x1*c01) / det
-		ar = (c00*x1 - c01*x0) / det
+		al = (float64(x0*c11) - float64(x1*c01)) / det
+		ar = (float64(c00*x1) - float64(c01*x0)) / det
 	}
 	seg := last.Sub(first).Len()
 	eps := 1e-6 * seg

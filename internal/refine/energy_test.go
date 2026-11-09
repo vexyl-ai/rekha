@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/fit"
+	"github.com/vexyl-ai/rekha/internal/geom"
 )
 
 // coverageMask is a Mask backed by a coverage array over a window.
@@ -98,7 +99,7 @@ func TestDataEnergyZeroOnOwnCoverage(t *testing.T) {
 func TestWeightsPrior(t *testing.T) {
 	sq := square(0, 0, 10, 10)
 	w := DefaultWeights
-	want := w.Spt*SelfIntersectionPrior(sq) + w.Apt*AnglePrior(sq) + w.Hpt*HandlePrior(sq) + w.Lpt*LengthPrior(sq)/40
+	want := w.Spt*SelfIntersectionPrior(sq) + w.Apt*AnglePrior(sq) + w.Hpt*HandlePrior(sq) + w.Opt*HandleOrderPrior(sq) + w.Lpt*LengthPrior(sq)/40
 	if got := w.Prior(sq, 40); math.Abs(got-want) > 1e-12 {
 		t.Fatalf("%v vs %v", got, want)
 	}
@@ -140,5 +141,28 @@ func TestSelfIntersectionPrecomputedArcs(t *testing.T) {
 	want := selfIntersection(pts, 0, len(pts), nil, nil)
 	if got := selfIntersection(pts, 0, len(pts), nil, cum); got != want || want <= 0 {
 		t.Fatalf("precomputed %v on-demand %v", got, want)
+	}
+}
+
+func TestHandleOrderPrior(t *testing.T) {
+	// A quarter circle and a straight line are well-formed: zero.
+	if got := HandleOrderPrior(circle(32, 32, 20)); got != 0 {
+		t.Fatalf("circle %v, want 0", got)
+	}
+	if got := HandleOrderPrior(square(0, 0, 10, 10)); got != 0 {
+		t.Fatalf("square %v, want 0", got)
+	}
+	// Crossed handles: h1 near the far end, h2 near the start.
+	crossed := Bezigon{Pts: []geom.Vec2{v(0, 0), v(9, 1), v(1, -1), v(10, 0), v(10, 5), v(0, 5)}}
+	if got := HandleOrderPrior(crossed); got < 1 {
+		t.Fatalf("crossed handles %v, want ≥ 1", got)
+	}
+	// A handle running backwards past its anchor.
+	back := Bezigon{Pts: []geom.Vec2{v(0, 0), v(-3, 0), v(7, 0), v(10, 0), v(10, 5), v(0, 5)}}
+	if got := HandleOrderPrior(back); got < 1 {
+		t.Fatalf("backward handle %v, want ≥ 1", got)
+	}
+	if got := HandleOrderPrior(back, 1); got != 0 {
+		t.Fatalf("segment 1 alone %v, want 0", got)
 	}
 }

@@ -333,6 +333,7 @@ func TestCutoutPathsCarryStroke(t *testing.T) {
 	img := synth(t, "aa-abut")
 	o := PresetOptions(PresetPoster)
 	o.Hierarchical = HierarchicalCutout
+	o.CutoutStroke = 0.5 // opt-in
 	r, err := Trace(img, o)
 	if err != nil {
 		t.Fatal(err)

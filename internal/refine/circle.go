@@ -45,25 +45,25 @@ func FitCircle(b Bezigon, tol float64) (centre geom.Vec2, r float64, ok bool) {
 	var sxx, sxy, syy, sxz, syz, sz float64
 	for _, p := range pts {
 		x, y := p.X-mean.X, p.Y-mean.Y
-		z := x*x + y*y
-		sxx += x * x
-		sxy += x * y
-		syy += y * y
-		sxz += x * z
-		syz += y * z
+		z := float64(x*x) + float64(y*y)
+		sxx += float64(x * x)
+		sxy += float64(x * y)
+		syy += float64(y * y)
+		sxz += float64(x * z)
+		syz += float64(y * z)
 		sz += z
 	}
 	// With centred data Σx = Σy = 0, so D and E decouple from F:
 	// [sxx sxy; sxy syy]·[D E]ᵀ = -[sxz syz]ᵀ, F = -(sz + 0)/m.
-	det := sxx*syy - sxy*sxy
+	det := float64(sxx*syy) - float64(sxy*sxy)
 	if det <= 1e-12*(sxx+syy)*(sxx+syy) || !finite(det) {
 		return geom.Vec2{}, 0, false
 	}
-	d := (-sxz*syy + syz*sxy) / det
-	e := (-syz*sxx + sxz*sxy) / det
+	d := (float64(-sxz*syy) + float64(syz*sxy)) / det
+	e := (float64(-syz*sxx) + float64(sxz*sxy)) / det
 	f := -sz / float64(len(pts))
 	cx, cy := -d/2, -e/2
-	r2 := cx*cx + cy*cy - f
+	r2 := float64(cx*cx) + float64(cy*cy) - f
 	if !(r2 > 0) || !finite(r2) {
 		return geom.Vec2{}, 0, false
 	}
@@ -92,9 +92,9 @@ func Circle(centre geom.Vec2, r float64, start geom.Vec2, ccw bool) Bezigon {
 	}
 	b := Bezigon{Pts: make([]geom.Vec2, 0, 12)}
 	for q := 0; q < 4; q++ {
-		a := a0 + float64(q)*step
-		p := geom.Vec2{X: centre.X + r*math.Cos(a), Y: centre.Y + r*math.Sin(a)}
-		next := geom.Vec2{X: centre.X + r*math.Cos(a+step), Y: centre.Y + r*math.Sin(a+step)}
+		a := a0 + float64(float64(q)*step)
+		p := geom.Vec2{X: centre.X + float64(r*math.Cos(a)), Y: centre.Y + float64(r*math.Sin(a))}
+		next := geom.Vec2{X: centre.X + float64(r*math.Cos(a+step)), Y: centre.Y + float64(r*math.Sin(a+step))}
 		// Tangent directions along the direction of travel.
 		t0 := geom.Vec2{X: -math.Sin(a), Y: math.Cos(a)}
 		t1 := geom.Vec2{X: -math.Sin(a + step), Y: math.Cos(a + step)}
