@@ -141,52 +141,65 @@ func SelfIntersectionPrior(b Bezigon) float64 {
 // selfIntersection sums the shorter arcs of the crossings of the closed
 // polyline pts in which at least one edge has index in [lo, hi) (edge i
 // runs from pts[i] to pts[i+1]); the full range gives the prior, a piece's
-// range gives the part a piece can change.
+// range gives the part a piece can change. Every other edge is first
+// tested against the range's bounding box, so a piece costs O(n) plus
+// the few edges that come near it.
 func selfIntersection(pts []geom.Vec2, lo, hi int) float64 {
 	n := len(pts)
 	if n < 4 {
 		return 0
 	}
-	cum := make([]float64, n+1)
-	for i := 1; i <= n; i++ {
-		cum[i] = cum[i-1] + pts[i%n].Sub(pts[i-1]).Len()
+	m := min(hi-lo, n) // edges in the range
+	lo = ((lo % n) + n) % n
+	// Bounding box of the range's edges.
+	bx0, by0, bx1, by1 := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+	for r := 0; r <= m; r++ {
+		p := pts[(lo+r)%n]
+		bx0, by0 = min(bx0, p.X), min(by0, p.Y)
+		bx1, by1 = max(bx1, p.X), max(by1, p.Y)
 	}
-	total := cum[n]
+	var cum []float64 // arc length to each vertex, built at the first crossing
+	total := 0.0
 	e := 0.0
-	for i := 0; i < n; i++ {
-		a0, a1 := pts[i], pts[(i+1)%n]
-		for k := i + 2; k < n; k++ {
-			if i == 0 && k == n-1 {
-				continue // adjacent through the closing edge
+	for k := 0; k < n; k++ {
+		b0, b1 := pts[k], pts[(k+1)%n]
+		if max(b0.X, b1.X) < bx0 || min(b0.X, b1.X) > bx1 || max(b0.Y, b1.Y) < by0 || min(b0.Y, b1.Y) > by1 {
+			continue
+		}
+		rk := ((k-lo)%n + n) % n // k's rank in the range, or ≥ m
+		for r := 0; r < m; r++ {
+			i := (lo + r) % n
+			if k == i || k == (i+1)%n || (k+1)%n == i {
+				continue // the edge itself or an adjacent one
 			}
-			if !edgeIn(i, lo, hi, n) && !edgeIn(k, lo, hi, n) {
+			// A pair with both edges in the range is counted once, from
+			// the earlier edge.
+			if rk < m && rk < r {
 				continue
 			}
-			b0, b1 := pts[k], pts[(k+1)%n]
-			if !boxesOverlap(a0, a1, b0, b1) {
+			a0, a1 := pts[i], pts[(i+1)%n]
+			if max(a0.X, a1.X) < min(b0.X, b1.X) || max(b0.X, b1.X) < min(a0.X, a1.X) ||
+				max(a0.Y, a1.Y) < min(b0.Y, b1.Y) || max(b0.Y, b1.Y) < min(a0.Y, a1.Y) {
 				continue
 			}
 			ta, tb, ok := segmentCross(a0, a1, b0, b1)
 			if !ok {
 				continue
 			}
+			if cum == nil {
+				cum = make([]float64, n+1)
+				for j := 1; j <= n; j++ {
+					cum[j] = cum[j-1] + pts[j%n].Sub(pts[j-1]).Len()
+				}
+				total = cum[n]
+			}
 			sa := cum[i] + ta*(cum[i+1]-cum[i])
 			sb := cum[k] + tb*(cum[k+1]-cum[k])
-			arc := sb - sa
+			arc := math.Abs(sb - sa)
 			e += math.Min(arc, total-arc)
 		}
 	}
 	return e
-}
-
-// edgeIn reports whether edge i lies in the cyclic range [lo, hi) of n edges.
-func edgeIn(i, lo, hi, n int) bool {
-	return ((i-lo)%n+n)%n < hi-lo
-}
-
-func boxesOverlap(a0, a1, b0, b1 geom.Vec2) bool {
-	return math.Min(a0.X, a1.X) <= math.Max(b0.X, b1.X) && math.Min(b0.X, b1.X) <= math.Max(a0.X, a1.X) &&
-		math.Min(a0.Y, a1.Y) <= math.Max(b0.Y, b1.Y) && math.Min(b0.Y, b1.Y) <= math.Max(a0.Y, a1.Y)
 }
 
 // segmentCross reports whether segments a and b cross (half-open in each
@@ -207,10 +220,19 @@ func segmentCross(a0, a1, b0, b1 geom.Vec2) (ta, tb float64, ok bool) {
 	return ta, tb, true
 }
 
-// Prior is the weighted sum of the four priors over the whole bezigon.
-func (w Weights) Prior(b Bezigon) float64 {
-	return w.Spt*SelfIntersectionPrior(b) + w.Apt*AnglePrior(b) + w.Hpt*HandlePrior(b) + w.Lpt*LengthPrior(b)
+// Prior is the weighted sum of the four priors over the whole bezigon,
+// the length prior relative to l0, the initial length (see PriorAt).
+func (w Weights) Prior(b Bezigon, l0 float64) float64 {
+	return w.Spt*SelfIntersectionPrior(b) + w.Apt*AnglePrior(b) + w.Hpt*HandlePrior(b) + w.Lpt*LengthPrior(b)/math.Max(l0, 1)
 }
+
+// The length prior is measured relative to the initial length l0, as the
+// data term is, so it only breaks ties. Taken raw, as the paper writes
+// it, it grows with the perimeter while the normalised data term does
+// not, and on a long thin shape retracting an end by a pixel saves more
+// length than the lost pixel costs: one-pixel lines shrink sweep by
+// sweep. A fat shape never shows this, since shrinking it costs data
+// along its whole boundary.
 
 func all(n int) []int {
 	out := make([]int, n)

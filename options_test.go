@@ -3,8 +3,11 @@ package rekha
 import (
 	"errors"
 	"image/color"
+	"math"
 	"reflect"
 	"testing"
+
+	"github.com/vexyl-ai/rekha/internal/refine"
 )
 
 func TestDefaultOptionsValid(t *testing.T) {
@@ -113,4 +116,38 @@ func TestValidateNewFields(t *testing.T) {
 		o.Palette = []color.NRGBA{{255, 0, 0, 255}, {255, 0, 0, 255}}
 	})
 	bad("Hierarchical", func(o *Options) { o.Hierarchical = "x" })
+}
+
+func TestPresetRefineDefaults(t *testing.T) {
+	for _, p := range []Preset{PresetBW, PresetPoster, PresetPhoto} {
+		r := PresetOptions(p).Refine
+		want := RefineOptions{Enabled: false, Sweeps: 3, MaxIter: 30, Weights: refine.DefaultWeights, MergeSplit: true, Primitives: true}
+		if !reflect.DeepEqual(r, want) {
+			t.Errorf("%s: Refine = %+v, want %+v", p, r, want)
+		}
+	}
+}
+
+func TestValidateRefineRanges(t *testing.T) {
+	bad := func(name string, mutate func(*RefineOptions)) {
+		t.Helper()
+		o := PresetOptions(PresetBW)
+		o.Refine.Enabled = true
+		mutate(&o.Refine)
+		var ve *ValidationError
+		if err := o.Validate(); !errors.As(err, &ve) || ve.Field != "Refine" {
+			t.Errorf("%s: got %v", name, err)
+		}
+	}
+	bad("Sweeps 0", func(r *RefineOptions) { r.Sweeps = 0 })
+	bad("Sweeps 11", func(r *RefineOptions) { r.Sweeps = 11 })
+	bad("MaxIter 0", func(r *RefineOptions) { r.MaxIter = 0 })
+	bad("MaxIter 201", func(r *RefineOptions) { r.MaxIter = 201 })
+	bad("negative weight", func(r *RefineOptions) { r.Weights.Apt = -0.1 })
+	bad("NaN weight", func(r *RefineOptions) { r.Weights.Lpt = math.NaN() })
+	o := PresetOptions(PresetBW)
+	o.Refine.Enabled = true
+	if err := o.Validate(); err != nil {
+		t.Fatalf("defaults with refinement enabled invalid: %v", err)
+	}
 }

@@ -178,3 +178,22 @@ func TestSegmentKeepsDiagonalLine(t *testing.T) {
 		t.Fatalf("%d pixels labelled black after cleanup, want 63", dark)
 	}
 }
+
+// The bw preset fills Second and Blend from the grey value so refinement
+// can read anti-aliasing: Blend is the share of the labelled colour.
+func TestSegmentBWFillsBlend(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 3, 1))
+	img.SetNRGBA(0, 0, color.NRGBA{64, 64, 64, 255})
+	img.SetNRGBA(1, 0, color.NRGBA{200, 200, 200, 255})
+	img.SetNRGBA(2, 0, color.NRGBA{255, 255, 255, 255})
+	s, err := Segment(img, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ label, second, blend uint8 }{{1, 0, 191}, {0, 1, 200}, {0, 1, 255}}
+	for p, w := range want {
+		if s.Labels[p] != w.label || s.Second[p] != w.second || s.Blend[p] != w.blend {
+			t.Errorf("pixel %d: label %d second %d blend %d, want %+v", p, s.Labels[p], s.Second[p], s.Blend[p], w)
+		}
+	}
+}

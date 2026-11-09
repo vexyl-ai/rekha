@@ -37,7 +37,7 @@ func energyWith(b Bezigon, m Mask, img Window, w Weights, l0 float64) float64 {
 	}
 	cov := make([]float32, img.W*img.H)
 	Coverage(b, img, cov)
-	return DataEnergy(cov, m, img, l0) + w.Prior(b)
+	return DataEnergy(cov, m, img, l0) + w.Prior(b, l0)
 }
 
 // Refine optimises b piece by piece (two consecutive segments, outer
@@ -79,16 +79,16 @@ func pieceIndices(b Bezigon, j int) [5]int {
 	return idx
 }
 
-// refinePiece optimises piece j in place and returns the largest move of
-// any of its points, in pixels.
+// refinePiece optimises piece j (segments j and j+1, five free points)
+// and returns how far any point moved. Each point may move moveLimit from
+// where it starts, so the curve moves at most that far; the energy is
+// therefore evaluated only over the pixels within reach of the starting
+// curve (one span per row), where all the change is. Pixels outside the
+// image are scored too: the mask reports them empty.
 func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options) float64 {
 	n := b.N()
 	j = ((j % n) + n) % n
 	idx := pieceIndices(b, j)
-	// The piece's points may move moveLimit from where they start; the
-	// window covers that reach plus a pad, so the curve (inside the convex
-	// hull of its control points) can never leave the scored area. Pixels
-	// outside the image are scored too: the mask reports them empty.
 	r := reach(b, 3*j, 3*j+7, img)
 	lo, hi := clampPoint(r.lo, img), clampPoint(r.hi, img)
 	win := windowOf(lo, hi)
@@ -106,23 +106,78 @@ func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options) fl
 		pts := append(flattenInto(buf[:0], c), c[3])
 		AccumulateEdges(pts, false, win, fixed)
 	}
-	acc := make([]float32, win.W*win.H)
-	cov := make([]float32, win.W*win.H)
+	start := make([]geom.Vec2, len(idx))
+	for k, i := range idx {
+		start[k] = b.Pts[i]
+	}
+	// Per-point trust box, clipped to the image.
+	plo, phi := make([]geom.Vec2, len(idx)), make([]geom.Vec2, len(idx))
+	for k := range idx {
+		plo[k] = clampPoint(start[k].Sub(geom.Vec2{X: moveLimit, Y: moveLimit}), img)
+		phi[k] = clampPoint(start[k].Add(geom.Vec2{X: moveLimit, Y: moveLimit}), img)
+	}
+	// Spans: per window row, the cells the moving curve can touch.
 	moving := make([]geom.Vec2, 0, 2*Flatten+1)
+	cj, cj1 := b.Segment(j), b.Segment(j+1)
+	moving = append(flattenInto(flattenInto(moving[:0], cj), cj1), cj1[3])
+	sp := newSpans(moving, win)
+	if sp.cells == 0 {
+		return 0
+	}
+	// Mask targets and weights over the spans, and the fixed coverage
+	// carried into each span from the cells to its left.
+	target, weight := make([]float32, sp.cells), make([]float32, sp.cells)
+	left := make([]float32, win.H)
+	c := 0
+	for y := 0; y < win.H; y++ {
+		x0, x1 := sp.x0[y], sp.x1[y]
+		if x0 >= x1 {
+			continue
+		}
+		var v float32
+		for x := 0; x < x0; x++ {
+			v += fixed[y*win.W+x]
+		}
+		left[y] = v
+		for x := x0; x < x1; x++ {
+			target[c], weight[c] = m.At(win.X0+x, win.Y0+y)
+			c++
+		}
+	}
+	mov := make([]float32, win.W*win.H)
+	scale := float64(DataScale * DataScale / l0)
 	// evalParts returns the data term and the full piece energy at x, with
-	// the points held inside their reach.
+	// the points held inside their trust boxes.
 	evalParts := func(x []float64) (data, total float64) {
 		for k, i := range idx {
-			b.Pts[i] = geom.Vec2{X: math.Min(math.Max(x[2*k], lo.X), hi.X), Y: math.Min(math.Max(x[2*k+1], lo.Y), hi.Y)}
+			b.Pts[i] = geom.Vec2{X: math.Min(math.Max(x[2*k], plo[k].X), phi[k].X), Y: math.Min(math.Max(x[2*k+1], plo[k].Y), phi[k].Y)}
 		}
-		copy(acc, fixed)
 		cj, cj1 := b.Segment(j), b.Segment(j+1)
 		moving = append(flattenInto(flattenInto(moving[:0], cj), cj1), cj1[3])
-		AccumulateEdges(moving, false, win, acc)
-		Resolve(acc, win, cov)
-		data = DataEnergy(cov, m, win, l0)
+		AccumulateEdges(moving, false, win, mov)
+		c := 0
+		for y := 0; y < win.H; y++ {
+			x0, x1 := sp.x0[y], sp.x1[y]
+			if x0 >= x1 {
+				continue
+			}
+			v := left[y]
+			row := y * win.W
+			for x := x0; x < x1; x++ {
+				v += fixed[row+x] + mov[row+x]
+				mov[row+x] = 0
+				cov := math.Abs(float64(v))
+				if cov > 1 {
+					cov = 1
+				}
+				d := cov - float64(target[c])
+				data += float64(weight[c]) * d * d
+				c++
+			}
+		}
+		data *= scale
 		w := o.Weights
-		e := data + w.Apt*AnglePrior(b, j, j+1, j+2) + w.Hpt*HandlePrior(b, j, j+1) + w.Lpt*LengthPrior(b, j, j+1)
+		e := data + w.Apt*AnglePrior(b, j, j+1, j+2) + w.Hpt*HandlePrior(b, j, j+1) + w.Lpt*LengthPrior(b, j, j+1)/l0
 		if w.Spt != 0 {
 			pts := b.Polyline()
 			e += w.Spt * selfIntersection(pts, Flatten*j, Flatten*(j+2))
@@ -134,10 +189,8 @@ func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options) fl
 		return e
 	}
 	x := make([]float64, 2*len(idx))
-	start := make([]geom.Vec2, len(idx))
-	for k, i := range idx {
-		start[k] = b.Pts[i]
-		x[2*k], x[2*k+1] = b.Pts[i].X, b.Pts[i].Y
+	for k, p := range start {
+		x[2*k], x[2*k+1] = p.X, p.Y
 	}
 	// Squared coverage error on the 0..1 scale per pixel of the piece's
 	// length: the window's area would dilute a boundary error.
@@ -150,10 +203,42 @@ func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options) fl
 	eval(x) // leave b at the solution
 	move := 0.0
 	for k, i := range idx {
-		b.Pts[i] = clampPoint(b.Pts[i], img)
 		move = math.Max(move, b.Pts[i].Sub(start[k]).Len())
 	}
 	return move
+}
+
+// spans is, per window row, the half-open cell range [x0, x1) a piece's
+// curve can touch: the starting polyline's extent in that row grown by
+// moveLimit plus the cell the rasteriser spills into.
+type spans struct {
+	x0, x1 []int
+	cells  int
+}
+
+func newSpans(pts []geom.Vec2, win Window) spans {
+	sp := spans{x0: make([]int, win.H), x1: make([]int, win.H)}
+	for y := range sp.x0 {
+		sp.x0[y] = win.W
+	}
+	const pad = moveLimit + 2
+	for i := 0; i+1 < len(pts); i++ {
+		a, b := pts[i], pts[i+1]
+		y0 := int(math.Floor(math.Min(a.Y, b.Y)-pad)) - win.Y0
+		y1 := int(math.Ceil(math.Max(a.Y, b.Y)+pad)) - win.Y0
+		x0 := int(math.Floor(math.Min(a.X, b.X)-pad)) - win.X0
+		x1 := int(math.Ceil(math.Max(a.X, b.X)+pad)) - win.X0
+		for y := max(y0, 0); y < min(y1, win.H); y++ {
+			sp.x0[y] = min(sp.x0[y], max(x0, 0))
+			sp.x1[y] = max(sp.x1[y], min(x1, win.W))
+		}
+	}
+	for y := range sp.x0 {
+		if sp.x0[y] < sp.x1[y] {
+			sp.cells += sp.x1[y] - sp.x0[y]
+		}
+	}
+	return sp
 }
 
 func clampAll(b Bezigon, img Window) {

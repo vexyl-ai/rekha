@@ -71,6 +71,44 @@ func TestTraceGoldenColour(t *testing.T) {
 
 // logo-holes: the background is depth 0, the two letters depth 1 and the
 // background showing through their holes depth 2, in the background colour.
+// Goldens for the Phase 3 goal images with refinement on: bw for the
+// bilevel synthetics, poster for the colour ones.
+func TestTraceGoldenRefine(t *testing.T) {
+	cases := []struct {
+		name   string
+		preset Preset
+	}{
+		{"circle-aa", PresetBW}, {"rounded-rect", PresetBW}, {"star-5", PresetBW},
+		{"poster-discs", PresetPoster}, {"aa-abut", PresetPoster}, {"logo-holes", PresetPoster}, {"three-layer-stack", PresetPoster},
+	}
+	for _, c := range cases {
+		o := PresetOptions(c.preset)
+		o.Refine.Enabled = true
+		r, err := Trace(synth(t, c.name), o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := r.WriteSVG(&buf, o); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join("testdata", "golden", c.name+"-refine-spline.svg")
+		if *update {
+			if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		want, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%s: %v (run with -update)", path, err)
+		}
+		if !svgClose(want, buf.Bytes()) {
+			t.Errorf("%s differs from golden", path)
+		}
+	}
+}
+
 func TestLogoHolesDepths(t *testing.T) {
 	o := PresetOptions(PresetPoster)
 	s, err := Segment(synth(t, "logo-holes"), o)
@@ -223,6 +261,14 @@ func FuzzSegment(f *testing.F) {
 				o.FilterSpeckle = 0
 				checkColourSane(t, img, o)
 			}
+		}
+		// Refinement on one configuration: it costs most of an input's
+		// time, and a stacked poster trace exercises bands and holes.
+		{
+			o := PresetOptions(PresetPoster)
+			o.FilterSpeckle = 0
+			o.Refine.Enabled = true
+			checkColourSane(t, img, o)
 		}
 	})
 }

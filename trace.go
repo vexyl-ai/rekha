@@ -9,6 +9,7 @@ import (
 
 	"github.com/vexyl-ai/rekha/internal/fit"
 	"github.com/vexyl-ai/rekha/internal/geom"
+	"github.com/vexyl-ai/rekha/internal/refine"
 	"github.com/vexyl-ai/rekha/internal/svg"
 )
 
@@ -51,6 +52,43 @@ func segments(pts []geom.Point, o Options) []fit.Segment {
 	default:
 		return spline(pts, o)
 	}
+}
+
+// lineTol is how far, in pixels, a cubic's handles may sit from its chord
+// for the refined segment to be written as a line: such a cubic is within
+// 0.19 px of straight, below what the output precision can show, and the
+// optimiser leaves straight edges bent by about a tenth of a pixel.
+const lineTol = 0.25
+
+// refineSegments runs the Phase 3 refinement on one fitted contour:
+// optimise against the mask, merge and split segments, recognise a circle,
+// and write straight cubics back as lines.
+func refineSegments(segs []fit.Segment, m refine.Mask, img refine.Window, o Options) []fit.Segment {
+	if len(segs) < 2 {
+		return segs
+	}
+	ro := refine.Options{Sweeps: o.Refine.Sweeps, MaxIter: o.Refine.MaxIter, Weights: o.Refine.Weights}
+	b := refine.FromSegments(segs)
+	b = refine.Refine(b, m, img, ro)
+	if o.Refine.MergeSplit {
+		b = refine.MergeSplit(b, m, img, ro)
+	}
+	if o.Refine.Primitives {
+		if c, r, ok := refine.FitCircle(b, 0.5*o.FitTolerance); ok {
+			b = refine.Circle(c, r, b.Pts[0], signedArea2(b.Polyline()) > 0)
+		}
+	}
+	return b.Segments(lineTol)
+}
+
+// signedArea2 is twice the shoelace area of a closed polygon: positive
+// for a counter-clockwise loop in y-down coordinates.
+func signedArea2(pts []geom.Vec2) float64 {
+	a := 0.0
+	for i := range pts {
+		a += geom.Cross(pts[i], pts[(i+1)%len(pts)])
+	}
+	return a
 }
 
 func toVec(pts []geom.Point) []geom.Vec2 {

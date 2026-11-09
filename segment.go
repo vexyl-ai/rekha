@@ -48,15 +48,20 @@ func segmentBW(img image.Image, o Options) *Segmentation {
 	bm := bitmap.FromGray(gray, w, h, th)
 	s := newSegmentation(w, h)
 	s.Palette = []color.NRGBA{{R: 255, G: 255, B: 255, A: 255}, {A: 255}}
+	// Blend is the labelled colour's share of the pixel's grey, so the
+	// refinement can read the anti-aliasing; the SVG never sees it.
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			p := y*w + x
+			g := int(gray[p])
+			share := g
 			if bm.Get(x, y) {
 				s.Labels[p], s.Second[p] = 1, 0
+				share = 255 - g
 			} else {
 				s.Labels[p], s.Second[p] = 0, 1
 			}
-			s.Blend[p] = 255
+			s.Blend[p] = uint8(max(share, 128))
 		}
 	}
 	return s

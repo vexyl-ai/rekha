@@ -12,6 +12,7 @@ import (
 	"github.com/vexyl-ai/rekha/internal/colour"
 	"github.com/vexyl-ai/rekha/internal/contour"
 	"github.com/vexyl-ai/rekha/internal/geom"
+	"github.com/vexyl-ai/rekha/internal/refine"
 	"github.com/vexyl-ai/rekha/internal/svg"
 )
 
@@ -31,6 +32,13 @@ type layer struct {
 	depth    int
 	omit     bool // the white page: not emitted, not extended into
 	contours []contour.Contour
+	band     []int32 // pixels the extension added, sorted; nil when none
+}
+
+// inBand reports whether pixel index p lies in the layer's extension band.
+func (l *layer) inBand(p int) bool {
+	i := sort.Search(len(l.band), func(i int) bool { return l.band[i] >= int32(p) })
+	return i < len(l.band) && l.band[i] == int32(p)
 }
 
 // Finish traces every colour of s, orders the shapes (stacked: nesting
@@ -50,6 +58,61 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 		return nil, fmt.Errorf("rekha: %d labels for a %d×%d segmentation", len(s.Labels), s.Width, s.Height)
 	}
 
+	layers := s.buildLayers(o)
+	stacked := o.Hierarchical == HierarchicalStacked && o.Preset != PresetBW
+
+	// Fit every contour in parallel, indexed by layer and subpath.
+	subpaths := make([][]svg.Subpath, len(layers))
+	var jobs [][2]int
+	for i, l := range layers {
+		subpaths[i] = make([]svg.Subpath, len(l.contours))
+		for k := range l.contours {
+			jobs = append(jobs, [2]int{i, k})
+		}
+	}
+	refining := o.Refine.Enabled && o.Mode == ModeSpline
+	img := refine.Window{X0: 0, Y0: 0, W: s.Width, H: s.Height}
+	parallel(len(jobs), func(j int) {
+		i, k := jobs[j][0], jobs[j][1]
+		c := layers[i].contours[k]
+		segs := segments(c.Pts, o)
+		if refining {
+			var band func(p int) bool
+			if layers[i].band != nil {
+				band = layers[i].inBand
+			}
+			m := s.mask(uint8(layers[i].colour), c.Pts, c.Area2 < 0, band)
+			segs = refineSegments(segs, m, img, o)
+		}
+		subpaths[i][k] = svg.Subpath{Segs: segs}
+	})
+
+	mergeable := false
+	for i, l := range layers {
+		fill := colour.FromSRGB8(s.Palette[l.colour].R, s.Palette[l.colour].G, s.Palette[l.colour].B).Hex()
+		// Stacked outers of one colour share a <path>; cutout keeps one
+		// path per shape, as Phase 1 did. A layer with holes (an extended
+		// region around a pocket) stays alone: a later shape of the same
+		// colour inside the pocket would cancel under nonzero winding.
+		outersOnly := true
+		for _, c := range l.contours {
+			if c.Area2 < 0 {
+				outersOnly = false
+			}
+		}
+		if n := len(res.Paths); stacked && mergeable && outersOnly && n > 0 && res.Paths[n-1].Fill == fill {
+			res.Paths[n-1].Subpaths = append(res.Paths[n-1].Subpaths, subpaths[i]...)
+			continue
+		}
+		res.Paths = append(res.Paths, svg.Path{Fill: fill, Subpaths: subpaths[i]})
+		mergeable = stacked && outersOnly
+	}
+	return res, nil
+}
+
+// buildLayers traces the colours, nests the shapes, drops the white page,
+// extends stacked siblings and returns the layers to emit in output order.
+func (s *Segmentation) buildLayers(o Options) []layer {
 	layers := s.layers(o)
 	stacked := o.Hierarchical == HierarchicalStacked && o.Preset != PresetBW
 	shapes := make([]contour.Shape, len(layers))
@@ -91,50 +154,13 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 			return pointLess(layers[a].shape.Outer.Pts[0], layers[b].shape.Outer.Pts[0])
 		})
 	}
-
 	kept := layers[:0]
 	for _, l := range layers {
 		if !l.omit {
 			kept = append(kept, l)
 		}
 	}
-	layers = kept
-
-	// Fit every contour in parallel, indexed by layer and subpath.
-	subpaths := make([][]svg.Subpath, len(layers))
-	var jobs [][2]int
-	for i, l := range layers {
-		subpaths[i] = make([]svg.Subpath, len(l.contours))
-		for k := range l.contours {
-			jobs = append(jobs, [2]int{i, k})
-		}
-	}
-	parallel(len(jobs), func(j int) {
-		i, k := jobs[j][0], jobs[j][1]
-		subpaths[i][k] = svg.Subpath{Segs: segments(layers[i].contours[k].Pts, o)}
-	})
-
-	mergeable := false
-	for i, l := range layers {
-		fill := colour.FromSRGB8(s.Palette[l.colour].R, s.Palette[l.colour].G, s.Palette[l.colour].B).Hex()
-		// Stacked outers of one colour share a <path>; cutout keeps one
-		// path per shape, as Phase 1 did. A layer with holes (an extended
-		// region around a pocket) stays alone: a later shape of the same
-		// colour inside the pocket would cancel under nonzero winding.
-		outersOnly := true
-		for _, c := range l.contours {
-			if c.Area2 < 0 {
-				outersOnly = false
-			}
-		}
-		if n := len(res.Paths); stacked && mergeable && outersOnly && n > 0 && res.Paths[n-1].Fill == fill {
-			res.Paths[n-1].Subpaths = append(res.Paths[n-1].Subpaths, subpaths[i]...)
-			continue
-		}
-		res.Paths = append(res.Paths, svg.Path{Fill: fill, Subpaths: subpaths[i]})
-		mergeable = stacked && outersOnly
-	}
-	return res, nil
+	return kept
 }
 
 // layers traces each colour's label mask into shapes, colours in a worker
@@ -244,6 +270,7 @@ func (s *Segmentation) extendSiblings(layers []layer, parents []int, ids []int32
 			stamp[p] = mark
 			region = append(region, p)
 		})
+		base := len(region) // the shape's own pixels; what follows is the band
 		frontier = append(frontier[:0], region...)
 		grown := false
 		for step := 0; step < margin && len(frontier) > 0; step++ {
@@ -275,6 +302,9 @@ func (s *Segmentation) extendSiblings(layers []layer, parents []int, ids []int32
 			continue
 		}
 		layers[k].contours = traceRegion(region, w, o.TurnPolicy)
+		band := append([]int32(nil), region[base:]...)
+		sort.Slice(band, func(a, b int) bool { return band[a] < band[b] })
+		layers[k].band = band
 	}
 }
 

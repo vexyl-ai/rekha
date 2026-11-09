@@ -3,8 +3,10 @@ package rekha
 import (
 	"fmt"
 	"image/color"
+	"math"
 
 	"github.com/vexyl-ai/rekha/internal/contour"
+	"github.com/vexyl-ai/rekha/internal/refine"
 )
 
 // Mode selects the output geometry.
@@ -72,6 +74,20 @@ type Options struct {
 	ColorTolerance float64       // OKLab distance 0..1 at which colours merge (white to black is 1)
 	Palette        []color.NRGBA // fixed palette, at most 256 distinct entries; empty = quantise
 	Hierarchical   Hierarchical
+
+	Refine RefineOptions // spline mode only
+}
+
+// RefineOptions controls the Phase 3 refinement of spline output: each
+// fitted contour is optimised against the input's anti-aliasing (Yang et
+// al. 2016), its segments merged and split, and circles recognised.
+type RefineOptions struct {
+	Enabled    bool
+	Sweeps     int            // 1..10; passes over the contour's pieces
+	MaxIter    int            // 1..200; L-BFGS iterations per piece
+	Weights    refine.Weights // prior weights, finite and non-negative
+	MergeSplit bool           // merge smooth joints, split bad fits
+	Primitives bool           // replace near-circles by exact circles
 }
 
 // DefaultOptions returns the bw/spline defaults, PresetOptions(PresetBW).
@@ -95,6 +111,8 @@ func PresetOptions(p Preset) Options {
 		FitTolerance:      1.0,
 
 		Hierarchical: HierarchicalCutout,
+
+		Refine: RefineOptions{Sweeps: 3, MaxIter: 30, Weights: refine.DefaultWeights, MergeSplit: true, Primitives: true},
 	}
 	switch p {
 	case PresetPoster:
@@ -178,6 +196,31 @@ func (o Options) Validate() error {
 	case HierarchicalStacked, HierarchicalCutout:
 	default:
 		return &ValidationError{"Hierarchical", fmt.Sprintf("unknown value %q", string(o.Hierarchical))}
+	}
+	if o.Refine.Enabled {
+		if err := o.Refine.validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validate checks the refinement ranges; only consulted when enabled, so
+// a caller that never touches refinement keeps a valid zero value.
+func (r RefineOptions) validate() error {
+	if r.Sweeps < 1 || r.Sweeps > 10 {
+		return &ValidationError{"Refine", fmt.Sprintf("Sweeps %d out of range 1..10", r.Sweeps)}
+	}
+	if r.MaxIter < 1 || r.MaxIter > 200 {
+		return &ValidationError{"Refine", fmt.Sprintf("MaxIter %d out of range 1..200", r.MaxIter)}
+	}
+	for _, w := range []struct {
+		name string
+		v    float64
+	}{{"Spt", r.Weights.Spt}, {"Apt", r.Weights.Apt}, {"Hpt", r.Weights.Hpt}, {"Lpt", r.Weights.Lpt}} {
+		if math.IsNaN(w.v) || math.IsInf(w.v, 0) || w.v < 0 {
+			return &ValidationError{"Refine", fmt.Sprintf("weight %s %g must be finite and non-negative", w.name, w.v)}
+		}
 	}
 	return nil
 }
