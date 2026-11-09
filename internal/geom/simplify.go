@@ -66,9 +66,9 @@ func lsqLine(pts []Vec2) (c, d Vec2) {
 	var sxx, sxy, syy float64
 	for _, p := range pts {
 		v := p.Sub(c)
-		sxx += v.X * v.X
-		sxy += v.X * v.Y
-		syy += v.Y * v.Y
+		sxx += float64(v.X * v.X)
+		sxy += float64(v.X * v.Y)
+		syy += float64(v.Y * v.Y)
 	}
 	theta := 0.5 * math.Atan2(2*sxy, sxx-syy)
 	return c, Vec2{X: math.Cos(theta), Y: math.Sin(theta)}

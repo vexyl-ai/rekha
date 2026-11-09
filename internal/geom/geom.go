@@ -24,10 +24,22 @@ func (a Vec2) Sub(b Vec2) Vec2 { return Vec2{a.X - b.X, a.Y - b.Y} }
 func (a Vec2) Scale(k float64) Vec2 { return Vec2{a.X * k, a.Y * k} }
 
 // Dot returns a·b.
-func (a Vec2) Dot(b Vec2) float64 { return a.X*b.X + a.Y*b.Y }
+//
+// Products are rounded explicitly before they are summed, here and in the
+// other arithmetic helpers, so the compiler cannot fuse them into a
+// multiply-add on arm64 and give results that differ in the last bit from
+// amd64: tie-breaks on distances and turns must come out the same on every
+// architecture.
+func (a Vec2) Dot(b Vec2) float64 { return float64(a.X*b.X) + float64(a.Y*b.Y) }
+
+// Cross returns the z component of a × b.
+func Cross(a, b Vec2) float64 { return float64(a.X*b.Y) - float64(a.Y*b.X) }
+
+// LenSq returns |a|².
+func (a Vec2) LenSq() float64 { return float64(a.X*a.X) + float64(a.Y*a.Y) }
 
 // Len returns |a|.
-func (a Vec2) Len() float64 { return math.Hypot(a.X, a.Y) }
+func (a Vec2) Len() float64 { return math.Sqrt(a.LenSq()) }
 
 // Norm returns a/|a|, or the zero vector when a is zero.
 func (a Vec2) Norm() Vec2 {
@@ -96,5 +108,5 @@ func PerpDist(p, a, b Vec2) float64 {
 		return p.Sub(a).Len()
 	}
 	v := p.Sub(a)
-	return math.Abs(d.X*v.Y-d.Y*v.X) / l
+	return math.Abs(Cross(d, v)) / l
 }

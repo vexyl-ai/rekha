@@ -71,10 +71,18 @@ func FitClosed(pts []geom.Vec2, maxErr float64) []Segment {
 		c = c.Add(p)
 	}
 	c = c.Scale(1 / float64(n))
-	far, farD := 0, -1.0
+	// On a symmetric shape two points tie for farthest, and rounding
+	// differs between architectures, so the first point within a relative
+	// 1e-12 of the maximum is taken rather than the strict maximum.
+	farD := 0.0
+	for _, p := range pts {
+		farD = math.Max(farD, p.Sub(c).LenSq())
+	}
+	far := 0
 	for i, p := range pts {
-		if d := p.Sub(c).Len(); d > farD {
-			far, farD = i, d
+		if p.Sub(c).LenSq() >= farD*(1-1e-12) {
+			far = i
+			break
 		}
 	}
 	start := smoothPoint(pts, far, true)
@@ -137,9 +145,9 @@ func lineDirection(pts []geom.Vec2) geom.Vec2 {
 	var sxx, sxy, syy float64
 	for _, p := range pts {
 		d := p.Sub(mean)
-		sxx += d.X * d.X
-		sxy += d.X * d.Y
-		syy += d.Y * d.Y
+		sxx += float64(d.X * d.X)
+		sxy += float64(d.X * d.Y)
+		syy += float64(d.Y * d.Y)
 	}
 	// Principal eigenvector of [[sxx sxy][sxy syy]].
 	var dir geom.Vec2
@@ -223,7 +231,7 @@ func straight(pts []geom.Vec2, errSq float64) bool {
 		if l2 == 0 {
 			d2 = ap.Dot(ap)
 		} else {
-			cross := ab.X*ap.Y - ab.Y*ap.X
+			cross := geom.Cross(ab, ap)
 			d2 = cross * cross / l2
 			sum += cross / math.Sqrt(l2)
 		}
@@ -308,7 +316,7 @@ func maxError(pts []geom.Vec2, bez Cubic, u []float64) (maxSq float64, worst int
 		}
 		// Signed offset along the curve normal.
 		if tan := bez.d1(u[i]); tan != (geom.Vec2{}) {
-			sum += (tan.X*d.Y - tan.Y*d.X) / tan.Len()
+			sum += geom.Cross(tan, d) / tan.Len()
 		}
 	}
 	if len(pts) > 2 {

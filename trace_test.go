@@ -9,6 +9,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/bitmap"
@@ -111,11 +113,37 @@ func TestTraceGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: %v (run with -update)", path, err)
 			}
-			if !bytes.Equal(want, buf.Bytes()) {
+			if !svgClose(want, buf.Bytes()) {
 				t.Errorf("%s differs from golden", path)
 			}
 		}
 	}
+}
+
+var svgNumber = regexp.MustCompile(`-?[0-9]+(\.[0-9]+)?`)
+
+// svgClose compares two SVG documents: identical apart from numbers, which
+// may differ by one unit in the last printed decimal. Floating-point
+// rounding differs between architectures (fused multiply-add on arm64), so
+// goldens are not byte-exact across them.
+func svgClose(a, b []byte) bool {
+	na, nb := svgNumber.FindAllIndex(a, -1), svgNumber.FindAllIndex(b, -1)
+	if len(na) != len(nb) {
+		return false
+	}
+	pa, pb := 0, 0
+	for i := range na {
+		if !bytes.Equal(a[pa:na[i][0]], b[pb:nb[i][0]]) {
+			return false
+		}
+		x, err1 := strconv.ParseFloat(string(a[na[i][0]:na[i][1]]), 64)
+		y, err2 := strconv.ParseFloat(string(b[nb[i][0]:nb[i][1]]), 64)
+		if err1 != nil || err2 != nil || math.Abs(x-y) > 0.011 {
+			return false
+		}
+		pa, pb = na[i][1], nb[i][1]
+	}
+	return bytes.Equal(a[pa:], b[pb:])
 }
 
 func TestTraceDeterministic(t *testing.T) {

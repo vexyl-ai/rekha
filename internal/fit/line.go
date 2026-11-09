@@ -21,12 +21,12 @@ func FitLine(pts []geom.Vec2) (p, dir geom.Vec2) {
 // Intersect returns the intersection of the lines p1+s·d1 and p2+t·d2.
 // ok is false when the lines are parallel.
 func Intersect(p1, d1, p2, d2 geom.Vec2) (geom.Vec2, bool) {
-	den := d1.X*d2.Y - d1.Y*d2.X
+	den := geom.Cross(d1, d2)
 	if math.Abs(den) < 1e-9 {
 		return geom.Vec2{}, false
 	}
 	w := p2.Sub(p1)
-	s := (w.X*d2.Y - w.Y*d2.X) / den
+	s := geom.Cross(w, d2) / den
 	return p1.Add(d1.Scale(s)), true
 }
 

@@ -447,5 +447,5 @@ func straightEdgeVertices(dense []geom.Vec2, dssIdx []int, have []vertex) []vert
 
 // angle returns the unsigned angle in radians between unit vectors a and b.
 func angle(a, b geom.Vec2) float64 {
-	return math.Abs(math.Atan2(a.X*b.Y-a.Y*b.X, a.Dot(b)))
+	return math.Abs(math.Atan2(geom.Cross(a, b), a.Dot(b)))
 }

@@ -18,7 +18,7 @@ func Corners(poly []Vec2, thresholdDeg float64) []int {
 		cur := poly[i]
 		a := cur.Sub(armPoint(poly, i, -1))
 		b := armPoint(poly, i, +1).Sub(cur)
-		cross := a.X*b.Y - a.Y*b.X
+		cross := Cross(a, b)
 		dot := a.Dot(b)
 		deg := math.Abs(math.Atan2(cross, dot)) * 180 / math.Pi
 		if deg > thresholdDeg {
