@@ -23,15 +23,25 @@ func BuiltinTools() []Tool {
 // RekhaTool returns the tool entry for a rekha binary at bin, run with the
 // bw preset so the comparison with the bilevel reference tools is fair.
 func RekhaTool(bin string) Tool {
-	return Tool{Name: "rekha", Bin: bin, Args: []string{"--preset", "bw", "-o", "{out}", "{in}"}, Input: "png"}
+	return rekhaPreset(bin, "rekha", "bw")
+}
+
+// RekhaTools returns one tool per preset for the rekha binary at bin:
+// rekha (bw), rekha-poster and rekha-photo.
+func RekhaTools(bin string) []Tool {
+	return []Tool{RekhaTool(bin), rekhaPreset(bin, "rekha-poster", "poster"), rekhaPreset(bin, "rekha-photo", "photo")}
+}
+
+func rekhaPreset(bin, name, preset string) Tool {
+	return Tool{Name: name, Bin: bin, Args: []string{"--preset", preset, "-o", "{out}", "{in}"}, Input: "png"}
 }
 
 // ByName returns the builtin tools whose names appear in names, in the
-// order given. "rekha" resolves to RekhaTool("rekha"); the caller replaces
-// its Bin with the configured path. Unknown names are returned in the
+// order given. The rekha tools resolve with Bin "rekha"; the caller
+// replaces it with the configured path. Unknown names are returned in the
 // second value.
 func ByName(names []string) ([]Tool, []string) {
-	all := append(BuiltinTools(), RekhaTool("rekha"))
+	all := append(BuiltinTools(), RekhaTools("rekha")...)
 	var tools []Tool
 	var unknown []string
 	for _, n := range names {

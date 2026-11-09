@@ -223,3 +223,27 @@ func TestByNameKnowsRekha(t *testing.T) {
 		t.Fatalf("tools %v unknown %v", tools, unknown)
 	}
 }
+
+func TestRekhaToolsPresets(t *testing.T) {
+	tools := RekhaTools("/x/rekha")
+	want := map[string]string{"rekha": "bw", "rekha-poster": "poster", "rekha-photo": "photo"}
+	if len(tools) != len(want) {
+		t.Fatalf("got %d tools", len(tools))
+	}
+	for _, tool := range tools {
+		preset, ok := want[tool.Name]
+		if !ok || tool.Bin != "/x/rekha" || tool.Input != "png" {
+			t.Fatalf("unexpected tool %+v", tool)
+		}
+		if got := strings.Join(tool.Args, " "); got != "--preset "+preset+" -o {out} {in}" {
+			t.Fatalf("%s args %q", tool.Name, got)
+		}
+	}
+}
+
+func TestByNameKnowsRekhaPoster(t *testing.T) {
+	tools, unknown := ByName([]string{"rekha-poster", "vtracer", "rekha-photo"})
+	if len(unknown) != 0 || len(tools) != 3 || tools[0].Name != "rekha-poster" || tools[2].Name != "rekha-photo" {
+		t.Fatalf("tools %v unknown %v", tools, unknown)
+	}
+}

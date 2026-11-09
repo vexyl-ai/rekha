@@ -34,7 +34,7 @@ func run(args []string) int {
 		return cli.ExitUsage
 	}
 
-	tools := append(bench.BuiltinTools(), bench.RekhaTool(rekhaPath))
+	tools := append(bench.BuiltinTools(), bench.RekhaTools(rekhaPath)...)
 	if *toolsFlag != "" {
 		var unknown []string
 		tools, unknown = bench.ByName(strings.Split(*toolsFlag, ","))
@@ -43,7 +43,7 @@ func run(args []string) int {
 			return cli.ExitUsage
 		}
 		for i := range tools {
-			if tools[i].Name == "rekha" {
+			if strings.HasPrefix(tools[i].Name, "rekha") {
 				tools[i].Bin = rekhaPath
 			}
 		}
