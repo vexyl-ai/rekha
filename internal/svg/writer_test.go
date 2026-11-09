@@ -74,3 +74,25 @@ func TestWriteDocument(t *testing.T) {
 		t.Fatalf("got:\n%s\nwant:\n%s", buf.String(), want)
 	}
 }
+
+// A path with a stroke carries the stroke attributes; one without carries
+// none, so existing output is unchanged.
+func TestWriteStrokeAttributes(t *testing.T) {
+	sq := []Subpath{{Segs: []fit.Segment{
+		ln(geom.Vec2{X: 0, Y: 0}, geom.Vec2{X: 2, Y: 0}),
+		ln(geom.Vec2{X: 2, Y: 0}, geom.Vec2{X: 2, Y: 2}),
+		ln(geom.Vec2{X: 2, Y: 2}, geom.Vec2{X: 0, Y: 2}),
+		ln(geom.Vec2{X: 0, Y: 2}, geom.Vec2{X: 0, Y: 0}),
+	}}}
+	var buf bytes.Buffer
+	if err := Write(&buf, 2, 2, []Path{{Fill: "#ff0000", Stroke: "#ff0000", StrokeWidth: 0.5, Subpaths: sq}, {Fill: "#000000", Subpaths: sq}}, 2); err != nil {
+		t.Fatal(err)
+	}
+	want := "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"2\" height=\"2\" viewBox=\"0 0 2 2\">\n" +
+		"<path fill=\"#ff0000\" stroke=\"#ff0000\" stroke-width=\"0.5\" stroke-linejoin=\"round\" d=\"M0 0H2V2H0Z\"/>\n" +
+		"<path fill=\"#000000\" d=\"M0 0H2V2H0Z\"/>\n" +
+		"</svg>\n"
+	if buf.String() != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", buf.String(), want)
+	}
+}

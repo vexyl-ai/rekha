@@ -16,10 +16,14 @@ type Subpath struct {
 }
 
 // Path is one filled shape: the first subpath is the outer boundary, the
-// rest are holes (opposite orientation, nonzero fill).
+// rest are holes (opposite orientation, nonzero fill). A non-empty Stroke
+// is drawn StrokeWidth wide with round joins, which cutout output uses to
+// cover the hairline seams between abutting shapes.
 type Path struct {
-	Fill     string
-	Subpaths []Subpath
+	Fill        string
+	Stroke      string
+	StrokeWidth float64
+	Subpaths    []Subpath
 }
 
 // FormatNum prints v with prec decimals, trimming trailing zeros and the
@@ -101,7 +105,11 @@ func Write(w io.Writer, width, height int, paths []Path, prec int) error {
 		if d == "" {
 			continue
 		}
-		if _, err := fmt.Fprintf(w, "<path fill=\"%s\" d=\"%s\"/>\n", p.Fill, d); err != nil {
+		stroke := ""
+		if p.Stroke != "" {
+			stroke = fmt.Sprintf(" stroke=\"%s\" stroke-width=\"%s\" stroke-linejoin=\"round\"", p.Stroke, FormatNum(p.StrokeWidth, prec))
+		}
+		if _, err := fmt.Fprintf(w, "<path fill=\"%s\"%s d=\"%s\"/>\n", p.Fill, stroke, d); err != nil {
 			return err
 		}
 	}

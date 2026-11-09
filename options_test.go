@@ -151,3 +151,19 @@ func TestValidateRefineRanges(t *testing.T) {
 		t.Fatalf("defaults with refinement enabled invalid: %v", err)
 	}
 }
+
+func TestPresetCutoutStroke(t *testing.T) {
+	for p, want := range map[Preset]float64{PresetBW: 0, PresetPoster: 0.5, PresetPhoto: 0.5} {
+		if got := PresetOptions(p).CutoutStroke; got != want {
+			t.Errorf("%s: CutoutStroke %v, want %v", p, got, want)
+		}
+	}
+	for _, v := range []float64{-1, 5} {
+		o := PresetOptions(PresetPoster)
+		o.CutoutStroke = v
+		var ve *ValidationError
+		if err := o.Validate(); !errors.As(err, &ve) || ve.Field != "CutoutStroke" {
+			t.Errorf("CutoutStroke %v: got %v", v, err)
+		}
+	}
+}

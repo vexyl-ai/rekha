@@ -325,3 +325,57 @@ func TestWhiteContentAtEdgeKept(t *testing.T) {
 		}
 	}
 }
+
+// Cutout colour paths carry a stroke in their own colour so abutting
+// shapes overlap by half its width; stacked output and the bw preset
+// never do.
+func TestCutoutPathsCarryStroke(t *testing.T) {
+	img := synth(t, "aa-abut")
+	o := PresetOptions(PresetPoster)
+	o.Hierarchical = HierarchicalCutout
+	r, err := Trace(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Paths) == 0 {
+		t.Fatal("no paths")
+	}
+	for i, p := range r.Paths {
+		if p.Stroke != p.Fill || p.StrokeWidth != 0.5 {
+			t.Fatalf("cutout path %d: stroke %q width %v, want fill %q and 0.5", i, p.Stroke, p.StrokeWidth, p.Fill)
+		}
+	}
+	o.Hierarchical = HierarchicalStacked
+	if r, err = Trace(img, o); err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range r.Paths {
+		if p.Stroke != "" || p.StrokeWidth != 0 {
+			t.Fatalf("stacked path %d has stroke %q %v", i, p.Stroke, p.StrokeWidth)
+		}
+	}
+	if r, err = Trace(synth(t, "circle-aa"), PresetOptions(PresetBW)); err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range r.Paths {
+		if p.Stroke != "" {
+			t.Fatalf("bw path %d has stroke %q", i, p.Stroke)
+		}
+	}
+}
+
+// Pixel mode stays exact: no stroke, so the pixel oracle holds.
+func TestCutoutStrokeNotInPixelMode(t *testing.T) {
+	o := PresetOptions(PresetPoster)
+	o.Hierarchical = HierarchicalCutout
+	o.Mode = ModePixel
+	r, err := Trace(synth(t, "aa-abut"), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range r.Paths {
+		if p.Stroke != "" {
+			t.Fatalf("pixel-mode path %d has stroke %q", i, p.Stroke)
+		}
+	}
+}

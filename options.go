@@ -75,7 +75,8 @@ type Options struct {
 	Palette        []color.NRGBA // fixed palette, at most 256 distinct entries; empty = quantise
 	Hierarchical   Hierarchical
 
-	Refine RefineOptions // spline mode only
+	Refine       RefineOptions // spline mode only
+	CutoutStroke float64       // px, 0..4; cutout polygon/spline paths are stroked in their fill to hide seams
 }
 
 // RefineOptions controls the Phase 3 refinement of spline output: each
@@ -119,12 +120,14 @@ func PresetOptions(p Preset) Options {
 		o.MaxColors = 0
 		o.ColorTolerance = 0.08
 		o.Hierarchical = HierarchicalStacked
+		o.CutoutStroke = 0.5
 	case PresetPhoto:
 		o.MaxColors = 0
 		o.ColorTolerance = 0.04
 		o.FilterSpeckle = 16
 		o.FitTolerance = 1.5
 		o.Hierarchical = HierarchicalStacked
+		o.CutoutStroke = 0.5
 	}
 	return o
 }
@@ -201,6 +204,9 @@ func (o Options) Validate() error {
 		if err := o.Refine.validate(); err != nil {
 			return err
 		}
+	}
+	if err := inRangeF("CutoutStroke", o.CutoutStroke, 0, 4); err != nil {
+		return err
 	}
 	return nil
 }
