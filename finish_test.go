@@ -252,3 +252,30 @@ func TestStackedTouchingSiblingsExtendUnderLater(t *testing.T) {
 		t.Errorf("red path covers %d pixels, want just its own %d", n, 24*24)
 	}
 }
+
+// The minority colour connects across a checkerboard corner, so a
+// one-pixel diagonal line traces as one shape, whichever palette index
+// it got.
+func TestStackedDiagonalLineIsOneShape(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for i := 0; i < len(img.Pix); i += 4 {
+		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = 255, 255, 255, 255
+	}
+	for i := 1; i < 64; i++ { // off the corner, so white is palette entry 0
+		img.SetNRGBA(i, i, color.NRGBA{0, 0, 0, 255})
+	}
+	o := PresetOptions(PresetPoster)
+	o.Mode = ModePixel
+	o.FilterSpeckle = 0
+	r, err := Trace(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Paths) != 1 || len(r.Paths[0].Subpaths) != 1 {
+		n := 0
+		for _, p := range r.Paths {
+			n += len(p.Subpaths)
+		}
+		t.Fatalf("got %d paths, %d subpaths; want one black shape", len(r.Paths), n)
+	}
+}

@@ -140,6 +140,10 @@ func (s *Segmentation) layers(o Options) []layer {
 		}
 	}
 	perColour := make([][]contour.Shape, len(colours))
+	counts := make([]int, len(s.Palette))
+	for _, l := range s.Labels {
+		counts[l]++
+	}
 	var bufs sync.Pool
 	parallel(len(colours), func(i int) {
 		bm, _ := bufs.Get().(*bitmap.Bitmap)
@@ -160,7 +164,7 @@ func (s *Segmentation) layers(o Options) []layer {
 		if o.Preset == PresetBW {
 			perColour[i] = contour.BuildShapes(contour.Trace(bm, o.TurnPolicy), minArea)
 		} else {
-			perColour[i] = contour.BuildShapes(contour.TraceFunc(bm, s.saddle(label)), minArea)
+			perColour[i] = contour.BuildShapes(contour.TraceFunc(bm, s.saddle(label, counts)), minArea)
 		}
 		bufs.Put(bm)
 	})
@@ -346,11 +350,14 @@ func fillOuter(pts []geom.Point, w, h int, set func(x, y int)) {
 }
 
 // saddle returns the per-vertex saddle rule for tracing colour c: at a
-// 2×2 checkerboard of c against one other colour d, the lower palette
-// index stays connected and the other is cut, so the two colours' contours
-// never both claim the corner and every pixel lies inside exactly one
-// shape. Against two different colours, c connects.
-func (s *Segmentation) saddle(c uint8) func(x, y int) bool {
+// 2×2 checkerboard of c against one other colour d, the colour with fewer
+// pixels in the image (counts; ties to the lower palette index) stays
+// connected and the other is cut, so the two colours' contours never both
+// claim the corner and every pixel lies inside exactly one shape. The
+// minority is the thin feature: a one-pixel diagonal line stays one shape
+// on any background. Against two different colours, c connects. Cleanup
+// joins components by the same rule (region.minorityConnects).
+func (s *Segmentation) saddle(c uint8, counts []int) func(x, y int) bool {
 	w := s.Width
 	return func(x, y int) bool {
 		nw, ne := s.Labels[(y-1)*w+x-1], s.Labels[(y-1)*w+x]
@@ -361,7 +368,7 @@ func (s *Segmentation) saddle(c uint8) func(x, y int) bool {
 		} else {
 			d1, d2 = nw, se
 		}
-		return d1 != d2 || c < d1
+		return d1 != d2 || counts[c] < counts[d1] || (counts[c] == counts[d1] && c < d1)
 	}
 }
 

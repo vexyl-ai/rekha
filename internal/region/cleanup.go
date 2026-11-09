@@ -32,7 +32,7 @@ func Cleanup(labels []uint8, w, h int, palette []colour.OKLab, minArea int, tol 
 			return false
 		}
 		a, b := palette[c.neighbours[0].label], palette[c.neighbours[1].label]
-		return segmentDist(palette[c.label], a, b) <= tol
+		return colour.SegmentDist(palette[c.label], a, b) <= tol
 	})
 	return compact(labels, palette)
 }
@@ -63,18 +63,6 @@ func pass(labels []uint8, w, h int, absorb func(*component) bool) {
 			return
 		}
 	}
-}
-
-// segmentDist is the distance from c to the segment a→b in OKLab.
-func segmentDist(c, a, b colour.OKLab) float64 {
-	dl, da, db := b.L-a.L, b.A-a.A, b.B-a.B
-	den := float64(dl*dl) + float64(da*da) + float64(db*db)
-	t := 0.0
-	if den > 0 {
-		t = (float64((c.L-a.L)*dl) + float64((c.A-a.A)*da) + float64((c.B-a.B)*db)) / den
-		t = min(max(t, 0), 1)
-	}
-	return colour.Dist(c, colour.OKLab{L: a.L + t*dl, A: a.A + t*da, B: a.B + t*db})
 }
 
 // compact renumbers labels by first appearance and returns the matching

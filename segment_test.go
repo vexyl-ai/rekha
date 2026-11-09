@@ -149,3 +149,32 @@ func TestSegmentKeepsSmallSubject(t *testing.T) {
 		}
 	}
 }
+
+// A one-pixel diagonal line is a chain of pixels that touch only at
+// corners. Tracing connects the minority colour across such corners, so
+// cleanup must see the line as one component too, not as specks to erase.
+func TestSegmentKeepsDiagonalLine(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for i := 0; i < len(img.Pix); i += 4 {
+		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = 255, 255, 255, 255
+	}
+	for i := 1; i < 64; i++ { // off the corner, so white is palette entry 0
+		img.SetNRGBA(i, i, color.NRGBA{0, 0, 0, 255})
+	}
+	s, err := Segment(img, PresetOptions(PresetPoster))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Palette) != 2 {
+		t.Fatalf("palette %v, want black and white", s.Palette)
+	}
+	dark := 0
+	for _, l := range s.Labels {
+		if l == 1 {
+			dark++
+		}
+	}
+	if dark != 63 {
+		t.Fatalf("%d pixels labelled black after cleanup, want 63", dark)
+	}
+}

@@ -63,3 +63,19 @@ func TestOKLabDistWhiteBlack(t *testing.T) {
 		t.Fatalf("hex %q", h)
 	}
 }
+
+// An sRGB-blended mixture of two colours is a mixture (distance ~0), though
+// it can sit far from the straight OKLab segment between them.
+func TestMixDistFollowsSRGBBlend(t *testing.T) {
+	red, blue := FromSRGB8(220, 30, 30), FromSRGB8(30, 60, 220)
+	mix := FromSRGB8(125, 45, 125)
+	if d := MixDist(mix, red, blue); d > 0.01 {
+		t.Fatalf("MixDist of the 50%% blend = %.3f, want ~0", d)
+	}
+	if d := SegmentDist(mix, red, blue); d < 0.05 {
+		t.Fatalf("SegmentDist of the 50%% blend = %.3f; expected the OKLab segment to miss it", d)
+	}
+	if d := MixDist(FromSRGB8(0, 255, 0), red, blue); d < 0.2 {
+		t.Fatalf("green reads as a red/blue mixture: %.3f", d)
+	}
+}

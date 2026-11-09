@@ -118,14 +118,18 @@ func (m *moments) split(bx box) (box, box, bool) {
 	return best1, best2, found
 }
 
-// coherentShare is the share of a box's far mass (cells beyond tol from
-// its centroid) that one cell must hold for the box to count as hiding a
-// subject: anti-aliasing bands and noise spread their far mass over many
-// cells, a small flat shape puts it all in one. coherentMin is the least
-// weight such a cell needs.
+// A far cell (beyond tol from its box's centroid) is explained, and so
+// not a hidden subject, when it lies within tol of an sRGB mixture of the
+// centroid and another box's centroid (anti-aliasing between the two
+// colours, see colour.MixDist) or within tailReach·tol of the centroid (the tail of noise
+// around a flat colour). Of the unexplained far mass, one cell holding
+// coherentShare of it with at least coherentMin weight marks a subject:
+// noise spreads its far mass over many cells, a small flat shape puts it
+// all in one.
 const (
 	coherentShare = 0.25
 	coherentMin   = 4
+	tailReach     = 2.0
 )
 
 // wuBox is a live histogram box with the cells it holds.
@@ -146,9 +150,11 @@ type wuBox struct {
 // split order.
 //
 // A box is within tolerance when its RMS radius sqrt(SSE/weight) is below
-// tol and none of its far cells is coherent (see coherentShare): the RMS
-// test alone lets a large background absorb a small subject, since weight
-// normalisation hides anything under (tol/distance)² of the pixels.
+// tol and none of its unexplained far cells is coherent (see
+// coherentShare): the RMS test alone lets a large background absorb a
+// small subject, since weight normalisation hides anything under
+// (tol/distance)² of the pixels. The test is run when a box is next in
+// line to be split, so the other boxes it is judged against exist.
 func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 	if len(cells) == 0 {
 		return nil
@@ -163,7 +169,7 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		bins[i] = [3]int{bin(c.Lab.L, 0, 1), bin(c.Lab.A, -wuAB, wuAB), bin(c.Lab.B, -wuAB, wuAB)}
 		all[i] = i
 	}
-	within := func(bx box, idx []int) bool {
+	within := func(bx box, idx []int, others []colour.OKLab) bool {
 		w, sse, c := m.stats(bx)
 		if w == 0 {
 			return true
@@ -172,11 +178,18 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 			return false
 		}
 		far, heaviest := 0, 0
+	cells:
 		for _, i := range idx {
-			if colour.Dist(cells[i].Lab, c) > tol {
-				far += cells[i].Weight
-				heaviest = max(heaviest, cells[i].Weight)
+			if colour.Dist(cells[i].Lab, c) <= tailReach*tol {
+				continue
 			}
+			for _, o := range others {
+				if colour.MixDist(cells[i].Lab, c, o) <= tol {
+					continue cells
+				}
+			}
+			far += cells[i].Weight
+			heaviest = max(heaviest, cells[i].Weight)
 		}
 		return heaviest < coherentMin || float64(heaviest) < coherentShare*float64(far)
 	}
@@ -184,7 +197,17 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		return b[0] >= bx.l0 && b[0] < bx.l1 && b[1] >= bx.a0 && b[1] < bx.a1 && b[2] >= bx.b0 && b[2] < bx.b1
 	}
 	root := box{0, wuBins, 0, wuBins, 0, wuBins}
-	boxes := []wuBox{{box: root, cells: all, done: within(root, all)}}
+	boxes := []wuBox{{box: root, cells: all}}
+	centroids := func(skip int) []colour.OKLab {
+		var out []colour.OKLab
+		for i, bx := range boxes {
+			if i != skip {
+				_, _, c := m.stats(bx.box)
+				out = append(out, c)
+			}
+		}
+		return out
+	}
 	for len(boxes) < maxK {
 		best, bestSSE := -1, -1.0
 		for i, bx := range boxes {
@@ -197,6 +220,10 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		}
 		if best < 0 {
 			break
+		}
+		if within(boxes[best].box, boxes[best].cells, centroids(best)) {
+			boxes[best].done = true
+			continue
 		}
 		lo, hi, ok := m.split(boxes[best].box)
 		if !ok {
@@ -211,8 +238,8 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 				hiCells = append(hiCells, i)
 			}
 		}
-		boxes[best] = wuBox{box: lo, cells: loCells, done: within(lo, loCells)}
-		boxes = append(boxes, wuBox{box: hi, cells: hiCells, done: within(hi, hiCells)})
+		boxes[best] = wuBox{box: lo, cells: loCells}
+		boxes = append(boxes, wuBox{box: hi, cells: hiCells})
 	}
 	pal := make([]colour.OKLab, 0, len(boxes))
 	for _, bx := range boxes {

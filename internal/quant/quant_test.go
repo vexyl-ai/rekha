@@ -54,7 +54,8 @@ func TestWuRecoversThreeClusters(t *testing.T) {
 }
 
 // Cells within the tolerance of a cluster join it; a cell further away
-// gets its own entry however few pixels it holds.
+// gets its own entry however few pixels it holds, unless it is a mixture
+// of two existing entries (see TestWuIgnoresAABand).
 func TestWuToleranceStopsAtTwo(t *testing.T) {
 	red, blue := colour.FromSRGB8(255, 0, 0), colour.FromSRGB8(0, 0, 255)
 	nearRed := colour.OKLab{L: red.L + 0.03, A: red.A, B: red.B}
@@ -62,8 +63,8 @@ func TestWuToleranceStopsAtTwo(t *testing.T) {
 	if pal := Wu(cells, 16, 0.08); len(pal) != 2 {
 		t.Fatalf("got %d entries %v, want 2", len(pal), pal)
 	}
-	mid := colour.OKLab{L: (red.L + blue.L) / 2, A: (red.A + blue.A) / 2, B: (red.B + blue.B) / 2}
-	cells = []Cell{{Lab: red, Weight: 1000}, {Lab: blue, Weight: 1000}, {Lab: mid, Weight: 40}}
+	green := colour.FromSRGB8(0, 255, 0)
+	cells = []Cell{{Lab: red, Weight: 1000}, {Lab: blue, Weight: 1000}, {Lab: green, Weight: 40}}
 	if pal := Wu(cells, 16, 0.08); len(pal) != 3 {
 		t.Fatalf("got %d entries %v, want 3", len(pal), pal)
 	}
@@ -207,5 +208,39 @@ func TestLookupSplitsAtSRGBMidpoint(t *testing.T) {
 	}
 	if b := l.Blend[CellIndex(250, 250, 250, 7)]; b < 245 {
 		t.Fatalf("grey 250 blend %d", b)
+	}
+}
+
+// mixRGB is the corpus anti-aliasing mix: sRGB channels blended by coverage.
+func mixRGB(a, b [3]uint8, cov float64) [3]uint8 {
+	var out [3]uint8
+	for i := range out {
+		out[i] = uint8(float64(a[i])*(1-cov) + float64(b[i])*cov + 0.5)
+	}
+	return out
+}
+
+// An anti-aliased edge between two flat colours puts a few heavy cells on
+// the segment between them in colour space; those are mixtures, not a
+// third colour, and must not earn a palette entry.
+func TestWuIgnoresAABand(t *testing.T) {
+	red, blue := [3]uint8{220, 30, 30}, [3]uint8{30, 60, 220}
+	cells := []Cell{cluster(red, 32000), cluster(blue, 32000)}
+	for i := 1; i < 16; i++ {
+		cells = append(cells, cluster(mixRGB(red, blue, float64(i)/16), 100))
+	}
+	if pal := Wu(cells, 0, 0.08); len(pal) != 2 {
+		t.Fatalf("got %d entries %v, want red and blue", len(pal), pal)
+	}
+}
+
+// Noise around a flat colour has a thin tail beyond the tolerance; the tail
+// is not a subject, so a noisy disc on a noisy ground stays two colours.
+func TestWuIgnoresNoiseTail(t *testing.T) {
+	img := corpus.Render(corpus.All()[len(corpus.All())-1]) // noisy-disc
+	rgb, _, _ := bitmap.Flatten(img)
+	pal := Wu(Cells(rgb, 6), 0, 0.08)
+	if len(pal) > 3 {
+		t.Fatalf("got %d entries %v, want black, white and at most an edge band", len(pal), pal)
 	}
 }

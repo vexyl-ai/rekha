@@ -20,12 +20,28 @@ type component struct {
 	neighbours []neighbour
 }
 
-// components labels the 4-connected components of labels (w×h) with
+// minorityConnects reports whether, at a 2×2 checkerboard of labels c and
+// d, c is the colour that stays connected across the corner: the one with
+// fewer pixels in the image, ties to the lower label. Tracing resolves
+// saddles by the same rule, so a one-pixel diagonal line is one component
+// here and one shape there.
+func minorityConnects(c, d uint8, counts []int) bool {
+	return counts[c] < counts[d] || (counts[c] == counts[d] && c < d)
+}
+
+// components labels the connected components of labels (w×h) with
 // union–find and returns them in scan order of their first pixel, each
 // with its neighbours sorted by border length descending then label
-// ascending.
+// ascending. Pixels connect across edges, and across a corner when the
+// tracer would connect them there: at a two-colour checkerboard the
+// minority colour (minorityConnects), at three colours the diagonal pair.
+// Perimeters and borders count edges only.
 func components(labels []uint8, w, h int) []component {
 	n := w * h
+	counts := make([]int, 256)
+	for _, l := range labels {
+		counts[l]++
+	}
 	parent := make([]int32, n)
 	for i := range parent {
 		parent[i] = int32(i)
@@ -57,6 +73,21 @@ func components(labels []uint8, w, h int) []component {
 			}
 			if y+1 < h && labels[i] == labels[i+w] {
 				union(int32(i), int32(i+w))
+			}
+			if x+1 < w && y+1 < h {
+				a, b, c, d := labels[i], labels[i+1], labels[i+w], labels[i+w+1]
+				switch {
+				case a == d && b == c && a != b:
+					if minorityConnects(a, b, counts) {
+						union(int32(i), int32(i+w+1))
+					} else {
+						union(int32(i+1), int32(i+w))
+					}
+				case a == d && a != b && a != c:
+					union(int32(i), int32(i+w+1))
+				case b == c && b != a && b != d:
+					union(int32(i+1), int32(i+w))
+				}
 			}
 		}
 	}

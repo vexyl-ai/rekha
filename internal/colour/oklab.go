@@ -73,3 +73,36 @@ func (c OKLab) Hex() string {
 	r, g, b := c.ToSRGB8()
 	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
 }
+
+// SegmentDist is the distance from c to the segment a→b: how far c is
+// from being a mixture of a and b.
+func SegmentDist(c, a, b OKLab) float64 {
+	dl, da, db := b.L-a.L, b.A-a.A, b.B-a.B
+	den := float64(dl*dl) + float64(da*da) + float64(db*db)
+	t := 0.0
+	if den > 0 {
+		t = (float64((c.L-a.L)*dl) + float64((c.A-a.A)*da) + float64((c.B-a.B)*db)) / den
+		t = min(max(t, 0), 1)
+	}
+	return Dist(c, OKLab{L: a.L + t*dl, A: a.A + t*da, B: a.B + t*db})
+}
+
+// MixDist is the distance from c to the nearest anti-aliasing mixture of
+// a and b. Rasterisers blend coverage in gamma-encoded sRGB, so the
+// mixtures are the straight sRGB segment between a and b, which bows away
+// from the OKLab segment; the distance itself is measured in OKLab.
+func MixDist(c, a, b OKLab) float64 {
+	ar, ag, ab := a.ToSRGB8()
+	br, bg, bb := b.ToSRGB8()
+	cr, cg, cb := c.ToSRGB8()
+	dr, dg, db := float64(br)-float64(ar), float64(bg)-float64(ag), float64(bb)-float64(ab)
+	den := dr*dr + dg*dg + db*db
+	t := 0.0
+	if den > 0 {
+		t = ((float64(cr)-float64(ar))*dr + (float64(cg)-float64(ag))*dg + (float64(cb)-float64(ab))*db) / den
+		t = min(max(t, 0), 1)
+	}
+	round := func(v float64) uint8 { return uint8(min(max(v+0.5, 0), 255)) }
+	p := FromSRGB8(round(float64(ar)+t*dr), round(float64(ag)+t*dg), round(float64(ab)+t*db))
+	return Dist(c, p)
+}
