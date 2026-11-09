@@ -1,6 +1,10 @@
 package geom
 
-import "testing"
+import (
+	"math"
+	"sort"
+	"testing"
+)
 
 // crackRect returns the crack loop of a w×h rectangle at origin, clockwise,
 // one point per unit step.
@@ -135,5 +139,66 @@ func TestStaircaseKeepsApex(t *testing.T) {
 	}
 	if top.Y != 29 {
 		t.Fatalf("apex lost: top is %v in %v", top, got)
+	}
+}
+
+// discCrack returns the crack boundary of the pixel set whose centres lie
+// inside a disc of radius r centred on the origin, as a closed polygon of
+// unit axis-aligned steps (clockwise on screen).
+func discCrack(r float64) []Point {
+	ymin, ymax := int(math.Floor(-r)), int(math.Ceil(r))
+	type ext struct{ l, rr int }
+	rows := map[int]ext{}
+	for y := ymin; y <= ymax; y++ {
+		cy := float64(y) + 0.5
+		half := r*r - cy*cy
+		if half < 0 {
+			continue
+		}
+		w := math.Sqrt(half)
+		l := int(math.Ceil(-w - 0.5))
+		rr := int(math.Floor(w - 0.5))
+		if l <= rr {
+			rows[y] = ext{l, rr + 1} // crack x-range [l, rr+1]
+		}
+	}
+	var ys []int
+	for y := range rows {
+		ys = append(ys, y)
+	}
+	sort.Ints(ys)
+	var poly []Point
+	for _, y := range ys { // right side, going down
+		e := rows[y]
+		poly = append(poly, Point{e.rr, y}, Point{e.rr, y + 1})
+	}
+	for i := len(ys) - 1; i >= 0; i-- { // left side, going up
+		e := rows[ys[i]]
+		poly = append(poly, Point{e.l, ys[i] + 1}, Point{e.l, ys[i]})
+	}
+	return MergeCollinear(poly)
+}
+
+// Straightening must never replace a chain by a chord the chain's vertices
+// are more than a pixel from: a 45° stretch of a circle mixes 1- and
+// 2-long runs and looks like one staircase, but it bends.
+func TestStaircaseStaysWithinOnePixel(t *testing.T) {
+	poly := discCrack(96)
+	got := RemoveStaircases(poly)
+	if len(got) < 24 {
+		t.Fatalf("only %d vertices left for a radius-96 circle", len(got))
+	}
+	// Every input vertex must be within 1 px of the output polygon.
+	worst := 0.0
+	for _, p := range poly {
+		best := math.Inf(1)
+		for i := range got {
+			a, b := got[i].Vec(), got[(i+1)%len(got)].Vec()
+			best = math.Min(best, PerpDist(p.Vec(), a, b))
+		}
+		worst = math.Max(worst, best)
+	}
+	if worst > 1.0 {
+		t.Fatalf("input vertex %.2f px from the straightened polygon", worst)
 	}
 }

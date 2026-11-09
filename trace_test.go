@@ -206,3 +206,75 @@ func FuzzTrace(f *testing.F) {
 		}
 	})
 }
+
+// A star's tips are two crack corners 2 px apart after thresholding; the
+// tracer must merge them and place one sharp vertex where the flanks meet,
+// so the spline is exactly the 10-vertex polygon.
+func TestTraceSplineStarIsTenLines(t *testing.T) {
+	r, err := Trace(synth(t, "star-5"), DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Paths) != 1 || len(r.Paths[0].Subpaths) != 1 {
+		t.Fatalf("paths %d", len(r.Paths))
+	}
+	segs := r.Paths[0].Subpaths[0].Segs
+	if len(segs) != 10 {
+		t.Fatalf("got %d segments, want 10", len(segs))
+	}
+	for i, s := range segs {
+		if !s.Line {
+			t.Errorf("segment %d is a cubic", i)
+		}
+	}
+}
+
+// Spline output filled at pixel centres must agree with the thresholded
+// bitmap to within a fraction of a pixel along the boundary.
+func TestTraceSplineMatchesBitmap(t *testing.T) {
+	limits := map[string]int{"circle-aa": 200, "circle-hard": 200, "rounded-rect": 220, "star-5": 120, "noisy-disc": 220}
+	for name, limit := range limits {
+		img := synth(t, name)
+		gray, w, h := bitmap.Gray(img)
+		want := bitmap.FromGray(gray, w, h, 128)
+		r, err := Trace(img, DefaultOptions())
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := rasttest.Fill(w, h, r.Paths)
+		mis := 0
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				if got.Get(x, y) != want.Get(x, y) {
+					mis++
+				}
+			}
+		}
+		if mis > limit {
+			t.Errorf("%s: %d mismatched pixels, limit %d", name, mis, limit)
+		}
+	}
+}
+
+// A rounded rectangle has no corners sharper than the threshold, but its
+// four straight edges must still come out as lines joined by arcs, not as
+// cubics whose joints sit mid-edge.
+func TestTraceSplineRoundedRectEdgesAreLines(t *testing.T) {
+	r, err := Trace(synth(t, "rounded-rect"), DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	segs := r.Paths[0].Subpaths[0].Segs
+	lines := 0
+	for _, s := range segs {
+		if s.Line {
+			lines++
+		}
+	}
+	if lines != 4 {
+		t.Fatalf("got %d lines in %d segments, want 4", lines, len(segs))
+	}
+	if len(segs) > 12 {
+		t.Fatalf("got %d segments, want at most 12", len(segs))
+	}
+}

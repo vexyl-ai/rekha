@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	maxIterations = 4
+	maxIterations = 12
 	minFitPoints  = 4
 	// tangentWindow is how many points on each side feed a tangent
 	// estimate. Traced pixel boundaries zigzag, so adjacent points alone
@@ -64,10 +64,13 @@ func FitClosed(pts []geom.Vec2, maxErr float64) []Segment {
 			far, farD = i, d
 		}
 	}
+	start := smoothPoint(pts, far, true)
 	run := make([]geom.Vec2, 0, n+1)
-	for i := 0; i <= n; i++ {
+	run = append(run, start)
+	for i := 1; i < n; i++ {
 		run = append(run, pts[(far+i)%n])
 	}
+	run = append(run, start)
 	k := min(tangentWindow, n/2)
 	window := make([]geom.Vec2, 0, 2*k+1)
 	for i := -k; i <= k; i++ {
@@ -142,25 +145,29 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 		*out = append(*out, line(pts[0], pts[n-1]))
 		return
 	}
+	// Least squares under chord-length parameterisation, then Newton
+	// reparameterisation to convergence. Schneider accepts the first
+	// iterate within tolerance and gates the iterations on the error being
+	// within 4× tolerance; an early iterate is systematically biased (on a
+	// digitised circle it dips half a pixel inward), so we keep iterating
+	// while the fit improves and accept the best one.
 	u := chordLength(pts)
 	bez := generateBezier(pts, u, t0, t1)
 	maxSq, _ := maxError(pts, bez, u)
-	if maxSq <= errSq {
-		*out = append(*out, Segment{P: bez})
-		return
-	}
-	// Newton reparameterisation before splitting. Schneider gates this on
-	// the error being within 4× tolerance; with tight tolerances that gate
-	// splits curves that a few iterations would have fitted exactly, so we
-	// always iterate (the runs are short and the cost is negligible).
+	best, bestSq := bez, maxSq
 	for i := 0; i < maxIterations; i++ {
 		u = reparameterize(pts, u, bez)
 		bez = generateBezier(pts, u, t0, t1)
 		maxSq, _ = maxError(pts, bez, u)
-		if maxSq <= errSq {
-			*out = append(*out, Segment{P: bez})
-			return
+		if maxSq < bestSq {
+			best, bestSq = bez, maxSq
+		} else if maxSq > bestSq*1.01 {
+			break
 		}
+	}
+	if bestSq <= errSq {
+		*out = append(*out, Segment{P: best})
+		return
 	}
 	// Split at the chord-length midpoint with a shared centre tangent.
 	// Schneider splits at the worst point, but on noisy pixel boundaries
@@ -168,8 +175,13 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 	// balanced halves converge in a few levels.
 	split := midpoint(pts)
 	tc := centerTangent(pts, split).Scale(-1) // points "backwards" at split
-	fitCubic(pts[:split+1], t0, tc, errSq, out)
-	fitCubic(pts[split:], tc.Scale(-1), t1, errSq, out)
+	// The shared endpoint is the local mean, not the raw crack vertex, so
+	// the joint sits on the edge rather than on a pixel corner.
+	mid := smoothPoint(pts, split, false)
+	left := append(append(make([]geom.Vec2, 0, split+1), pts[:split]...), mid)
+	right := append([]geom.Vec2{mid}, pts[split+1:]...)
+	fitCubic(left, t0, tc, errSq, out)
+	fitCubic(right, tc.Scale(-1), t1, errSq, out)
 }
 
 // straight reports whether every point lies within sqrt(errSq) of the

@@ -1,5 +1,7 @@
 package geom
 
+import "math"
+
 // MergeCollinear drops every vertex of a closed lattice polygon whose
 // incoming and outgoing edges point the same way.
 func MergeCollinear(poly []Point) []Point {
@@ -28,6 +30,29 @@ func MergeCollinear(poly []Point) []Point {
 // of the straightened segment and are kept; its interior is dropped.
 // Where two chains abut (two same-sign turns, as at a spike's apex) both
 // boundary vertices survive, so sharp tips are preserved.
+// maxStairDev is how far, in pixels, a crack vertex of a true digital line
+// can lie from the least-squares line through its chain: at most half the
+// one-pixel band the crack of a line occupies, with some slack.
+const maxStairDev = 0.75
+
+// lsqLine returns the centroid of pts and the unit direction of the total
+// least-squares line through them.
+func lsqLine(pts []Vec2) (c, d Vec2) {
+	for _, p := range pts {
+		c = c.Add(p)
+	}
+	c = c.Scale(1 / float64(len(pts)))
+	var sxx, sxy, syy float64
+	for _, p := range pts {
+		v := p.Sub(c)
+		sxx += v.X * v.X
+		sxy += v.X * v.Y
+		syy += v.Y * v.Y
+	}
+	theta := 0.5 * math.Atan2(2*sxy, sxx-syy)
+	return c, Vec2{X: math.Cos(theta), Y: math.Sin(theta)}
+}
+
 func RemoveStaircases(poly []Point) []Point {
 	n := len(poly)
 	if n < 5 {
@@ -69,10 +94,25 @@ func RemoveStaircases(poly []Point) []Point {
 	// first..first+count-1 (count vertices) form a digital line, trying
 	// both step orientations: step segments are 1 px, interior run
 	// segments differ in length by at most one, and the two end segments
-	// may be partial runs no longer than the interior ones.
+	// may be partial runs no longer than the interior ones. The run-length
+	// rule alone accepts a 45° stretch of a circle (1- and 2-long runs in
+	// any order), so every chain vertex must also lie within maxStairDev
+	// of the least-squares line through the chain.
 	straight := func(first, count int) bool {
 		if count < 2 {
 			return true
+		}
+		if count >= 3 {
+			chain := make([]Vec2, count)
+			for k := range chain {
+				chain[k] = poly[(first+k)%n].Vec()
+			}
+			c, d := lsqLine(chain)
+			for _, v := range chain {
+				if PerpDist(v, c, c.Add(d)) > maxStairDev {
+					return false
+				}
+			}
 		}
 		for _, stepVert := range []bool{false, true} {
 			ok := true
