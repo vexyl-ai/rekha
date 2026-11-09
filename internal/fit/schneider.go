@@ -17,6 +17,15 @@ const (
 	// proportionally better tangents.
 	tangentWindow    = 8
 	maxTangentWindow = 128
+	// biasTol is the largest mean signed offset, in pixels, a fit may have
+	// from its points. The maximum-error test alone lets a curve run down
+	// one side of a run as long as it stays within tolerance, and on a
+	// feature thinner than twice the tolerance both sides then fit the
+	// same curve and the feature vanishes. Crack points straddle the true
+	// edge by half a pixel, so a chord through two of them can sit half a
+	// pixel from the edge while being faithful; the cap is that plus
+	// slack, the same band maxStairDev uses in geom.
+	biasTol = 0.75
 )
 
 // FitOpen fits pts with the given unit end tangents: t0 points into the
@@ -164,19 +173,19 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 	// while the fit improves and accept the best one.
 	u := chordLength(pts)
 	bez := generateBezier(pts, u, t0, t1)
-	maxSq, worst := maxError(pts, bez, u)
-	best, bestSq, bestWorst := bez, maxSq, worst
+	maxSq, worst, bias := maxError(pts, bez, u)
+	best, bestSq, bestWorst, bestBias := bez, maxSq, worst, bias
 	for i := 0; i < maxIterations; i++ {
 		u = reparameterize(pts, u, bez)
 		bez = generateBezier(pts, u, t0, t1)
-		maxSq, worst = maxError(pts, bez, u)
+		maxSq, worst, bias = maxError(pts, bez, u)
 		if maxSq < bestSq {
-			best, bestSq, bestWorst = bez, maxSq, worst
+			best, bestSq, bestWorst, bestBias = bez, maxSq, worst, bias
 		} else if maxSq > bestSq*1.01 {
 			break
 		}
 	}
-	if bestSq <= errSq {
+	if bestSq <= errSq && bestBias <= biasTol {
 		*out = append(*out, Segment{P: best})
 		return
 	}
@@ -201,11 +210,13 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 }
 
 // straight reports whether every point lies within sqrt(errSq) of the
-// chord from the first point to the last.
+// chord from the first point to the last, and the points' mean signed
+// offset from the chord is within biasTol.
 func straight(pts []geom.Vec2, errSq float64) bool {
 	a, b := pts[0], pts[len(pts)-1]
 	ab := b.Sub(a)
 	l2 := ab.Dot(ab)
+	sum := 0.0
 	for _, p := range pts[1 : len(pts)-1] {
 		ap := p.Sub(a)
 		var d2 float64
@@ -214,12 +225,13 @@ func straight(pts []geom.Vec2, errSq float64) bool {
 		} else {
 			cross := ab.X*ap.Y - ab.Y*ap.X
 			d2 = cross * cross / l2
+			sum += cross / math.Sqrt(l2)
 		}
 		if d2 > errSq {
 			return false
 		}
 	}
-	return true
+	return math.Abs(sum)/float64(len(pts)-2) <= biasTol
 }
 
 // midpoint returns the index of the point nearest half the run's chord
@@ -286,16 +298,23 @@ func generateBezier(pts []geom.Vec2, u []float64, t0, t1 geom.Vec2) Cubic {
 	return Cubic{first, first.Add(t0.Scale(al)), last.Add(t1.Scale(ar)), last}
 }
 
-func maxError(pts []geom.Vec2, bez Cubic, u []float64) (float64, int) {
-	split := len(pts) / 2
-	maxSq := 0.0
+func maxError(pts []geom.Vec2, bez Cubic, u []float64) (maxSq float64, worst int, bias float64) {
+	worst = len(pts) / 2
+	sum := 0.0
 	for i := 1; i < len(pts)-1; i++ {
-		d := bez.At(u[i]).Sub(pts[i])
+		d := pts[i].Sub(bez.At(u[i]))
 		if sq := d.Dot(d); sq > maxSq {
-			maxSq, split = sq, i
+			maxSq, worst = sq, i
+		}
+		// Signed offset along the curve normal.
+		if tan := bez.d1(u[i]); tan != (geom.Vec2{}) {
+			sum += (tan.X*d.Y - tan.Y*d.X) / tan.Len()
 		}
 	}
-	return maxSq, split
+	if len(pts) > 2 {
+		bias = math.Abs(sum) / float64(len(pts)-2)
+	}
+	return maxSq, worst, bias
 }
 
 // reparameterize performs one Newton–Raphson step per point.

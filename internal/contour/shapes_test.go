@@ -2,6 +2,7 @@ package contour
 
 import (
 	"testing"
+	"time"
 
 	"github.com/vexyl-ai/rekha/internal/bitmap"
 	"github.com/vexyl-ai/rekha/internal/geom"
@@ -72,5 +73,39 @@ func TestShapesSorted(t *testing.T) {
 		if s.Outer.Pts[0] != want[i] {
 			t.Fatalf("shape %d starts at %v, want %v", i, s.Outer.Pts[0], want[i])
 		}
+	}
+}
+
+// A page of small rings (text-like input) has thousands of holes and
+// thousands of outers; hole assignment must not test every hole against
+// every outer's full polygon.
+func TestBuildShapesManyRingsIsFast(t *testing.T) {
+	const g, cell = 80, 8
+	bm := bitmap.New(g*cell, g*cell)
+	for gy := 0; gy < g; gy++ {
+		for gx := 0; gx < g; gx++ {
+			for y := 1; y < cell-1; y++ {
+				for x := 1; x < cell-1; x++ {
+					if x == 1 || y == 1 || x == cell-2 || y == cell-2 {
+						bm.Set(gx*cell+x, gy*cell+y, true)
+					}
+				}
+			}
+		}
+	}
+	cs := Trace(bm, Minority)
+	start := time.Now()
+	shapes := BuildShapes(cs, 0)
+	elapsed := time.Since(start)
+	if len(shapes) != g*g {
+		t.Fatalf("got %d shapes, want %d", len(shapes), g*g)
+	}
+	for _, s := range shapes {
+		if len(s.Holes) != 1 {
+			t.Fatalf("shape at %v has %d holes, want 1", s.Outer.Pts[0], len(s.Holes))
+		}
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("BuildShapes took %v for %d rings, want well under 500ms", elapsed, g*g)
 	}
 }

@@ -28,10 +28,15 @@ func BuildShapes(cs []Contour, minArea int) []Shape {
 	// Smallest outers first so the first containing outer is the smallest.
 	sort.SliceStable(outers, func(i, j int) bool { return outers[i].Outer.Area2 < outers[j].Outer.Area2 })
 
+	// Bounding boxes reject almost every outer before the polygon test.
+	boxes := make([]box, len(outers))
+	for i := range outers {
+		boxes[i] = bounds(outers[i].Outer.Pts)
+	}
 	for _, h := range holes {
 		px, py := interiorPixel(h)
 		for i := range outers {
-			if containsPixel(outers[i].Outer.Pts, px, py) {
+			if boxes[i].hasPixel(px, py) && containsPixel(outers[i].Outer.Pts, px, py) {
 				outers[i].Holes = append(outers[i].Holes, h)
 				break
 			}
@@ -73,12 +78,36 @@ func interiorPixel(h Contour) (int, int) {
 	}
 }
 
-// containsPixel tests the centre of pixel (px, py) against a lattice polygon
-// by doubling coordinates so the centre becomes a lattice point.
-func containsPixel(poly []geom.Point, px, py int) bool {
-	d := make([]geom.Point, len(poly))
-	for i, p := range poly {
-		d[i] = geom.Point{X: 2 * p.X, Y: 2 * p.Y}
+// box is a half-open lattice rectangle [X0, X1) × [Y0, Y1).
+type box struct{ X0, Y0, X1, Y1 int }
+
+func bounds(poly []geom.Point) box {
+	b := box{poly[0].X, poly[0].Y, poly[0].X, poly[0].Y}
+	for _, p := range poly[1:] {
+		b.X0, b.X1 = min(b.X0, p.X), max(b.X1, p.X)
+		b.Y0, b.Y1 = min(b.Y0, p.Y), max(b.Y1, p.Y)
 	}
-	return geom.Contains(d, geom.Point{X: 2*px + 1, Y: 2*py + 1})
+	return b
+}
+
+// hasPixel reports whether pixel (px, py) lies inside the box.
+func (b box) hasPixel(px, py int) bool {
+	return px >= b.X0 && px < b.X1 && py >= b.Y0 && py < b.Y1
+}
+
+// containsPixel tests the centre of pixel (px, py) against a crack polygon
+// by casting a ray to the right: only vertical edges can cross it, and a
+// vertical edge at x crosses when it spans the centre's row and x lies
+// beyond the centre. The centre is never on an edge, so no boundary case
+// arises.
+func containsPixel(poly []geom.Point, px, py int) bool {
+	in := false
+	n := len(poly)
+	for i, j := 0, n-1; i < n; j, i = i, i+1 {
+		a, b := poly[i], poly[j]
+		if a.X == b.X && (a.Y > py) != (b.Y > py) && px < a.X {
+			in = !in
+		}
+	}
+	return in
 }

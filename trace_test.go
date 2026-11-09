@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/bitmap"
+	"github.com/vexyl-ai/rekha/internal/contour"
 	"github.com/vexyl-ai/rekha/internal/corpus"
 	"github.com/vexyl-ai/rekha/internal/fit"
 	"github.com/vexyl-ai/rekha/internal/geom"
@@ -183,31 +184,146 @@ func FuzzTrace(f *testing.F) {
 			for _, pol := range []TurnPolicy{TurnMinority, TurnMajority, TurnBlack, TurnWhite} {
 				o := DefaultOptions()
 				o.Mode, o.TurnPolicy, o.FilterSpeckle = mode, pol, 0
-				r, err := Trace(img, o)
-				if err != nil {
-					t.Fatal(err)
-				}
-				for _, p := range r.Paths {
-					if len(p.Subpaths) == 0 {
-						t.Fatal("path without subpaths")
-					}
-					for _, sp := range p.Subpaths {
-						for _, sg := range sp.Segs {
-							for _, pt := range sg.P {
-								if math.IsNaN(pt.X) || math.IsNaN(pt.Y) {
-									t.Fatal("NaN coordinate")
-								}
-							}
-						}
-					}
-				}
-				var buf bytes.Buffer
-				if err := r.WriteSVG(&buf, o); err != nil {
-					t.Fatal(err)
-				}
+				checkTraceSane(t, img, o)
 			}
 		}
 	})
+}
+
+// checkTraceSane traces img with o and checks the output against the
+// traced shapes: every path closed and finite, no more segments than the
+// crack polygon has corners (plus slack), and the filled result disagreeing
+// with the pixel-exact fill on no more than three quarters of a boundary's
+// worth of pixels. It returns the result for further checks.
+func checkTraceSane(t *testing.T, img image.Image, o Options) *Result {
+	t.Helper()
+	r, err := Trace(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gray, w, h := bitmap.Gray(img)
+	th := uint8(math.Round(o.Threshold * 255))
+	if o.AutoThreshold {
+		th = bitmap.Otsu(gray)
+	}
+	bm := bitmap.FromGray(gray, w, h, th)
+	shapes := contour.BuildShapes(contour.Trace(bm, o.TurnPolicy), o.FilterSpeckle)
+	if len(shapes) != len(r.Paths) {
+		t.Fatalf("%d paths for %d shapes", len(r.Paths), len(shapes))
+	}
+	perimeter := 0
+	for k, p := range r.Paths {
+		if len(p.Subpaths) == 0 {
+			t.Fatal("path without subpaths")
+		}
+		loops := append([]contour.Contour{shapes[k].Outer}, shapes[k].Holes...)
+		if len(loops) != len(p.Subpaths) {
+			t.Fatalf("path %d: %d subpaths for %d loops", k, len(p.Subpaths), len(loops))
+		}
+		for j, sp := range p.Subpaths {
+			perimeter += len(loops[j].Pts)
+			if len(sp.Segs) == 0 {
+				t.Fatalf("path %d subpath %d: no segments", k, j)
+			}
+			if d := sp.Segs[len(sp.Segs)-1].P[3].Sub(sp.Segs[0].P[0]).Len(); d > 1e-9 {
+				t.Fatalf("path %d subpath %d: not closed, gap %g", k, j, d)
+			}
+			for i, sg := range sp.Segs {
+				for _, pt := range sg.P {
+					if math.IsNaN(pt.X) || math.IsNaN(pt.Y) || math.IsInf(pt.X, 0) || math.IsInf(pt.Y, 0) {
+						t.Fatal("non-finite coordinate")
+					}
+				}
+				if i > 0 && sg.P[0].Sub(sp.Segs[i-1].P[3]).Len() > 1e-9 {
+					t.Fatalf("path %d subpath %d: segment %d disconnected", k, j, i)
+				}
+			}
+			if o.Mode != ModePixel {
+				if budget := len(geom.MergeCollinearIndices(loops[j].Pts)) + 4; len(sp.Segs) > budget {
+					t.Fatalf("path %d subpath %d: %d segments for a %d-corner loop", k, j, len(sp.Segs), budget-4)
+				}
+			}
+		}
+	}
+	if len(r.Paths) > 0 && o.Mode != ModePixel {
+		// The reference is the despeckled shape set, which pixel mode
+		// reproduces exactly.
+		po := o
+		po.Mode = ModePixel
+		pr, err := Trace(img, po)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := rasttest.Fill(w, h, pr.Paths)
+		got := rasttest.Fill(w, h, r.Paths)
+		mis := 0
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				if got.Get(x, y) != want.Get(x, y) {
+					mis++
+				}
+			}
+		}
+		// Three quarters of the boundary length: spline mode legitimately
+		// moves edges by up to the fit tolerance, which on one-pixel
+		// features is most of a shape; the dedicated tests pin fidelity on
+		// clean shapes, this catches output that is nothing like the input.
+		if limit := perimeter*3/4 + 8; mis > limit {
+			t.Fatalf("%d mismatched pixels for a boundary of %d (limit %d)", mis, perimeter, limit)
+		}
+	}
+	var buf bytes.Buffer
+	if err := r.WriteSVG(&buf, o); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// Shapes outside the corpus that each exposed a defect once: an obtuse
+// polygon (vertices from straight edges only), regions touching at a
+// pixel corner (a loop that revisits a vertex), a one-pixel diagonal (a
+// sliver), and a checkerboard (every turn policy's worst case).
+func TestTraceSaneShapes(t *testing.T) {
+	var oct []geom.Vec2
+	for i := 0; i < 8; i++ {
+		a := math.Pi/8 + float64(i)*math.Pi/4
+		oct = append(oct, geom.Vec2{X: 64 + 50*math.Cos(a), Y: 64 + 50*math.Sin(a)})
+	}
+	touching := bitmap.New(64, 64)
+	diagonal := bitmap.New(64, 64)
+	checker := bitmap.New(16, 16)
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			if x >= 8 && x < 32 && y >= 8 && y < 32 {
+				touching.Set(x, y, true)
+				touching.Set(x+24, y+24, true)
+			}
+			if x == y && x >= 4 && x < 60 {
+				diagonal.Set(x, y, true)
+			}
+			if x < 16 && y < 16 && (x+y)%2 == 0 {
+				checker.Set(x, y, true)
+			}
+		}
+	}
+	cases := map[string]image.Image{
+		"octagon":  polygonImage(128, 128, oct),
+		"touching": bitmapImage(touching),
+		"diagonal": bitmapImage(diagonal),
+		"checker":  bitmapImage(checker),
+	}
+	for _, s := range corpus.All() {
+		cases[s.Name] = corpus.Render(s)
+	}
+	for name, img := range cases {
+		for _, mode := range []Mode{ModePolygon, ModeSpline} {
+			for _, pol := range []TurnPolicy{TurnMinority, TurnMajority, TurnBlack, TurnWhite} {
+				o := DefaultOptions()
+				o.Mode, o.TurnPolicy = mode, pol
+				t.Run(name+"/"+string(mode)+"/"+string(pol), func(t *testing.T) { checkTraceSane(t, img, o) })
+			}
+		}
+	}
 }
 
 // A star's tips are two crack corners 2 px apart after thresholding; the
@@ -470,5 +586,30 @@ func TestTraceThinDiagonalKeepsArea(t *testing.T) {
 		if mis := mismatches(t, img, r); mis > 20 {
 			t.Errorf("%s: %d of 100 pixels lost", mode, mis)
 		}
+	}
+}
+
+// Diagonal bands three pixels wide (fuzz-found) must not vanish: a fit
+// that stays within tolerance of both long sides by running down the
+// middle is one-sided, and the fitter must refuse it.
+func TestTraceSplineThinDiagonalBandsKeepArea(t *testing.T) {
+	const w, h = 53, 4
+	bm := bitmap.New(w, h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if (x+y)%4 != 3 {
+				bm.Set(x, y, true)
+			}
+		}
+	}
+	img := bitmapImage(bm)
+	o := DefaultOptions()
+	o.FilterSpeckle = 0
+	r, err := Trace(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mis := mismatches(t, img, r); mis > 20 {
+		t.Fatalf("%d mismatched pixels of %d", mis, bm.Count())
 	}
 }

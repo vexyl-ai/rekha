@@ -111,6 +111,11 @@ const (
 	cornerMaxWindow = 256 // most points per side
 	cornerSkip      = 1   // least points nearest the corner ignored
 	cornerMaxMove   = 3.0 // least distance a vertex may move from the crack corner
+	// flankBend is the turn, in degrees, at a simplified-polygon vertex
+	// beyond which a corner's flank window stops: past such a bend the
+	// points belong to another edge and would skew the flank line. Noise
+	// on a thresholded edge turns the polygon by far less.
+	flankBend = 40.0
 
 	// Straight-edge detection. A staircase-free edge of length L has
 	// sagitta at most maxStairDev, so if it is a chord of a curve that
@@ -169,7 +174,11 @@ func spline(pts []geom.Point, o Options) []fit.Segment {
 	for _, ci := range geom.Corners(simp, o.CornerThreshold) {
 		corners = append(corners, dssIdx[simpIdx[ci]])
 	}
-	verts := refineCorners(dense, clusterCorners(corners, len(dense)))
+	var bends []int
+	for _, bi := range geom.Corners(simp, flankBend) {
+		bends = append(bends, dssIdx[simpIdx[bi]])
+	}
+	verts := refineCorners(dense, clusterCorners(corners, len(dense)), bends)
 	verts = append(verts, straightEdgeVertices(dense, dssIdx, verts)...)
 	if len(verts) == 0 {
 		return fit.FitClosed(dense, fitTol)
@@ -230,20 +239,25 @@ func clusterCorners(corners []int, n int) [][]int {
 
 // refineCorners places one vertex per corner group where the least-squares
 // lines through the flanks on either side intersect, which recovers sharp
-// tips that thresholding blunted. A group whose flanks are too short to
-// fit, nearly parallel (the end of a thin line), or meet farther than
-// cornerMaxMove away is not merged: each of its corners becomes a vertex
-// at its crack position.
-func refineCorners(dense []geom.Vec2, groups [][]int) []vertex {
+// tips that thresholding blunted. bends holds the dense indices, ascending,
+// of the simplified polygon's vertices that turn by more than flankBend: a
+// flank never reaches past the neighbouring bend, where the boundary turns
+// (perhaps by less than the corner threshold) and the points belong to
+// another edge.
+// A group whose flanks are too short to fit, nearly parallel (the end of
+// a thin line), or meet farther than cornerMaxMove away is not merged:
+// each of its corners becomes a vertex at its crack position.
+func refineCorners(dense []geom.Vec2, groups [][]int, bends []int) []vertex {
 	n := len(dense)
 	var verts []vertex
 	for g, grp := range groups {
 		in, out := grp[0]%n, grp[len(grp)-1]%n
 		// Flank windows are a quarter of the run on each side, and never
-		// more than halfway to the neighbouring group.
+		// more than halfway to the neighbouring group or past the
+		// neighbouring bend.
 		prev, next := groups[(g+len(groups)-1)%len(groups)], groups[(g+1)%len(groups)]
-		back := flankWindow(gap(prev[len(prev)-1]%n, in, n))
-		fwd := flankWindow(gap(out, next[0]%n, n))
+		back := min(flankWindow(gap(prev[len(prev)-1]%n, in, n)), polyGap(bends, in, -1, n))
+		fwd := min(flankWindow(gap(out, next[0]%n, n)), polyGap(bends, out, +1, n))
 		span := max(back, fwd)
 		skipIn, skipOut := max(cornerSkip, back/8), max(cornerSkip, fwd/8)
 		maxMove := math.Max(cornerMaxMove, float64(span)/4)
@@ -274,6 +288,25 @@ func refineCorners(dense []geom.Vec2, groups [][]int) []vertex {
 
 // gap is the number of dense steps from index a forward to index b.
 func gap(a, b, n int) int { return ((b-a)%n + n) % n }
+
+// polyGap is the number of dense steps from index i to the nearest
+// polygon vertex in direction step (±1), other than i itself; n when the
+// polygon has no other vertex.
+func polyGap(polyIdx []int, i, step, n int) int {
+	m := len(polyIdx)
+	if m < 2 {
+		return n
+	}
+	k := sort.SearchInts(polyIdx, i)
+	if step > 0 {
+		if k < m && polyIdx[k] == i {
+			k++
+		}
+		return gap(i, polyIdx[k%m], n)
+	}
+	k--
+	return gap(polyIdx[(k%m+m)%m], i, n)
+}
 
 // flankWindow is the number of dense points used to fit a flank line when
 // the run on that side is runLen points long.
