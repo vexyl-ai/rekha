@@ -1,0 +1,255 @@
+package refine
+
+import (
+	"math"
+	"math/rand/v2"
+	"testing"
+
+	"github.com/vexyl-ai/rekha/internal/fit"
+	"github.com/vexyl-ai/rekha/internal/geom"
+	"github.com/vexyl-ai/rekha/internal/rasttest"
+	"github.com/vexyl-ai/rekha/internal/svg"
+)
+
+func TestMinimizeQuadratic(t *testing.T) {
+	f := func(x []float64) float64 {
+		s := 0.0
+		for i, v := range x {
+			d := v - float64(i)
+			s += d * d
+		}
+		return s
+	}
+	x := minimize(make([]float64, 10), f, nil, 30)
+	for i, v := range x {
+		if math.Abs(v-float64(i)) > 1e-3 {
+			t.Fatalf("x[%d] = %v", i, v)
+		}
+	}
+}
+
+// smoothBezigon is a seeded random star-like smooth closed curve with n
+// segments inside a 64×64 image.
+func smoothBezigon(seed uint64, n int) Bezigon {
+	rng := rand.New(rand.NewPCG(seed, 7))
+	anchors := make([]geom.Vec2, n)
+	for i := range anchors {
+		a := 2 * math.Pi * float64(i) / float64(n)
+		r := 18 + 6*rng.Float64()
+		anchors[i] = v(32+r*math.Cos(a), 32+r*math.Sin(a))
+	}
+	b := Bezigon{Pts: make([]geom.Vec2, 3*n)}
+	for i := range anchors {
+		prev, next := anchors[(i+n-1)%n], anchors[(i+1)%n]
+		tangent := next.Sub(prev).Scale(1.0 / 6)
+		b.Pts[3*i] = anchors[i]
+		b.Pts[3*i+1] = anchors[i].Add(tangent)
+		b.Pts[((3*i-1)%(3*n)+3*n)%(3*n)] = anchors[i].Sub(tangent)
+	}
+	return b
+}
+
+func perturb(b Bezigon, seed uint64, amp float64) Bezigon {
+	rng := rand.New(rand.NewPCG(seed, 11))
+	out := Bezigon{Pts: make([]geom.Vec2, len(b.Pts))}
+	for i, p := range b.Pts {
+		out.Pts[i] = p.Add(v((2*rng.Float64()-1)*amp, (2*rng.Float64()-1)*amp))
+	}
+	return out
+}
+
+// curveDist is the largest distance from any flattened point of a to the
+// flattened outline of b and vice versa: how far the curves are apart,
+// regardless of where the handles sit (handle positions are not pinned by
+// coverage, the curve is).
+func curveDist(a, b Bezigon) float64 {
+	pa, pb := fine(a), fine(b)
+	return math.Max(oneWay(pa, pb), oneWay(pb, pa))
+}
+
+// fine flattens at 64 points per segment so chord error (0.024 px for a
+// radius-20 circle at Flatten) does not pollute sub-pixel comparisons.
+func fine(b Bezigon) []geom.Vec2 {
+	var out []geom.Vec2
+	for j := 0; j < b.N(); j++ {
+		c := b.Segment(j)
+		for i := 0; i < 64; i++ {
+			out = append(out, c.At(float64(i)/64))
+		}
+	}
+	return out
+}
+
+func oneWay(pa, pb []geom.Vec2) float64 {
+	worst := 0.0
+	for _, p := range pa {
+		best := math.Inf(1)
+		for i := range pb {
+			best = math.Min(best, pointSegDist(p, pb[i], pb[(i+1)%len(pb)]))
+		}
+		worst = math.Max(worst, best)
+	}
+	return worst
+}
+
+func pointSegDist(p, a, b geom.Vec2) float64 {
+	d := b.Sub(a)
+	l2 := d.LenSq()
+	t := 0.0
+	if l2 > 0 {
+		t = math.Min(math.Max(p.Sub(a).Dot(d)/l2, 0), 1)
+	}
+	return p.Sub(a.Add(d.Scale(t))).Len()
+}
+
+func maxDist(a, b Bezigon) float64 {
+	d := 0.0
+	for i := range a.Pts {
+		d = math.Max(d, a.Pts[i].Sub(b.Pts[i]).Len())
+	}
+	return d
+}
+
+var img64 = Window{X0: 0, Y0: 0, W: 64, H: 64}
+
+func TestRefineRecoversPerturbedBezigon(t *testing.T) {
+	truth := smoothBezigon(1, 5)
+	m := maskOf(truth, img64)
+	start := perturb(truth, 2, 1.5)
+	if d := maxDist(start, truth); d < 0.5 {
+		t.Fatalf("perturbation too small: %v", d)
+	}
+	got := Refine(start, m, img64, DefaultOptions)
+	if d := curveDist(got, truth); d > 0.05 {
+		t.Fatalf("curve recovered within %v px, want 0.05", d)
+	}
+}
+
+// supersampled renders b with the test rasteriser at 4× and box-filters
+// down, an independent rasteriser with its own boundary noise.
+func supersampled(b Bezigon, win Window) coverageMask {
+	scaled := Bezigon{Pts: make([]geom.Vec2, len(b.Pts))}
+	for i, p := range b.Pts {
+		scaled.Pts[i] = p.Scale(4)
+	}
+	segs := scaled.Segments(0)
+	for i := range segs {
+		segs[i].Line = false
+	}
+	bm := rasttest.Fill(win.W*4, win.H*4, []svg.Path{{Subpaths: []svg.Subpath{{Segs: segs}}}})
+	cov := make([]float32, win.W*win.H)
+	for y := 0; y < win.H*4; y++ {
+		for x := 0; x < win.W*4; x++ {
+			if bm.Get(x, y) {
+				cov[(y/4)*win.W+x/4] += 1.0 / 16
+			}
+		}
+	}
+	return coverageMask{win, cov}
+}
+
+func TestRefineRecoversAgainstSupersampledMask(t *testing.T) {
+	truth := smoothBezigon(3, 5)
+	m := supersampled(truth, img64)
+	got := Refine(perturb(truth, 4, 1.5), m, img64, DefaultOptions)
+	if d := curveDist(got, truth); d > 0.1 {
+		t.Fatalf("curve recovered within %v px against an independent rasteriser, want 0.1", d)
+	}
+}
+
+// A small loop where two handles cross (the paper's Fig. 3a failure) is
+// pulled out by the self-intersection and length priors with the data.
+func TestRefineRemovesLoop(t *testing.T) {
+	truth := square(10, 10, 40, 40)
+	m := maskOf(truth, img64)
+	looped := square(10, 10, 40, 40)
+	looped.Pts[1], looped.Pts[2] = v(60, 20), v(-10, 20) // crossed handles on the top side
+	if SelfIntersectionPrior(looped) == 0 {
+		t.Fatal("fixture has no loop")
+	}
+	got := Refine(looped, m, img64, DefaultOptions)
+	if e := SelfIntersectionPrior(got); e != 0 {
+		t.Fatalf("still self-intersecting: %v", e)
+	}
+	if d := curveDist(got, truth); d > 0.1 {
+		t.Fatalf("curve %v px from the square", d)
+	}
+}
+
+func TestRefineKeepsSquareCorners(t *testing.T) {
+	truth := square(10, 10, 40, 40)
+	m := maskOf(truth, img64)
+	got := Refine(perturb(truth, 5, 1.0), m, img64, DefaultOptions)
+	// 0.1 px: the result lands near 0.05 and float rounding differs across
+	// architectures.
+	if a := AnglePrior(got); math.Abs(a-2*math.Pi) > 0.1 {
+		t.Fatalf("corners rounded: angle prior %v, want 2π", a)
+	}
+	for j := 0; j < 4; j++ {
+		if d := got.Pts[3*j].Sub(truth.Pts[3*j]).Len(); d > 0.1 {
+			t.Fatalf("corner %d off by %v", j, d)
+		}
+	}
+}
+
+func TestRefineLengthensShortHandle(t *testing.T) {
+	truth := circle(32, 32, 20)
+	m := maskOf(truth, img64)
+	start := circle(32, 32, 20)
+	start.Pts[1] = start.Pts[0].Add(v(0, 1e-3))
+	got := Refine(start, m, img64, DefaultOptions)
+	if l := got.Pts[1].Sub(got.Pts[0]).Len(); l < 1 {
+		t.Fatalf("handle still %v px", l)
+	}
+}
+
+func TestRefineDegenerate(t *testing.T) {
+	m := maskOf(circle(32, 32, 10), img64)
+	cases := map[string]Bezigon{
+		"one":        {Pts: []geom.Vec2{v(20, 20), v(40, 20), v(40, 40)}},
+		"two":        {Pts: []geom.Vec2{v(20, 20), v(40, 10), v(50, 30), v(30, 40), v(10, 40), v(10, 25)}},
+		"coincident": {Pts: []geom.Vec2{v(5, 5), v(5, 5), v(5, 5), v(5, 5), v(5, 5), v(5, 5), v(5, 5), v(5, 5), v(5, 5)}},
+		"zero-area":  FromSegments([]fit.Segment{ln(v(1, 1), v(30, 1)), ln(v(30, 1), v(1, 1)), ln(v(1, 1), v(1, 1))}),
+		"empty":      {},
+	}
+	for name, b := range cases {
+		got := Refine(b, m, img64, DefaultOptions)
+		if got.N() != b.N() {
+			t.Fatalf("%s: N changed %d → %d", name, b.N(), got.N())
+		}
+		for _, p := range got.Pts {
+			if math.IsNaN(p.X) || math.IsNaN(p.Y) || math.IsInf(p.X, 0) || math.IsInf(p.Y, 0) {
+				t.Fatalf("%s: non-finite point %v", name, p)
+			}
+		}
+	}
+}
+
+func TestRefineClampsToImage(t *testing.T) {
+	b := square(-5, -5, 70, 70)
+	got := Refine(b, maskOf(square(0, 0, 64, 64), img64), img64, DefaultOptions)
+	for _, p := range got.Pts {
+		if p.X < -1 || p.Y < -1 || p.X > 65 || p.Y > 65 {
+			t.Fatalf("point outside the padded image: %v", p)
+		}
+	}
+}
+
+func TestRefineSkipsConvergedPieces(t *testing.T) {
+	truth := smoothBezigon(6, 6)
+	got := Refine(truth, maskOf(truth, img64), img64, DefaultOptions)
+	if d := maxDist(got, truth); d != 0 {
+		t.Fatalf("a perfect fit moved by %v", d)
+	}
+}
+
+func TestRefineNeverRaisesEnergy(t *testing.T) {
+	truth := smoothBezigon(8, 7)
+	m := supersampled(truth, img64)
+	start := perturb(truth, 9, 2.0)
+	got := Refine(start, m, img64, DefaultOptions)
+	l0 := math.Max(start.Length(), 1)
+	if e0, e1 := energyWith(start, m, img64, DefaultWeights, l0), energyWith(got, m, img64, DefaultWeights, l0); e1 > e0 {
+		t.Fatalf("energy rose %v → %v", e0, e1)
+	}
+}

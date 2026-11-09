@@ -21,21 +21,38 @@ type Weights struct {
 	Lpt float64 // curve length
 }
 
-// DefaultWeights are the paper's defaults (§5.1).
-var DefaultWeights = Weights{Spt: 1.0, Apt: 0.08, Hpt: 0.1, Lpt: 0.1}
+// DefaultWeights are the paper's defaults (§5.1) except Hpt, raised from
+// 0.1 to 0.5: a piece cannot move its outer anchors, and with the paper's
+// weight the data term pays the optimiser to hook the adjacent handle onto
+// a displaced anchor (a sub-pixel reversed handle, a cusp the raster
+// barely sees) rather than wait for the anchor's own piece; the cusp then
+// sits behind the 1/length barrier for good. At 0.5 the hook costs more
+// than it saves, and square corners survive refinement within 0.05 px.
+var DefaultWeights = Weights{Spt: 1.0, Apt: 0.08, Hpt: 0.5, Lpt: 0.1}
 
 // minHandle floors handle lengths in the barrier so a collapsed handle
 // gives a huge but finite energy.
 const minHandle = 1e-6
 
-// DataEnergy is Σ weight·(cov − mask)² over the window divided by l0, the
-// initial arc length, so prior weights mean the same for every shape size.
+// DataScale multiplies coverage differences in the data term. It sets the
+// balance against the paper's prior weights, whose intensity scale the
+// paper does not state: with coverage in 0..1 and the length prior at 0.1
+// per pixel, a closed curve settles about 0.3/DataScale² px inside its
+// true edge (0.005 px at 8), while a larger scale lets the data term
+// outbid the handle barrier and hook handles onto displaced anchors. 8 is
+// the measured balance: perturbed smooth shapes recover within 0.05 px
+// and square corners hold.
+const DataScale = 8
+
+// DataEnergy is Σ weight·(DataScale·(cov − mask))² over the window divided
+// by l0, the initial arc length, so prior weights mean the same for every
+// shape size.
 func DataEnergy(cov []float32, m Mask, win Window, l0 float64) float64 {
 	e := 0.0
 	for y := 0; y < win.H; y++ {
 		for x := 0; x < win.W; x++ {
 			target, w := m.At(win.X0+x, win.Y0+y)
-			d := float64(cov[y*win.W+x] - target)
+			d := DataScale * float64(cov[y*win.W+x]-target)
 			e += float64(w) * d * d
 		}
 	}
@@ -118,11 +135,18 @@ func LengthPrior(b Bezigon, segs ...int) float64 {
 // optimiser can shrink it away.
 func SelfIntersectionPrior(b Bezigon) float64 {
 	pts := b.Polyline()
+	return selfIntersection(pts, 0, len(pts))
+}
+
+// selfIntersection sums the shorter arcs of the crossings of the closed
+// polyline pts in which at least one edge has index in [lo, hi) (edge i
+// runs from pts[i] to pts[i+1]); the full range gives the prior, a piece's
+// range gives the part a piece can change.
+func selfIntersection(pts []geom.Vec2, lo, hi int) float64 {
 	n := len(pts)
 	if n < 4 {
 		return 0
 	}
-	// Cumulative length at each vertex, closed.
 	cum := make([]float64, n+1)
 	for i := 1; i <= n; i++ {
 		cum[i] = cum[i-1] + pts[i%n].Sub(pts[i-1]).Len()
@@ -134,6 +158,9 @@ func SelfIntersectionPrior(b Bezigon) float64 {
 		for k := i + 2; k < n; k++ {
 			if i == 0 && k == n-1 {
 				continue // adjacent through the closing edge
+			}
+			if !edgeIn(i, lo, hi, n) && !edgeIn(k, lo, hi, n) {
+				continue
 			}
 			b0, b1 := pts[k], pts[(k+1)%n]
 			if !boxesOverlap(a0, a1, b0, b1) {
@@ -150,6 +177,11 @@ func SelfIntersectionPrior(b Bezigon) float64 {
 		}
 	}
 	return e
+}
+
+// edgeIn reports whether edge i lies in the cyclic range [lo, hi) of n edges.
+func edgeIn(i, lo, hi, n int) bool {
+	return ((i-lo)%n+n)%n < hi-lo
 }
 
 func boxesOverlap(a0, a1, b0, b1 geom.Vec2) bool {
