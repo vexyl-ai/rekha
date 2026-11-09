@@ -1,0 +1,174 @@
+//go:build !js
+
+package bench
+
+import (
+	"bytes"
+	"context"
+	"image"
+	"image/color"
+	"image/png"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func blackImage(w, h int) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{0, 0, 0, 255})
+		}
+	}
+	return img
+}
+
+func writePNG(t *testing.T, path string, img image.Image) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func stubRaster(w, h int) func(context.Context, string, int, int) (image.Image, error) {
+	return func(context.Context, string, int, int) (image.Image, error) {
+		return blackImage(w, h), nil
+	}
+}
+
+func newRunner(t *testing.T, raster func(context.Context, string, int, int) (image.Image, error)) *Runner {
+	t.Helper()
+	return &Runner{Rasterize: raster, Timeout: 10 * time.Second, WorkDir: t.TempDir()}
+}
+
+func cpTool() Tool {
+	abs, _ := filepath.Abs("testdata/fixture.svg")
+	return Tool{Name: "fake", Bin: "cp", Args: []string{abs, "{out}"}, Input: "png"}
+}
+
+func TestRunSkipsMissingTool(t *testing.T) {
+	dir := t.TempDir()
+	writePNG(t, filepath.Join(dir, "a.png"), blackImage(8, 8))
+	r := newRunner(t, stubRaster(8, 8))
+	rs, err := r.Run(context.Background(), dir, []Tool{{Name: "nope", Bin: "definitely-not-a-binary-xyz", Input: "png"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs) != 1 || rs[0].Skipped != "not installed" {
+		t.Fatalf("got %+v", rs)
+	}
+}
+
+func TestRunIgnoresNonPNG(t *testing.T) {
+	dir := t.TempDir()
+	writePNG(t, filepath.Join(dir, "a.png"), blackImage(256, 256))
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "c.jpg"), []byte("x"), 0o644)
+	r := newRunner(t, stubRaster(256, 256))
+	rs, err := r.Run(context.Background(), dir, []Tool{cpTool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs) != 1 || !strings.HasSuffix(rs[0].Image, "a.png") {
+		t.Fatalf("got %+v", rs)
+	}
+}
+
+func TestRunEmptyDir(t *testing.T) {
+	r := newRunner(t, stubRaster(1, 1))
+	rs, err := r.Run(context.Background(), t.TempDir(), []Tool{cpTool()})
+	if err != nil || len(rs) != 0 {
+		t.Fatalf("got %d results, err %v", len(rs), err)
+	}
+}
+
+func TestRunFakeToolEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	writePNG(t, filepath.Join(dir, "a.png"), blackImage(256, 256))
+	r := newRunner(t, stubRaster(256, 256))
+	rs, err := r.Run(context.Background(), dir, []Tool{cpTool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs) != 1 {
+		t.Fatalf("got %d results", len(rs))
+	}
+	got := rs[0]
+	if got.Skipped != "" || got.Err != "" {
+		t.Fatalf("unexpected skip/err: %+v", got)
+	}
+	if !math.IsInf(got.PSNR, 1) {
+		t.Fatalf("PSNR = %v, want +Inf", got.PSNR)
+	}
+	if got.Stats.Paths != 1 || got.Stats.Nodes != 5 {
+		t.Fatalf("stats = %+v", got.Stats)
+	}
+}
+
+func TestRunDimensionMismatchIsRowError(t *testing.T) {
+	dir := t.TempDir()
+	writePNG(t, filepath.Join(dir, "a.png"), blackImage(256, 256))
+	r := newRunner(t, stubRaster(100, 100))
+	rs, err := r.Run(context.Background(), dir, []Tool{cpTool()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rs[0].Err, "dimensions differ") || !math.IsNaN(rs[0].PSNR) {
+		t.Fatalf("got %+v", rs[0])
+	}
+}
+
+func TestRunToolTimeout(t *testing.T) {
+	dir := t.TempDir()
+	writePNG(t, filepath.Join(dir, "a.png"), blackImage(8, 8))
+	r := newRunner(t, stubRaster(8, 8))
+	r.Timeout = 100 * time.Millisecond
+	rs, err := r.Run(context.Background(), dir, []Tool{{Name: "slow", Bin: "sleep", Args: []string{"5"}, Input: "png"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rs[0].Err == "" || rs[0].Millis >= 2000 {
+		t.Fatalf("got %+v", rs[0])
+	}
+}
+
+func TestWriteMarkdownFormats(t *testing.T) {
+	rs := []Result{
+		{Image: "a.png", Tool: "x", PSNR: math.Inf(1)},
+		{Image: "b.png", Tool: "x", PSNR: math.NaN(), Err: "boom happened"},
+	}
+	var buf bytes.Buffer
+	if err := WriteMarkdown(&buf, rs); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "| inf |") || !strings.Contains(out, "boom happened") {
+		t.Fatalf("markdown:\n%s", out)
+	}
+}
+
+func TestWriteCSVHeader(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteCSV(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(buf.String(), "image,tool,psnr,paths,nodes,bytes,ms,skipped,err\n") {
+		t.Fatalf("csv:\n%s", buf.String())
+	}
+}
+
+func TestCheckRasterizerMessage(t *testing.T) {
+	t.Setenv("PATH", "")
+	err := CheckRasterizer()
+	if err == nil || !strings.Contains(err.Error(), "rsvg-convert") || !strings.Contains(err.Error(), "brew install librsvg") {
+		t.Fatalf("got %v", err)
+	}
+}
