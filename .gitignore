@@ -1,0 +1,5 @@
+/bin/
+/bench/out/
+*.wasm
+.DS_Store
+/.superpowers/
