@@ -1,6 +1,9 @@
 export CGO_ENABLED=0
 
-.PHONY: test lint wasm-check build
+.PHONY: test lint wasm-check build bench
+
+bench: build
+	./bin/rekha-bench -corpus testdata/corpus -out bench/out
 
 test:
 	go test ./...

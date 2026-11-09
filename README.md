@@ -18,7 +18,8 @@ It contains no code derived from Potrace or any other GPL-licensed tracer. Potra
 
 - `design/roadmap.md`: phases 0 to 6, open-core product split, legal checklist.
 - `design/refine-bezigon-optimisation.md`: design notes for the refinement stage.
-- `docs/benchmark.md`: how output quality is measured against reference tools.
+- `docs/benchmark.md`: how output quality is measured against reference tools (`make bench`).
+- `bench/results/`: recorded baselines.
 
 ## Licence
 
