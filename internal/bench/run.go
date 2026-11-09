@@ -115,43 +115,51 @@ func (r *Runner) runOne(ctx context.Context, raster func(context.Context, string
 		res.Err = err.Error()
 		return
 	}
+	// Errors must not leak the scratch directory: it changes every run and
+	// would make recorded baselines non-reproducible.
+	fail := func(err error) { res.Err = strings.ReplaceAll(err.Error(), dir+string(filepath.Separator), "") }
+
 	in, err := prepareInput(dir, src, t.Input)
 	if err != nil {
-		res.Err = err.Error()
+		fail(err)
 		return
 	}
-	out := filepath.Join(dir, "out.svg")
+	// The tool runs inside dir with relative paths, so its own messages
+	// name "in.png"/"out.svg" rather than the scratch path.
+	const outName = "out.svg"
+	out := filepath.Join(dir, outName)
 	args := make([]string, len(t.Args))
 	for i, a := range t.Args {
-		args[i] = strings.NewReplacer("{in}", in, "{out}", out).Replace(a)
+		args[i] = strings.NewReplacer("{in}", filepath.Base(in), "{out}", outName).Replace(a)
 	}
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	start := time.Now()
 	cmd := exec.CommandContext(tctx, t.Bin, args...)
+	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
 	res.Millis = time.Since(start).Milliseconds()
 	if runErr != nil {
-		res.Err = fmt.Sprintf("%s: %v: %s", t.Bin, runErr, strings.TrimSpace(stderr.String()))
+		fail(fmt.Errorf("%s: %v: %s", t.Bin, runErr, strings.TrimSpace(stderr.String())))
 		return
 	}
 	svg, err := os.ReadFile(out)
 	if err != nil {
-		res.Err = err.Error()
+		fail(err)
 		return
 	}
 	res.Stats = metrics.Stats(svg)
 	w, h := src.Bounds().Dx(), src.Bounds().Dy()
 	rendered, err := raster(ctx, out, w, h)
 	if err != nil {
-		res.Err = err.Error()
+		fail(err)
 		return
 	}
 	psnr, err := metrics.PSNR(src, rendered)
 	if err != nil {
-		res.Err = err.Error()
+		fail(err)
 		return
 	}
 	res.PSNR = psnr

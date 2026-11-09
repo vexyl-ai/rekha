@@ -8,7 +8,7 @@
 |---|---|
 | PSNR dB | Peak signal-to-noise ratio between the input PNG and the SVG rasterised at the input's size with `rsvg-convert`. Both are composited onto white; alpha is ignored after that. `inf` = pixel-identical. |
 | Paths | Number of `<path` elements. |
-| Nodes | Number of path-data command letters (`M L H V C S Q T A Z` and lowercase) across all `d` attributes. A proxy for editability. |
+| Nodes | Number of path segments across all `d` attributes, counting implicit repeats (`l1 1 2 2` is two segments, `M0 0 1 1` is a move plus one line) and `Z` as one each. Comparable across tools regardless of how compactly they write path data. A proxy for editability. |
 | Bytes | SVG file size. |
 | ms | Wall time of the tracer process only. Rasterisation and scoring are not included. |
 | Note | `not installed` when the tool binary is missing, otherwise the tool's error. |
@@ -35,7 +35,7 @@ make bench                                  # all builtin tools, writes bench/ou
 ./bin/rekha-bench -corpus path/to/images    # another corpus
 ```
 
-Outputs `bench/out/results.md` and `bench/out/results.csv` and prints the markdown table. Rows are sorted by image path then tool name, so two runs diff cleanly.
+Outputs `bench/out/results.md` and `bench/out/results.csv` and prints the markdown table. Rows are sorted by image path then tool name, and error notes never contain scratch paths, so two runs differ only in the `ms` column.
 
 Recorded baselines live in `bench/results/<date>-<label>.md`. Copy `bench/out/results.md` there when a run is worth keeping.
 

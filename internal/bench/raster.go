@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 const rasterBin = "rsvg-convert"
@@ -27,7 +28,7 @@ func RSVGConvert(ctx context.Context, svgPath string, w, h int) (image.Image, er
 	out := filepath.Join(filepath.Dir(svgPath), "raster.png")
 	cmd := exec.CommandContext(ctx, rasterBin, "-w", fmt.Sprint(w), "-h", fmt.Sprint(h), svgPath, "-o", out)
 	if b, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("%s: %v: %s", rasterBin, err, b)
+		return nil, fmt.Errorf("%s: %v: %s", rasterBin, err, strings.TrimSpace(string(b)))
 	}
 	f, err := os.Open(out)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 )
 
 func fmtPSNR(v float64) string {
@@ -28,6 +29,14 @@ func note(r Result) string {
 	return r.Err
 }
 
+// cell flattens newlines and escapes pipes so a value cannot break a row.
+func cell(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return strings.ReplaceAll(s, "|", `\|`)
+}
+
 // WriteMarkdown writes rs as a GitHub-flavoured markdown table.
 func WriteMarkdown(w io.Writer, rs []Result) error {
 	if _, err := fmt.Fprintln(w, "| Image | Tool | PSNR dB | Paths | Nodes | Bytes | ms | Note |"); err != nil {
@@ -38,7 +47,7 @@ func WriteMarkdown(w io.Writer, rs []Result) error {
 	}
 	for _, r := range rs {
 		_, err := fmt.Fprintf(w, "| %s | %s | %s | %d | %d | %d | %d | %s |\n",
-			r.Image, r.Tool, fmtPSNR(r.PSNR), r.Stats.Paths, r.Stats.Nodes, r.Stats.Bytes, r.Millis, note(r))
+			cell(r.Image), cell(r.Tool), fmtPSNR(r.PSNR), r.Stats.Paths, r.Stats.Nodes, r.Stats.Bytes, r.Millis, cell(note(r)))
 		if err != nil {
 			return err
 		}

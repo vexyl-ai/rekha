@@ -155,6 +155,39 @@ func TestWriteMarkdownFormats(t *testing.T) {
 	}
 }
 
+func TestWriteMarkdownEscapesCells(t *testing.T) {
+	rs := []Result{{Image: "a|b.png", Tool: "x", PSNR: math.NaN(), Err: "line one | pipe\nline two\r\nline three"}}
+	var buf bytes.Buffer
+	if err := WriteMarkdown(&buf, rs); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want header, separator and one row, got %d lines:\n%s", len(lines), buf.String())
+	}
+	row := lines[2]
+	if !strings.Contains(row, `a\|b.png`) || !strings.Contains(row, `line one \| pipe line two line three`) {
+		t.Fatalf("row not escaped/flattened: %s", row)
+	}
+}
+
+func TestRunErrorsDoNotLeakWorkDir(t *testing.T) {
+	dir := t.TempDir()
+	writePNG(t, filepath.Join(dir, "a.png"), blackImage(8, 8))
+	r := newRunner(t, stubRaster(8, 8))
+	// cat fails on the not-yet-existing out.svg and names it on stderr.
+	rs, err := r.Run(context.Background(), dir, []Tool{{Name: "cat", Bin: "cat", Args: []string{"{out}"}, Input: "png"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rs[0].Err == "" {
+		t.Fatal("expected a row error")
+	}
+	if strings.Contains(rs[0].Err, r.WorkDir) {
+		t.Fatalf("error leaks work dir: %s", rs[0].Err)
+	}
+}
+
 func TestWriteCSVHeader(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteCSV(&buf, nil); err != nil {
