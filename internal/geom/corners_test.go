@@ -29,13 +29,53 @@ func TestCornersOctagonNone(t *testing.T) {
 	}
 }
 
-func TestNearestIndex(t *testing.T) {
-	dense := []Point{{0, 0}, {1, 0}, {2, 0}, {2, 1}}
-	if got := NearestIndex(dense, Vec2{1.9, 0.9}); got != 3 {
-		t.Fatalf("got %d, want 3", got)
+// Two squares touching at one corner trace as one loop that visits the
+// shared lattice point twice. Index mapping must tell the visits apart:
+// both survive simplification as distinct vertices.
+func TestSimplifyIndicesKeepsRevisitedVertex(t *testing.T) {
+	var loop []Point
+	// Square A: (0,0)-(4,4); square B: (4,4)-(8,8), joined at (4,4).
+	for x := 0; x < 4; x++ {
+		loop = append(loop, Point{x, 0})
 	}
-	if got := NearestIndex(dense, Vec2{1.5, 0}); got != 1 {
-		t.Fatalf("tie should pick lower index, got %d", got)
+	for y := 0; y < 4; y++ {
+		loop = append(loop, Point{4, y})
+	}
+	for x := 4; x < 8; x++ {
+		loop = append(loop, Point{x, 4})
+	}
+	for y := 4; y < 8; y++ {
+		loop = append(loop, Point{8, y})
+	}
+	for x := 8; x > 4; x-- {
+		loop = append(loop, Point{x, 8})
+	}
+	for y := 8; y > 4; y-- {
+		loop = append(loop, Point{4, y})
+	}
+	for x := 4; x > 0; x-- {
+		loop = append(loop, Point{x, 4})
+	}
+	for y := 4; y > 0; y-- {
+		loop = append(loop, Point{0, y})
+	}
+	idx := SimplifyIndices(loop, 0.75)
+	if len(idx) != 8 {
+		t.Fatalf("got %d vertices %v, want 8", len(idx), idx)
+	}
+	for k := 1; k < len(idx); k++ {
+		if idx[k] <= idx[k-1] {
+			t.Fatalf("indices not ascending: %v", idx)
+		}
+	}
+	visits := 0
+	for _, i := range idx {
+		if loop[i] == (Point{4, 4}) {
+			visits++
+		}
+	}
+	if visits != 2 {
+		t.Fatalf("shared vertex kept %d times, want 2: %v", visits, idx)
 	}
 }
 

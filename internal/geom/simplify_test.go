@@ -202,3 +202,23 @@ func TestStaircaseStaysWithinOnePixel(t *testing.T) {
 		t.Fatalf("input vertex %.2f px from the straightened polygon", worst)
 	}
 }
+
+// A one-pixel-wide diagonal, traced as a loop through its pixel corners,
+// is two anti-parallel staircases meeting at one-vertex tips. Each chain
+// must keep its own end vertex: extending both into the shared tip would
+// leave a two-point polygon.
+func TestStaircaseKeepsSliverEnds(t *testing.T) {
+	var p []Point
+	for i := 0; i < 20; i++ {
+		p = append(p, Point{i, i}, Point{i + 1, i})
+	}
+	p = append(p, Point{20, 20})
+	for i := 20; i > 0; i-- {
+		p = append(p, Point{i - 1, i}, Point{i - 1, i - 1})
+	}
+	p = p[:len(p)-1] // (0,0) is already the first point
+	got := RemoveStaircases(MergeCollinear(p))
+	if len(got) != 6 {
+		t.Fatalf("got %d points %v, want 6", len(got), got)
+	}
+}

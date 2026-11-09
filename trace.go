@@ -146,22 +146,31 @@ func spline(pts []geom.Point, o Options) []fit.Segment {
 		return lines(toVec(pts))
 	}
 	dense := toVec(pts)
-	simp := geom.Simplify(pts, o.SimplifyTolerance)
+	// Simplification is tracked by index into the dense loop, never by
+	// coordinate: a loop may visit the same lattice point twice.
+	dssIdx := geom.RemoveStaircasesIndices(geom.MergeCollinear(pts))
+	mergeIdx := geom.MergeCollinearIndices(pts)
+	for k, i := range dssIdx {
+		dssIdx[k] = mergeIdx[i]
+	}
+	dss := make([]geom.Vec2, len(dssIdx))
+	for k, i := range dssIdx {
+		dss[k] = dense[i]
+	}
+	simpIdx := geom.RDPClosedIndices(dss, o.SimplifyTolerance)
+	simp := make([]geom.Vec2, len(simpIdx))
+	for k, i := range simpIdx {
+		simp[k] = dss[i]
+	}
 
 	// Corners are found on the simplified polygon and mapped to the dense
 	// loop, then clustered and refined to sub-pixel positions.
 	var corners []int
-	seen := map[int]bool{}
 	for _, ci := range geom.Corners(simp, o.CornerThreshold) {
-		di := geom.NearestIndex(pts, simp[ci])
-		if !seen[di] {
-			seen[di] = true
-			corners = append(corners, di)
-		}
+		corners = append(corners, dssIdx[simpIdx[ci]])
 	}
-	sort.Ints(corners)
 	verts := refineCorners(dense, clusterCorners(corners, len(dense)))
-	verts = append(verts, straightEdgeVertices(pts, dense, verts)...)
+	verts = append(verts, straightEdgeVertices(dense, dssIdx, verts)...)
 	if len(verts) == 0 {
 		return fit.FitClosed(dense, fitTol)
 	}
@@ -170,6 +179,13 @@ func spline(pts []geom.Point, o Options) []fit.Segment {
 	var segs []fit.Segment
 	for k, v := range verts {
 		next := verts[(k+1)%len(verts)]
+		if len(verts) > 1 && next.in == v.out {
+			// Two vertices at one dense index: nothing lies between them.
+			if next.pos.Sub(v.pos).Len() > 1e-9 {
+				segs = append(segs, fit.Segment{Line: true, P: fit.Cubic{v.pos, v.pos, next.pos, next.pos}})
+			}
+			continue
+		}
 		run := []geom.Vec2{v.pos}
 		for i := (v.out + 1) % n; i != next.in; i = (i + 1) % n {
 			run = append(run, dense[i])
@@ -293,15 +309,14 @@ func flankDir(dense []geom.Vec2, i, step, count int) geom.Vec2 {
 }
 
 // straightEdgeVertices finds the long straight edges of the staircase-free
-// polygon and returns a smooth breakpoint at each end, so that straight
-// edges are fitted as lines joined tangentially to the curves beside them.
-// Ends that fall within cornerCluster of an existing vertex are skipped.
-func straightEdgeVertices(pts []geom.Point, dense []geom.Vec2, have []vertex) []vertex {
+// polygon (given as dense indices dssIdx) and returns a smooth breakpoint
+// at each end, so that straight edges are fitted as lines joined
+// tangentially to the curves beside them. Ends that fall within an
+// existing vertex's flank window are skipped. Where two straight edges
+// share an end, the two breakpoints merge into one vertex at the
+// intersection of the edges' lines.
+func straightEdgeVertices(dense []geom.Vec2, dssIdx []int, have []vertex) []vertex {
 	n := len(dense)
-	index := make(map[geom.Point]int, n)
-	for i, p := range pts {
-		index[p] = i
-	}
 	// Ends inside a corner's flank window are already covered by that
 	// corner's line fit.
 	near := func(i int) bool {
@@ -312,19 +327,22 @@ func straightEdgeVertices(pts []geom.Point, dense []geom.Vec2, have []vertex) []
 		}
 		return false
 	}
-	dss := geom.RemoveStaircases(geom.MergeCollinear(pts))
-	m := len(dss)
+	m := len(dssIdx)
 	if m < 3 {
 		return nil
 	}
-	var out []vertex
+	type end struct {
+		idx  int
+		p, d geom.Vec2 // the edge's least-squares line
+	}
+	var ends []end
 	for i := 0; i < m; i++ {
-		a, b := dss[i].Vec(), dss[(i+1)%m].Vec()
+		ia, ib := dssIdx[i], dssIdx[(i+1)%m]
+		a, b := dense[ia], dense[ib]
 		l := b.Sub(a).Len()
 		if l < minStraight {
 			continue
 		}
-		ia, ib := index[dss[i]], index[dss[(i+1)%m]]
 		run := make([]geom.Vec2, 0, gap(ia, ib, n)+1)
 		for j := ia; ; j = (j + 1) % n {
 			run = append(run, dense[j])
@@ -349,9 +367,7 @@ func straightEdgeVertices(pts []geom.Point, dense []geom.Vec2, have []vertex) []
 		}
 		// A breakpoint goes only at an end where the boundary turns; an
 		// end the boundary continues straight through is left for the run
-		// fit, which joins collinear pieces into one line. Positions are
-		// the crack ends projected onto the edge's least-squares line.
-		project := func(q geom.Vec2) geom.Vec2 { return p.Add(d.Scale(q.Sub(p).Dot(d))) }
+		// fit, which joins collinear pieces into one line.
 		for _, e := range []struct {
 			idx  int
 			turn float64
@@ -359,8 +375,39 @@ func straightEdgeVertices(pts []geom.Point, dense []geom.Vec2, have []vertex) []
 			if e.turn < thr || near(e.idx) {
 				continue
 			}
-			out = append(out, vertex{pos: project(dense[e.idx]), in: e.idx, out: e.idx, tIn: d, tOut: d, span: cornerWindow})
+			ends = append(ends, end{idx: e.idx, p: p, d: d})
 		}
+	}
+	// Breakpoint positions are the crack ends projected onto the edge's
+	// least-squares line; a shared end takes the lines' intersection.
+	project := func(e end) geom.Vec2 { return e.p.Add(e.d.Scale(dense[e.idx].Sub(e.p).Dot(e.d))) }
+	var out []vertex
+	for k := 0; k < len(ends); k++ {
+		e := ends[k]
+		var next *end
+		if k+1 < len(ends) && ends[k+1].idx == e.idx {
+			next = &ends[k+1]
+		} else if k == len(ends)-1 && len(out) > 0 && ends[0].idx == e.idx && len(ends) > 1 {
+			// The loop's last edge ends where its first edge begins.
+			out[0].tIn = e.d
+			if x, ok := fit.Intersect(e.p, e.d, ends[0].p, ends[0].d); ok && x.Sub(dense[e.idx]).Len() <= cornerMaxMove {
+				out[0].pos = x
+			} else {
+				out[0].pos = project(e).Add(project(ends[0])).Scale(0.5)
+			}
+			continue
+		}
+		v := vertex{pos: project(e), in: e.idx, out: e.idx, tIn: e.d, tOut: e.d, span: cornerWindow}
+		if next != nil {
+			v.tOut = next.d
+			if x, ok := fit.Intersect(e.p, e.d, next.p, next.d); ok && x.Sub(dense[e.idx]).Len() <= cornerMaxMove {
+				v.pos = x
+			} else {
+				v.pos = project(e).Add(project(*next)).Scale(0.5)
+			}
+			k++
+		}
+		out = append(out, v)
 	}
 	return out
 }

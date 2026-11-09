@@ -5,11 +5,23 @@ import "math"
 // MergeCollinear drops every vertex of a closed lattice polygon whose
 // incoming and outgoing edges point the same way.
 func MergeCollinear(poly []Point) []Point {
+	return pick(poly, MergeCollinearIndices(poly))
+}
+
+// MergeCollinearIndices returns, in ascending order, the indices of the
+// vertices MergeCollinear keeps. Simplification works on indices rather
+// than coordinates because a loop may visit the same lattice point twice
+// (two regions touching at a corner), so a coordinate does not identify a
+// vertex.
+func MergeCollinearIndices(poly []Point) []int {
 	n := len(poly)
+	out := make([]int, 0, n)
 	if n < 3 {
-		return append([]Point(nil), poly...)
+		for i := range poly {
+			out = append(out, i)
+		}
+		return out
 	}
-	out := make([]Point, 0, n)
 	for i := 0; i < n; i++ {
 		prev, cur, next := poly[(i+n-1)%n], poly[i], poly[(i+1)%n]
 		din := Point{cur.X - prev.X, cur.Y - prev.Y}
@@ -17,7 +29,16 @@ func MergeCollinear(poly []Point) []Point {
 		if din.X*dout.Y-din.Y*dout.X == 0 && din.X*dout.X+din.Y*dout.Y > 0 {
 			continue // same direction
 		}
-		out = append(out, cur)
+		out = append(out, i)
+	}
+	return out
+}
+
+// pick returns the points of poly at the given indices.
+func pick(poly []Point, idx []int) []Point {
+	out := make([]Point, len(idx))
+	for k, i := range idx {
+		out[k] = poly[i]
 	}
 	return out
 }
@@ -54,9 +75,22 @@ func lsqLine(pts []Vec2) (c, d Vec2) {
 }
 
 func RemoveStaircases(poly []Point) []Point {
+	return pick(poly, RemoveStaircasesIndices(poly))
+}
+
+// RemoveStaircasesIndices returns, in ascending order, the indices of the
+// vertices RemoveStaircases keeps.
+func RemoveStaircasesIndices(poly []Point) []int {
 	n := len(poly)
+	all := func() []int {
+		out := make([]int, n)
+		for i := range out {
+			out[i] = i
+		}
+		return out
+	}
 	if n < 5 {
-		return append([]Point(nil), poly...)
+		return all()
 	}
 	segLen := make([]int, n)   // segment i: poly[i] → poly[i+1]
 	segVert := make([]bool, n) // vertical?
@@ -143,6 +177,44 @@ func RemoveStaircases(poly []Point) []Point {
 		return false
 	}
 
+	// chainDir is the unit least-squares direction of chain vertices
+	// first..first+count-1.
+	chainDir := func(first, count int) Vec2 {
+		chain := make([]Vec2, count)
+		for k := range chain {
+			chain[k] = poly[(first+k)%n].Vec()
+		}
+		_, d := lsqLine(chain)
+		return d
+	}
+	// backAlong reports whether the boundary beyond corner c, walking in
+	// direction step, runs parallel to d: it follows up to four vertices
+	// whose segments are no longer than the chain's longest run plus one
+	// (longer ones belong to a real edge, not a parallel staircase) and
+	// compares the direction reached with d.
+	backAlong := func(c, step, first, count int, d Vec2) bool {
+		longest := 0
+		for k := 0; k < count-1; k++ {
+			longest = max(longest, segLen[(first+k)%n])
+		}
+		j := c
+		for k := 0; k < 4; k++ {
+			seg := j // segment j → j+1
+			if step < 0 {
+				seg = (j + n - 1) % n
+			}
+			if segLen[seg] > longest+1 {
+				break
+			}
+			j = ((j+step)%n + n) % n
+		}
+		far := poly[j].Vec().Sub(poly[c].Vec())
+		if far == (Vec2{}) {
+			return false
+		}
+		return math.Abs(far.Norm().Dot(d)) > 0.9
+	}
+
 	start := -1
 	for i := 0; i < n; i++ {
 		if !alternates(i) {
@@ -151,7 +223,7 @@ func RemoveStaircases(poly []Point) []Point {
 		}
 	}
 	if start < 0 {
-		return append([]Point(nil), poly...) // one endless staircase: leave it
+		return all() // one endless staircase: leave it
 	}
 
 	drop := make([]bool, n)
@@ -173,11 +245,15 @@ func RemoveStaircases(poly []Point) []Point {
 		// corner) extends to that corner when the digital line still
 		// holds, so no 1 px stub is left between them. The corner itself is
 		// always kept, and abutting chains never extend into each other.
+		// Nor does a chain extend into a corner whose far side runs back
+		// along the chain: that is the end of a one-pixel-wide sliver, and
+		// extending from both sides would collapse it to a chord.
 		lo, cnt := i, count
-		if prev := (i + n - 1) % n; isolated(prev) && straight(prev, cnt+1) {
+		d := chainDir(i, count)
+		if prev := (i + n - 1) % n; isolated(prev) && !backAlong(prev, -1, i, count, d) && straight(prev, cnt+1) {
 			lo, cnt = prev, cnt+1
 		}
-		if next := (lo + cnt) % n; isolated(next) && straight(lo, cnt+1) {
+		if next := (lo + cnt) % n; isolated(next) && !backAlong(next, +1, i, count, d) && straight(lo, cnt+1) {
 			cnt++
 		}
 		for m := 1; m < cnt-1; m++ {
@@ -186,10 +262,10 @@ func RemoveStaircases(poly []Point) []Point {
 		// The last vertex may begin the next chain; resume there.
 		k += count - 1
 	}
-	out := make([]Point, 0, n)
+	out := make([]int, 0, n)
 	for i := 0; i < n; i++ {
 		if !drop[i] {
-			out = append(out, poly[i])
+			out = append(out, i)
 		}
 	}
 	return out
@@ -197,10 +273,29 @@ func RemoveStaircases(poly []Point) []Point {
 
 // Simplify runs MergeCollinear, RemoveStaircases and RDPClosed with tol.
 func Simplify(poly []Point, tol float64) []Vec2 {
-	p := RemoveStaircases(MergeCollinear(poly))
-	v := make([]Vec2, len(p))
-	for i, pt := range p {
-		v[i] = pt.Vec()
+	idx := SimplifyIndices(poly, tol)
+	v := make([]Vec2, len(idx))
+	for k, i := range idx {
+		v[k] = poly[i].Vec()
 	}
-	return RDPClosed(v, tol)
+	return v
+}
+
+// SimplifyIndices returns, in ascending order, the indices into poly of
+// the vertices Simplify keeps.
+func SimplifyIndices(poly []Point, tol float64) []int {
+	merged := MergeCollinearIndices(poly)
+	dss := RemoveStaircasesIndices(pick(poly, merged))
+	for k, i := range dss {
+		dss[k] = merged[i]
+	}
+	v := make([]Vec2, len(dss))
+	for k, i := range dss {
+		v[k] = poly[i].Vec()
+	}
+	rdp := RDPClosedIndices(v, tol)
+	for k, i := range rdp {
+		rdp[k] = dss[i]
+	}
+	return rdp
 }

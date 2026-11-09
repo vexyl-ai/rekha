@@ -1,6 +1,9 @@
 package geom
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestRDPKeepsCorners(t *testing.T) {
 	var pts []Vec2
@@ -52,4 +55,27 @@ func TestRDPClosedSquare(t *testing.T) {
 			t.Fatalf("unexpected vertex %v", p)
 		}
 	}
+}
+
+// A sliver whose vertices all lie within tolerance of its long chord must
+// not collapse to two points: a closed polygon needs area, so the farthest
+// vertex on each side of the chord is kept.
+func TestRDPClosedKeepsSliver(t *testing.T) {
+	pts := []Vec2{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 100, Y: 99}, {X: 100, Y: 100}, {X: 99, Y: 100}, {X: 0, Y: 1}}
+	got := RDPClosed(pts, 0.75)
+	if len(got) < 3 {
+		t.Fatalf("collapsed to %v", got)
+	}
+	if a := math.Abs(area2Vec(got)); a < 100 {
+		t.Fatalf("area2 %v too small for %v", a, got)
+	}
+}
+
+func area2Vec(p []Vec2) float64 {
+	s := 0.0
+	for i := range p {
+		a, b := p[i], p[(i+1)%len(p)]
+		s += a.X*b.Y - a.Y*b.X
+	}
+	return s
 }

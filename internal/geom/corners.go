@@ -45,16 +45,3 @@ func armPoint(poly []Vec2, i, step int) Vec2 {
 	}
 	return poly[j]
 }
-
-// NearestIndex returns the index of the dense point closest to p; ties go
-// to the lower index.
-func NearestIndex(dense []Point, p Vec2) int {
-	best, bestD := 0, math.Inf(1)
-	for i, d := range dense {
-		dx, dy := float64(d.X)-p.X, float64(d.Y)-p.Y
-		if dd := dx*dx + dy*dy; dd < bestD {
-			best, bestD = i, dd
-		}
-	}
-	return best
-}

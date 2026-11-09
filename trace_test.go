@@ -319,3 +319,156 @@ func TestTraceSplineLargeStarIsTenLines(t *testing.T) {
 		t.Fatalf("got %d segments, want about 10", len(got))
 	}
 }
+
+// bitmapImage returns a grey image that thresholds back to bm.
+func bitmapImage(bm *bitmap.Bitmap) *image.Gray {
+	img := image.NewGray(image.Rect(0, 0, bm.W, bm.H))
+	for y := 0; y < bm.H; y++ {
+		for x := 0; x < bm.W; x++ {
+			if !bm.Get(x, y) {
+				img.SetGray(x, y, color.Gray{Y: 255})
+			}
+		}
+	}
+	return img
+}
+
+// polygonImage rasterises a closed polygon into a w×h grey image.
+func polygonImage(w, h int, poly []geom.Vec2) *image.Gray {
+	var segs []fit.Segment
+	for i := range poly {
+		a, b := poly[i], poly[(i+1)%len(poly)]
+		segs = append(segs, fit.Segment{Line: true, P: fit.Cubic{a, a, b, b}})
+	}
+	return bitmapImage(rasttest.Fill(w, h, []svg.Path{{Subpaths: []svg.Subpath{{Segs: segs}}}}))
+}
+
+// mismatches counts pixels where the filled result disagrees with the
+// thresholded input.
+func mismatches(t *testing.T, img image.Image, r *Result) int {
+	t.Helper()
+	gray, w, h := bitmap.Gray(img)
+	want := bitmap.FromGray(gray, w, h, 128)
+	got := rasttest.Fill(w, h, r.Paths)
+	mis := 0
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if got.Get(x, y) != want.Get(x, y) {
+				mis++
+			}
+		}
+	}
+	return mis
+}
+
+func countSegs(r *Result) (segs, lines int) {
+	for _, p := range r.Paths {
+		for _, sp := range p.Subpaths {
+			for _, s := range sp.Segs {
+				segs++
+				if s.Line {
+					lines++
+				}
+			}
+		}
+	}
+	return
+}
+
+// An octagon turns 45° at each vertex, under the corner threshold, so its
+// vertices come from straight-edge detection. Adjacent edges share an end
+// and must yield one vertex there, not two: eight lines, not a tangle.
+func TestTraceSplineOctagonIsEightLines(t *testing.T) {
+	var poly []geom.Vec2
+	for i := 0; i < 8; i++ {
+		a := math.Pi/8 + float64(i)*math.Pi/4
+		poly = append(poly, geom.Vec2{X: 128 + 100*math.Cos(a), Y: 128 + 100*math.Sin(a)})
+	}
+	img := polygonImage(256, 256, poly)
+	r, err := Trace(img, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	segs, lines := countSegs(r)
+	if segs != 8 || lines != 8 {
+		t.Errorf("got %d segments (%d lines), want 8 lines", segs, lines)
+	}
+	if mis := mismatches(t, img, r); mis > 60 {
+		t.Errorf("%d mismatched pixels", mis)
+	}
+}
+
+// With the corner threshold above 90° a rectangle has no corners, only
+// four straight edges; it must still trace as four lines.
+func TestTraceSplineRectHighCornerThresholdIsFourLines(t *testing.T) {
+	img := polygonImage(160, 120, []geom.Vec2{{X: 20, Y: 20}, {X: 140, Y: 20}, {X: 140, Y: 100}, {X: 20, Y: 100}})
+	o := DefaultOptions()
+	o.CornerThreshold = 100
+	r, err := Trace(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segs, lines := countSegs(r)
+	if segs != 4 || lines != 4 {
+		t.Errorf("got %d segments (%d lines), want 4 lines", segs, lines)
+	}
+	if mis := mismatches(t, img, r); mis != 0 {
+		t.Errorf("%d mismatched pixels", mis)
+	}
+}
+
+// Two squares touching at one pixel corner trace, under the black policy,
+// as a single loop that visits the shared corner twice. Index mapping by
+// coordinate would confuse the two visits; the result must be the
+// eight-sided outline with no spurious segments.
+func TestTraceSplineTouchingSquaresUnderBlack(t *testing.T) {
+	bm := bitmap.New(80, 80)
+	for y := 10; y < 40; y++ {
+		for x := 10; x < 40; x++ {
+			bm.Set(x, y, true)
+			bm.Set(x+30, y+30, true)
+		}
+	}
+	img := bitmapImage(bm)
+	o := DefaultOptions()
+	o.TurnPolicy = TurnBlack
+	r, err := Trace(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Paths) != 1 || len(r.Paths[0].Subpaths) != 1 {
+		t.Fatalf("got %d paths, want one loop", len(r.Paths))
+	}
+	segs, lines := countSegs(r)
+	if segs != 8 || lines != 8 {
+		t.Errorf("got %d segments (%d lines), want 8 lines", segs, lines)
+	}
+	if mis := mismatches(t, img, r); mis != 0 {
+		t.Errorf("%d mismatched pixels", mis)
+	}
+}
+
+// A one-pixel-wide diagonal must survive every mode: simplification may
+// not collapse the sliver to a zero-area chord.
+func TestTraceThinDiagonalKeepsArea(t *testing.T) {
+	bm := bitmap.New(128, 128)
+	for i := 0; i < 100; i++ {
+		bm.Set(10+i, 10+i, true)
+	}
+	img := bitmapImage(bm)
+	for _, mode := range []Mode{ModePolygon, ModeSpline} {
+		o := DefaultOptions()
+		o.Mode = mode
+		r, err := Trace(img, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		segs, _ := countSegs(r)
+		if segs < 3 || segs > 6 {
+			t.Errorf("%s: got %d segments, want 3..6", mode, segs)
+		}
+		if mis := mismatches(t, img, r); mis > 20 {
+			t.Errorf("%s: %d of 100 pixels lost", mode, mis)
+		}
+	}
+}
