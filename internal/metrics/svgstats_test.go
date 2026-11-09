@@ -17,14 +17,14 @@ func TestStatsCountsImplicitSegments(t *testing.T) {
 		d    string
 		want int
 	}{
-		{"M0 0 10 10 20 20Z", 4},                        // M + 2 implicit L + Z
-		{"m5,5l-115 -332 -357 -9z", 4},                  // m, l, implicit l, z
-		{"M0 0c1 1 2 2 3 3 4 4 5 5 6 6", 3},             // M + 2 cubics
-		{"M0 0h10v10h-10z", 5},                          // M h v h z
-		{"M0 0 a5 5 0 0 1 10 0 5 5 0 0 1 -10 0", 3},     // M + 2 arcs
-		{"M1.5-2.5e1L3,4", 2},                           // signs, exponents, commas
-		{"M0 0 S1 1 2 2 Q3 3 4 4 T5 5", 4},              // M S Q T
-		{"M 0 0 L 1 1 M 2 2 L 3 3 z", 5},                // two subpaths
+		{"M0 0 10 10 20 20Z", 4},                    // M + 2 implicit L + Z
+		{"m5,5l-115 -332 -357 -9z", 4},              // m, l, implicit l, z
+		{"M0 0c1 1 2 2 3 3 4 4 5 5 6 6", 3},         // M + 2 cubics
+		{"M0 0h10v10h-10z", 5},                      // M h v h z
+		{"M0 0 a5 5 0 0 1 10 0 5 5 0 0 1 -10 0", 3}, // M + 2 arcs
+		{"M1.5-2.5e1L3,4", 2},                       // signs, exponents, commas
+		{"M0 0 S1 1 2 2 Q3 3 4 4 T5 5", 4},          // M S Q T
+		{"M 0 0 L 1 1 M 2 2 L 3 3 z", 5},            // two subpaths
 	}
 	for _, c := range cases {
 		svg := []byte(`<svg><path d="` + c.d + `"/></svg>`)
