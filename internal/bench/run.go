@@ -21,7 +21,7 @@ import (
 
 	"golang.org/x/image/bmp"
 
-	"github.com/lonelypx/rekha/internal/metrics"
+	"github.com/vexyl-ai/rekha/internal/metrics"
 )
 
 // Result is one image × tool measurement.

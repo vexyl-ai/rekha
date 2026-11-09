@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/lonelypx/rekha/internal/corpus"
+	"github.com/vexyl-ai/rekha/internal/corpus"
 )
 
 func main() {

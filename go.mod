@@ -1,4 +1,4 @@
-module github.com/lonelypx/rekha
+module github.com/vexyl-ai/rekha
 
 go 1.26.0
 

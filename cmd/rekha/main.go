@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lonelypx/rekha"
-	"github.com/lonelypx/rekha/internal/cli"
+	"github.com/vexyl-ai/rekha"
+	"github.com/vexyl-ai/rekha/internal/cli"
 )
 
 const version = "dev"
