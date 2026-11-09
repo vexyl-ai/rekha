@@ -161,3 +161,69 @@ func Otsu(gray []uint8) uint8 {
 	}
 	return uint8(bestT)
 }
+
+// Flatten composites img onto white and returns 3 bytes (R, G, B) per
+// pixel, row-major, with the width and height. Opaque NRGBA, RGBA, Gray
+// and Paletted images are read directly; anything else is composited
+// through the generic draw path first. Transparent pixels become white.
+func Flatten(img image.Image) ([]uint8, int, int) {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	out := make([]uint8, w*h*3)
+	switch src := img.(type) {
+	case *image.Gray:
+		for y := 0; y < h; y++ {
+			off := src.PixOffset(b.Min.X, b.Min.Y+y)
+			row := out[y*w*3 : (y+1)*w*3]
+			for x, v := range src.Pix[off : off+w] {
+				row[x*3], row[x*3+1], row[x*3+2] = v, v, v
+			}
+		}
+		return out, w, h
+	case *image.NRGBA:
+		if opaque(src.Pix, src.Stride, b) {
+			rgbRows(out, src.Pix, src.Stride, b)
+			return out, w, h
+		}
+	case *image.RGBA:
+		if opaque(src.Pix, src.Stride, b) {
+			rgbRows(out, src.Pix, src.Stride, b)
+			return out, w, h
+		}
+	case *image.Paletted:
+		lut := make([][3]uint8, len(src.Palette))
+		for i, c := range src.Palette {
+			r, g, bl, a := c.RGBA()
+			r, g, bl = r+0xffff-a, g+0xffff-a, bl+0xffff-a
+			lut[i] = [3]uint8{uint8(r >> 8), uint8(g >> 8), uint8(bl >> 8)}
+		}
+		for y := 0; y < h; y++ {
+			off := src.PixOffset(b.Min.X, b.Min.Y+y)
+			row := out[y*w*3 : (y+1)*w*3]
+			for x, idx := range src.Pix[off : off+w] {
+				c := lut[idx]
+				row[x*3], row[x*3+1], row[x*3+2] = c[0], c[1], c[2]
+			}
+		}
+		return out, w, h
+	}
+	r := image.Rect(0, 0, w, h)
+	flat := image.NewRGBA(r)
+	draw.Draw(flat, r, image.NewUniform(color.White), image.Point{}, draw.Src)
+	draw.Draw(flat, r, img, b.Min, draw.Over)
+	rgbRows(out, flat.Pix, flat.Stride, r)
+	return out, w, h
+}
+
+// rgbRows copies the RGB bytes of 4-byte pixels (Pix starting at the
+// top-left of bounds b) into out.
+func rgbRows(out, pix []uint8, stride int, b image.Rectangle) {
+	w, h := b.Dx(), b.Dy()
+	for y := 0; y < h; y++ {
+		row := pix[y*stride : y*stride+4*w]
+		o := out[y*w*3 : (y+1)*w*3]
+		for x := 0; x < w; x++ {
+			o[x*3], o[x*3+1], o[x*3+2] = row[x*4], row[x*4+1], row[x*4+2]
+		}
+	}
+}

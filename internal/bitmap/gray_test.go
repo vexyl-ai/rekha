@@ -72,7 +72,16 @@ func referenceGray(img image.Image) []uint8 {
 	return out
 }
 
-func TestGrayMatchesReference(t *testing.T) {
+type refImage struct {
+	name string
+	img  image.Image
+	tol  int
+}
+
+// referenceImages builds one image per decoder output type Gray and
+// Flatten have fast paths for, plus a generic one, all 37×23 with a
+// non-zero origin.
+func referenceImages() []refImage {
 	rnd := rand.New(rand.NewSource(1))
 	const w, h = 37, 23
 	rect := image.Rect(5, 7, 5+w, 7+h) // non-zero origin
@@ -99,11 +108,7 @@ func TestGrayMatchesReference(t *testing.T) {
 			nrgbaAlpha.SetNRGBA(x, y, c)
 		}
 	}
-	cases := []struct {
-		name string
-		img  image.Image
-		tol  int
-	}{
+	return []refImage{
 		{"nrgba", nrgba, 0},
 		{"rgba", rgba, 0},
 		{"gray", gray, 0},
@@ -111,10 +116,13 @@ func TestGrayMatchesReference(t *testing.T) {
 		{"nrgba-alpha", nrgbaAlpha, 1},
 		{"rgba64", rgba64, 0},
 	}
-	for _, c := range cases {
+}
+
+func TestGrayMatchesReference(t *testing.T) {
+	for _, c := range referenceImages() {
 		got, gw, gh := Gray(c.img)
-		if gw != w || gh != h {
-			t.Fatalf("%s: size %dx%d, want %dx%d", c.name, gw, gh, w, h)
+		if gw != 37 || gh != 23 {
+			t.Fatalf("%s: size %dx%d, want 37x23", c.name, gw, gh)
 		}
 		want := referenceGray(c.img)
 		for i := range want {
@@ -122,6 +130,44 @@ func TestGrayMatchesReference(t *testing.T) {
 				t.Fatalf("%s: pixel %d = %d, reference %d", c.name, i, got[i], want[i])
 			}
 		}
+	}
+}
+
+// referenceFlat composites onto white through the generic draw path and
+// returns the RGB bytes.
+func referenceFlat(img image.Image) []uint8 {
+	r := image.Rect(0, 0, img.Bounds().Dx(), img.Bounds().Dy())
+	flat := image.NewNRGBA(r)
+	draw.Draw(flat, r, image.NewUniform(color.White), image.Point{}, draw.Src)
+	draw.Draw(flat, r, img, img.Bounds().Min, draw.Over)
+	out := make([]uint8, 0, r.Dx()*r.Dy()*3)
+	for i := 0; i < len(flat.Pix); i += 4 {
+		out = append(out, flat.Pix[i], flat.Pix[i+1], flat.Pix[i+2])
+	}
+	return out
+}
+
+func TestFlattenMatchesReference(t *testing.T) {
+	for _, c := range referenceImages() {
+		got, gw, gh := Flatten(c.img)
+		if gw != 37 || gh != 23 || len(got) != 37*23*3 {
+			t.Fatalf("%s: size %dx%d, %d bytes", c.name, gw, gh, len(got))
+		}
+		want := referenceFlat(c.img)
+		for i := range want {
+			if d := int(got[i]) - int(want[i]); d > c.tol || d < -c.tol {
+				t.Fatalf("%s: byte %d = %d, reference %d", c.name, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+func TestFlattenTransparentIsWhite(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	img.SetNRGBA(0, 0, color.NRGBA{0, 0, 0, 0})
+	rgb, _, _ := Flatten(img)
+	if rgb[0] != 255 || rgb[1] != 255 || rgb[2] != 255 {
+		t.Fatalf("got %v", rgb)
 	}
 }
 
