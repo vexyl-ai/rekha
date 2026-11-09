@@ -2,7 +2,18 @@
 
 Rekha traces raster images (PNG, JPEG, GIF) into SVG. Pure Go, no cgo, one static binary, same library behind a CLI, an HTTP server and a WebAssembly build.
 
-**Status:** Phase 0 (foundations). Not yet usable for tracing. See `design/roadmap.md` for the plan.
+**Status:** Phase 1: bilevel tracing works. Colour, refinement, server and WASM builds follow; see `design/roadmap.md`.
+
+## Usage
+
+```
+go build -o bin/rekha ./cmd/rekha
+bin/rekha image.png                      # writes image.svg
+bin/rekha -o out.svg --threshold auto image.png
+bin/rekha --mode polygon - < in.png > out.svg
+```
+
+Options: `--mode pixel|polygon|spline` (default spline), `--threshold 0..1|auto` (default 0.5), `--turn-policy minority|majority|black|white`, `--filter-speckle N` pixels, `--simplify` px, `--corner-threshold` degrees, `--fit-tolerance` px, `--path-precision` decimals. Exit codes: 0 ok, 1 usage, 2 a trace failed (remaining inputs are still processed).
 
 ## Independent implementation
 

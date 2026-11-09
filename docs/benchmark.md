@@ -23,6 +23,8 @@ brew install librsvg potrace
 
 `rsvg-convert` (from librsvg) is required; the harness exits with code 2 without it. Potrace is a reference tool; missing tools are skipped per row.
 
+Pin the reference versions when recording a baseline: `potrace --version`, `vtracer --version`.
+
 **VTracer** has no Homebrew formula and needs either a Rust toolchain (`brew install rust && cargo install vtracer`) or the prebuilt binary from the [GitHub releases page](https://github.com/visioncortex/vtracer/releases) (`vtracer-aarch64-apple-darwin.tar.gz` on Apple Silicon). Put the `vtracer` binary on `PATH`. The 2026-11-09 baseline was recorded without it.
 
 Potrace and VTracer are used only as binaries. Do not read their source; see `CONTRIBUTING.md`.
@@ -30,10 +32,14 @@ Potrace and VTracer are used only as binaries. Do not read their source; see `CO
 ## Run
 
 ```
-make bench                                  # all builtin tools, writes bench/out/
+make bench                                  # all builtin tools plus bin/rekha, writes bench/out/
 ./bin/rekha-bench -tools potrace            # one tool
+./bin/rekha-bench -tools rekha,potrace      # rekha against one reference
+./bin/rekha-bench -rekha /path/to/rekha     # benchmark another rekha build
 ./bin/rekha-bench -corpus path/to/images    # another corpus
 ```
+
+Rekha itself is always included (`-rekha` names the binary, default `bin/rekha`, which `make bench` builds first). It runs as `rekha --preset bw -o {out} {in}`, the same black-box treatment the reference tools get.
 
 Outputs `bench/out/results.md` and `bench/out/results.csv` and prints the markdown table. Rows are sorted by image path then tool name, and error notes never contain scratch paths, so two runs differ only in the `ms` column.
 
@@ -51,7 +57,7 @@ Edit `BuiltinTools` in `internal/bench/tool.go`:
 - `{in}` and `{out}` are replaced with the prepared input path and the SVG output path.
 - `Input` is `png` or `bmp`. BMP inputs are composited onto white because BMP has no alpha.
 
-Rekha itself will be added as a tool in Phase 1.
+Rekha is not in `BuiltinTools`; it comes from `RekhaTool(bin)` so the binary path can be configured.
 
 ## Vector Magic (manual, follow-up)
 

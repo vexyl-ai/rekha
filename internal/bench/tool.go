@@ -20,10 +20,18 @@ func BuiltinTools() []Tool {
 	}
 }
 
+// RekhaTool returns the tool entry for a rekha binary at bin, run with the
+// bw preset so the comparison with the bilevel reference tools is fair.
+func RekhaTool(bin string) Tool {
+	return Tool{Name: "rekha", Bin: bin, Args: []string{"--preset", "bw", "-o", "{out}", "{in}"}, Input: "png"}
+}
+
 // ByName returns the builtin tools whose names appear in names, in the
-// order given. Unknown names are returned in the second value.
+// order given. "rekha" resolves to RekhaTool("rekha"); the caller replaces
+// its Bin with the configured path. Unknown names are returned in the
+// second value.
 func ByName(names []string) ([]Tool, []string) {
-	all := BuiltinTools()
+	all := append(BuiltinTools(), RekhaTool("rekha"))
 	var tools []Tool
 	var unknown []string
 	for _, n := range names {

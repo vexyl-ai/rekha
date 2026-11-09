@@ -24,17 +24,28 @@ func run(args []string) int {
 	corpus := fs.String("corpus", "testdata/corpus", "corpus directory (walked recursively for *.png)")
 	toolsFlag := fs.String("tools", "", "comma-separated tool names; default all builtin")
 	out := fs.String("out", "bench/out", "output directory for results.md and results.csv")
+	rekhaBin := fs.String("rekha", "bin/rekha", "path to the rekha binary to benchmark")
 	if err := fs.Parse(args); err != nil {
 		return cli.ExitUsage
 	}
+	rekhaPath, err := filepath.Abs(*rekhaBin)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "rekha-bench:", err)
+		return cli.ExitUsage
+	}
 
-	tools := bench.BuiltinTools()
+	tools := append(bench.BuiltinTools(), bench.RekhaTool(rekhaPath))
 	if *toolsFlag != "" {
 		var unknown []string
 		tools, unknown = bench.ByName(strings.Split(*toolsFlag, ","))
 		if len(unknown) > 0 {
 			fmt.Fprintf(os.Stderr, "rekha-bench: unknown tools: %s\n", strings.Join(unknown, ", "))
 			return cli.ExitUsage
+		}
+		for i := range tools {
+			if tools[i].Name == "rekha" {
+				tools[i].Bin = rekhaPath
+			}
 		}
 	}
 	if err := bench.CheckRasterizer(); err != nil {

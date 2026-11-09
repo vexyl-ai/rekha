@@ -205,3 +205,21 @@ func TestCheckRasterizerMessage(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestRekhaToolArgs(t *testing.T) {
+	tool := RekhaTool("/x/rekha")
+	if tool.Name != "rekha" || tool.Bin != "/x/rekha" || tool.Input != "png" {
+		t.Fatalf("got %+v", tool)
+	}
+	want := []string{"--preset", "bw", "-o", "{out}", "{in}"}
+	if strings.Join(tool.Args, " ") != strings.Join(want, " ") {
+		t.Fatalf("Args = %v, want %v", tool.Args, want)
+	}
+}
+
+func TestByNameKnowsRekha(t *testing.T) {
+	tools, unknown := ByName([]string{"rekha", "potrace"})
+	if len(unknown) != 0 || len(tools) != 2 || tools[0].Name != "rekha" {
+		t.Fatalf("tools %v unknown %v", tools, unknown)
+	}
+}
