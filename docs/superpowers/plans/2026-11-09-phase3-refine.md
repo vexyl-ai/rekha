@@ -258,7 +258,7 @@ func TestMaskHoleIsComplement(t *testing.T)      // logo-holes cutout: hole cont
 func TestMaskExtensionBandIsHard(t *testing.T)   // aa-abut stacked: a band pixel (labelled blue, inside red's extended region) → (1,1)
 func TestPresetRefineDefaults(t *testing.T)      // every preset: Enabled false, Sweeps 3, MaxIter 30, Weights DefaultWeights, MergeSplit true, Primitives true
 func TestValidateRefineRanges(t *testing.T)      // Sweeps 0 and 11 rejected, MaxIter 0 and 201 rejected, negative or NaN weight rejected
-func TestRefineImprovesPSNR(t *testing.T)        // refine_test: for circle-aa (bw) and aa-abut (poster): PSNR of rasttest-painted 4× supersampled spline output vs input, refined ≥ unrefined + 1 dB
+func TestRefineImprovesPSNR(t *testing.T)        // refine_test: for circle-aa (bw) and aa-abut (poster): PSNR of rasttest-painted 4× supersampled spline output vs input, refined ≥ unrefined + 1 dB; for thin-lines (bw): refined ≥ unrefined − 0.1 dB
 func TestRefineLeavesPerfectFitAlone(t *testing.T) // two-colour-abut poster: refined SVG == unrefined SVG
 func TestRefineCircleAAIsFourCubics(t *testing.T) // circle-aa bw --refine: one path, 4 segments, handle/radius 0.5523 ± 0.001, centre within 0.1 px of (128,128)
 func TestRefineDeterministicAcrossProcs(t *testing.T) // GOMAXPROCS 1 vs 8 on poster-discs --refine: identical bytes
