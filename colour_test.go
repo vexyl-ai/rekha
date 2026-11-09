@@ -82,7 +82,7 @@ func TestLogoHolesDepths(t *testing.T) {
 	for i, l := range layers {
 		shapes[i] = l.shape
 	}
-	parents := contour.Nest(shapes)
+	parents := contour.Nest(shapes, s.Width, s.Height)
 	bg := s.Labels[0]
 	byDepth := map[int][]int{}
 	for i := range layers {

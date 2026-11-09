@@ -3,6 +3,7 @@ package contour
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/vexyl-ai/rekha/internal/bitmap"
 )
@@ -38,7 +39,7 @@ func TestNestRingDepths(t *testing.T) {
 		t.Fatalf("got %d shapes", len(shapes))
 	}
 	// BuildShapes sorts by first point: block (0,0), pixel (4,4); then ring (3,3).
-	if got, want := Nest(shapes), []int{-1, 2, 0}; !reflect.DeepEqual(got, want) {
+	if got, want := Nest(shapes, a.W, a.H), []int{-1, 2, 0}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("parents %v, want %v", got, want)
 	}
 
@@ -46,7 +47,7 @@ func TestNestRingDepths(t *testing.T) {
 		"##..##",
 		"##..##",
 	})
-	if got, want := Nest(BuildShapes(Trace(side, Minority), 0)), []int{-1, -1}; !reflect.DeepEqual(got, want) {
+	if got, want := Nest(BuildShapes(Trace(side, Minority), 0), side.W, side.H), []int{-1, -1}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("side by side parents %v, want %v", got, want)
 	}
 }
@@ -65,5 +66,33 @@ func TestTraceFuncResolvesSaddlesPerVertex(t *testing.T) {
 	split := TraceFunc(bm, func(x, y int) bool { return x != 1 || y != 1 })
 	if len(split) != 2 {
 		t.Fatalf("split: %d contours, want 2", len(split))
+	}
+}
+
+// Nest must scale with the image, not with the square of the shape count:
+// a 2-pixel checkerboard at 1024² traces to about 130 000 shapes.
+func TestNestScalesToManyShapes(t *testing.T) {
+	const n = 1024
+	bm := bitmap.New(n, n)
+	for y := 0; y < n; y++ {
+		for x := 0; x < n; x++ {
+			if (x/2+y/2)%2 == 0 {
+				bm.Set(x, y, true)
+			}
+		}
+	}
+	shapes := BuildShapes(Trace(bm, Minority), 0)
+	if len(shapes) < 100000 {
+		t.Fatalf("only %d shapes", len(shapes))
+	}
+	start := time.Now()
+	parents := Nest(shapes, n, n)
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("Nest took %v for %d shapes", d, len(shapes))
+	}
+	for i, p := range parents {
+		if p != -1 {
+			t.Fatalf("shape %d has parent %d; checkerboard squares do not nest", i, p)
+		}
 	}
 }

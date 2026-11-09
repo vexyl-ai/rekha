@@ -56,7 +56,7 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	for i, l := range layers {
 		shapes[i] = l.shape
 	}
-	parents := contour.Nest(shapes)
+	parents, ids := contour.NestRaster(shapes, s.Width, s.Height)
 	for i := range layers {
 		layers[i].depth = depthOf(parents, i)
 		layers[i].contours = []contour.Contour{layers[i].shape.Outer}
@@ -65,14 +65,25 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 		}
 	}
 	// Drop the white page: depth-0 shapes sit straight on the background,
-	// which renders white, so leaving the white ones out changes nothing
-	// and keeps a transparent input transparent.
+	// which renders white, so leaving out the white ones changes nothing
+	// and keeps a transparent input transparent. The page is the near-white
+	// colour holding at least half the depth-0 area; white that is a
+	// minority at depth 0 is content on a darker page.
+	area0 := make([]int64, len(s.Palette))
+	var total0 int64
+	for _, l := range layers {
+		if l.depth == 0 {
+			area0[l.colour] += int64(l.shape.Outer.Area2)
+			total0 += int64(l.shape.Outer.Area2)
+		}
+	}
 	omit := make([]bool, len(layers))
 	for i, l := range layers {
-		omit[i] = l.depth == 0 && s.nearWhite(l.colour)
+		omit[i] = l.depth == 0 && s.nearWhite(l.colour) && 2*area0[l.colour] >= total0
+		layers[i].omit = omit[i]
 	}
 	if stacked {
-		s.extendSiblings(layers, parents, omit, o)
+		s.extendSiblings(layers, parents, ids, omit, o)
 		sort.SliceStable(layers, func(a, b int) bool {
 			if layers[a].depth != layers[b].depth {
 				return layers[a].depth < layers[b].depth
@@ -185,32 +196,16 @@ func (s *Segmentation) layers(o Options) []layer {
 // later one's edge; the later sibling still covers its own area opaquely,
 // so nothing else shows. The margin exceeds twice the fitting tolerance,
 // the most the two fitted edges can drift apart.
-func (s *Segmentation) extendSiblings(layers []layer, parents []int, omit []bool, o Options) {
+func (s *Segmentation) extendSiblings(layers []layer, parents []int, ids []int32, omit []bool, o Options) {
 	w, h := s.Width, s.Height
 	n := len(layers)
-	for i := range layers {
-		layers[i].omit = omit[i]
-	}
 	// Growth is in 4-neighbour steps (diagonal steps would bridge shapes
 	// that only touch at a corner), so along a 45° edge the margin covers
 	// 1/√2 of its length: it must still clear twice the tolerance.
 	margin := int(math.Ceil(2*math.Sqrt2*math.Max(o.FitTolerance, o.SimplifyTolerance))) + 1
 
-	// Innermost shape per pixel: fill outers largest first.
+	// ids holds the innermost shape per pixel (contour.NestRaster).
 	order := make([]int, n)
-	for i := range order {
-		order[i] = i
-	}
-	sort.SliceStable(order, func(a, b int) bool {
-		return layers[order[a]].shape.Outer.Area2 > layers[order[b]].shape.Outer.Area2
-	})
-	ids := make([]int32, w*h)
-	for i := range ids {
-		ids[i] = -1
-	}
-	for _, i := range order {
-		fillOuter(layers[i].shape.Outer.Pts, w, h, func(x, y int) { ids[y*w+x] = int32(i) })
-	}
 	// Painting position of each shape among its siblings.
 	rank := make([]int, n)
 	for i := range order {
@@ -234,14 +229,6 @@ func (s *Segmentation) extendSiblings(layers []layer, parents []int, omit []bool
 		}
 		return a
 	}
-	// Pixels inside each shape's outer, as flood-fill seeds.
-	pixels := make([][]int32, n)
-	for p, id := range ids {
-		for a := int(id); a >= 0; a = parents[a] {
-			pixels[a] = append(pixels[a], int32(p))
-		}
-	}
-
 	stamp := make([]int32, w*h)
 	var frontier, next, region []int32
 	for k := range layers {
@@ -251,11 +238,13 @@ func (s *Segmentation) extendSiblings(layers []layer, parents []int, omit []bool
 		// Grow from k's pixels, margin steps, into pixels whose sibling at
 		// k's depth is painted after k.
 		mark := int32(k + 1)
-		frontier = append(frontier[:0], pixels[k]...)
-		region = append(region[:0], pixels[k]...)
-		for _, p := range frontier {
+		region = region[:0]
+		contour.FillOuter(layers[k].shape.Outer.Pts, w, h, func(x, y int) {
+			p := int32(y*w + x)
 			stamp[p] = mark
-		}
+			region = append(region, p)
+		})
+		frontier = append(frontier[:0], region...)
 		grown := false
 		for step := 0; step < margin && len(frontier) > 0; step++ {
 			next = next[:0]
@@ -315,38 +304,6 @@ func traceRegion(region []int32, w int, policy contour.TurnPolicy) []contour.Con
 		}
 	}
 	return cs
-}
-
-// fillOuter calls set for every pixel inside the crack polygon pts under
-// the even-odd rule, by bucketing its vertical edges per row.
-func fillOuter(pts []geom.Point, w, h int, set func(x, y int)) {
-	y0, y1 := h, 0
-	for _, p := range pts {
-		y0, y1 = min(y0, p.Y), max(y1, p.Y)
-	}
-	y0, y1 = max(y0, 0), min(y1, h)
-	if y0 >= y1 {
-		return
-	}
-	rows := make([][]int, y1-y0)
-	for i, a := range pts {
-		b := pts[(i+1)%len(pts)]
-		if a.X != b.X {
-			continue
-		}
-		lo, hi := max(min(a.Y, b.Y), y0), min(max(a.Y, b.Y), y1)
-		for y := lo; y < hi; y++ {
-			rows[y-y0] = append(rows[y-y0], a.X)
-		}
-	}
-	for i, xs := range rows {
-		sort.Ints(xs)
-		for k := 0; k+1 < len(xs); k += 2 {
-			for x := max(xs[k], 0); x < min(xs[k+1], w); x++ {
-				set(x, y0+i)
-			}
-		}
-	}
 }
 
 // saddle returns the per-vertex saddle rule for tracing colour c: at a

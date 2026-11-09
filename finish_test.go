@@ -279,3 +279,49 @@ func TestStackedDiagonalLineIsOneShape(t *testing.T) {
 		t.Fatalf("got %d paths, %d subpaths; want one black shape", len(r.Paths), n)
 	}
 }
+
+// A fully transparent input flattens to white; neither hierarchy may turn
+// it into a white rectangle.
+func TestCutoutTransparentIsEmpty(t *testing.T) {
+	o := PresetOptions(PresetPoster)
+	o.Hierarchical = HierarchicalCutout
+	r, err := Trace(image.NewNRGBA(image.Rect(0, 0, 16, 16)), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Paths) != 0 {
+		t.Fatalf("got %d paths (first fill %q), want none", len(r.Paths), r.Paths[0].Fill)
+	}
+}
+
+// Only the page is dropped: white that is a minority of the depth-0 area
+// is content and is emitted even where it reaches a canvas edge.
+func TestWhiteContentAtEdgeKept(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	navy := color.NRGBA{20, 30, 60, 255}
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			c := navy
+			if y < 16 && x >= 16 && x < 48 {
+				c = color.NRGBA{255, 255, 255, 255}
+			}
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	for _, h := range []Hierarchical{HierarchicalStacked, HierarchicalCutout} {
+		o := PresetOptions(PresetPoster)
+		o.Hierarchical = h
+		o.Mode = ModePixel
+		r, err := Trace(img, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		white := false
+		for _, p := range r.Paths {
+			white = white || p.Fill == "#ffffff"
+		}
+		if !white {
+			t.Errorf("%s: white block at the top edge was dropped (%d paths)", h, len(r.Paths))
+		}
+	}
+}
