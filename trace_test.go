@@ -13,7 +13,10 @@ import (
 
 	"github.com/vexyl-ai/rekha/internal/bitmap"
 	"github.com/vexyl-ai/rekha/internal/corpus"
+	"github.com/vexyl-ai/rekha/internal/fit"
+	"github.com/vexyl-ai/rekha/internal/geom"
 	"github.com/vexyl-ai/rekha/internal/rasttest"
+	"github.com/vexyl-ai/rekha/internal/svg"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -276,5 +279,43 @@ func TestTraceSplineRoundedRectEdgesAreLines(t *testing.T) {
 	}
 	if len(segs) > 12 {
 		t.Fatalf("got %d segments, want at most 12", len(segs))
+	}
+}
+
+// Windows measured in pixels must scale with the shape: a 2000 px star
+// traces to the same ten lines as a 256 px one.
+func TestTraceSplineLargeStarIsTenLines(t *testing.T) {
+	const w, h = 2000, 2000
+	var segs []fit.Segment
+	cx, cy, ro, ri := 1000.0, 1000.0, 900.0, 360.0
+	var prev geom.Vec2
+	for i := 0; i <= 10; i++ {
+		a := -math.Pi/2 + float64(i)*math.Pi/5
+		r := ro
+		if i%2 == 1 {
+			r = ri
+		}
+		p := geom.Vec2{X: cx + r*math.Cos(a), Y: cy + r*math.Sin(a)}
+		if i > 0 {
+			segs = append(segs, fit.Segment{Line: true, P: fit.Cubic{prev, prev, p, p}})
+		}
+		prev = p
+	}
+	bm := rasttest.Fill(w, h, []svg.Path{{Subpaths: []svg.Subpath{{Segs: segs}}}})
+	img := image.NewGray(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			if !bm.Get(x, y) {
+				img.SetGray(x, y, color.Gray{Y: 255})
+			}
+		}
+	}
+	r, err := Trace(img, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := r.Paths[0].Subpaths[0].Segs
+	if len(got) > 12 {
+		t.Fatalf("got %d segments, want about 10", len(got))
 	}
 }

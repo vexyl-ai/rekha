@@ -9,10 +9,14 @@ import (
 const (
 	maxIterations = 12
 	minFitPoints  = 4
-	// tangentWindow is how many points on each side feed a tangent
-	// estimate. Traced pixel boundaries zigzag, so adjacent points alone
-	// give directions quantised to multiples of 45°.
-	tangentWindow = 8
+	// tangentWindow is the least number of points on each side that feed
+	// a tangent estimate. Traced pixel boundaries zigzag, so adjacent
+	// points alone give directions quantised to multiples of 45°. The
+	// window grows with the run (see halfWindow): a tangent error of θ
+	// moves a cubic by about θ times its handle length, so long runs need
+	// proportionally better tangents.
+	tangentWindow    = 8
+	maxTangentWindow = 128
 )
 
 // FitOpen fits pts with the given unit end tangents: t0 points into the
@@ -71,7 +75,7 @@ func FitClosed(pts []geom.Vec2, maxErr float64) []Segment {
 		run = append(run, pts[(far+i)%n])
 	}
 	run = append(run, start)
-	k := min(tangentWindow, n/2)
+	k := min(halfWindow(n), n/2)
 	window := make([]geom.Vec2, 0, 2*k+1)
 	for i := -k; i <= k; i++ {
 		window = append(window, pts[(far+i+n)%n])
@@ -93,10 +97,17 @@ func reverse(p []geom.Vec2) []geom.Vec2 {
 
 // lineDirection returns the unit direction of the least-squares line
 // through pts (principal axis), oriented from pts[0] toward the last point.
-// centerTangent estimates the forward tangent at pts[i] from up to
-// tangentWindow neighbours on each side.
+// halfWindow is the number of points on each side of a point used to
+// estimate its tangent in a run of n points: a sixth of the run, within
+// [tangentWindow, maxTangentWindow].
+func halfWindow(n int) int {
+	return max(tangentWindow, min(n/6, maxTangentWindow))
+}
+
+// centerTangent estimates the forward tangent at pts[i] from halfWindow
+// neighbours on each side.
 func centerTangent(pts []geom.Vec2, i int) geom.Vec2 {
-	k := min(tangentWindow, i, len(pts)-1-i)
+	k := min(halfWindow(len(pts)), i, len(pts)-1-i)
 	if k < 1 {
 		k = 1
 	}
@@ -153,14 +164,14 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 	// while the fit improves and accept the best one.
 	u := chordLength(pts)
 	bez := generateBezier(pts, u, t0, t1)
-	maxSq, _ := maxError(pts, bez, u)
-	best, bestSq := bez, maxSq
+	maxSq, worst := maxError(pts, bez, u)
+	best, bestSq, bestWorst := bez, maxSq, worst
 	for i := 0; i < maxIterations; i++ {
 		u = reparameterize(pts, u, bez)
 		bez = generateBezier(pts, u, t0, t1)
-		maxSq, _ = maxError(pts, bez, u)
+		maxSq, worst = maxError(pts, bez, u)
 		if maxSq < bestSq {
-			best, bestSq = bez, maxSq
+			best, bestSq, bestWorst = bez, maxSq, worst
 		} else if maxSq > bestSq*1.01 {
 			break
 		}
@@ -169,11 +180,16 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 		*out = append(*out, Segment{P: best})
 		return
 	}
-	// Split at the chord-length midpoint with a shared centre tangent.
-	// Schneider splits at the worst point, but on noisy pixel boundaries
-	// that lands near an end and shatters the run into tiny pieces;
-	// balanced halves converge in a few levels.
+	// Split with a shared centre tangent. Schneider splits at the worst
+	// point, but on noisy pixel boundaries that lands anywhere and
+	// shatters the run into tiny pieces, so balanced halves are the rule.
+	// When the worst point sits in the outer tenth of the run the error
+	// is local to that end (typically a corner placed off the edge), and
+	// splitting there keeps the rest of the run whole.
 	split := midpoint(pts)
+	if edge := max(2, n/10); bestWorst < edge || bestWorst >= n-edge {
+		split = max(2, min(bestWorst, n-3))
+	}
 	tc := centerTangent(pts, split).Scale(-1) // points "backwards" at split
 	// The shared endpoint is the local mean, not the raw crack vertex, so
 	// the joint sits on the edge rather than on a pixel corner.

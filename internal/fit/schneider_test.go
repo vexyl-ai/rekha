@@ -160,7 +160,7 @@ func digitalCircle(r float64) []geom.Vec2 {
 // suffice. Zigzag tangents at split points, or lopsided splits, produce
 // visible lumps and many extra segments.
 func TestFitClosedDigitalCircleIsRound(t *testing.T) {
-	for _, r := range []float64{16, 48, 96, 300} {
+	for _, r := range []float64{16, 48, 96, 300, 1500} {
 		segs := FitClosed(digitalCircle(r), 1.5)
 		if len(segs) > 8 {
 			t.Errorf("r=%v: segments = %d, want <= 8", r, len(segs))
@@ -189,5 +189,20 @@ func TestFitOpenStraightRunIsLine(t *testing.T) {
 	segs := FitOpen(pts, geom.Vec2{X: 1, Y: 0.3}.Norm(), geom.Vec2{X: -1, Y: 0.3}.Norm(), 1.0)
 	if len(segs) != 1 || !segs[0].Line {
 		t.Fatalf("got %+v, want one Line segment", segs)
+	}
+}
+
+// A long straight run whose first point is displaced (a corner placed off
+// the edge) must not be shattered: the fitter isolates the bad end rather
+// than halving the straight part again and again.
+func TestFitIsolatesBadEnd(t *testing.T) {
+	var pts []geom.Vec2
+	pts = append(pts, geom.Vec2{X: 0, Y: 4}) // displaced start
+	for i := 1; i <= 400; i++ {
+		pts = append(pts, geom.Vec2{X: float64(i), Y: float64(i % 2)})
+	}
+	segs := FitOpen(pts, geom.Vec2{X: 1, Y: 0}, geom.Vec2{X: -1, Y: 0}, 1.5)
+	if len(segs) > 3 {
+		t.Fatalf("got %d segments, want at most 3", len(segs))
 	}
 }

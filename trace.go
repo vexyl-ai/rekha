@@ -100,21 +100,26 @@ func lines(poly []geom.Vec2) []fit.Segment {
 // the true edge it samples.
 const quantisation = 0.5
 
-// Corner placement constants, in dense (1 px) points.
+// Corner placement constants, in dense (1 px) points. The flank window
+// grows with the run on that side (a quarter of it, within
+// [cornerWindow, cornerMaxWindow]); the skipped stretch and the allowed
+// move scale with the window, because thresholding rounds a tip over a
+// distance proportional to the image scale.
 const (
-	cornerCluster = 3  // corners this close along the boundary are one vertex
-	cornerWindow  = 12 // points per side used to fit the flank lines
-	cornerSkip    = 1  // points nearest the corner ignored (thresholding rounds tips)
-	cornerMaxMove = 3.0
+	cornerCluster   = 3   // corners this close along the boundary are one vertex
+	cornerWindow    = 12  // least points per side used to fit the flank lines
+	cornerMaxWindow = 256 // most points per side
+	cornerSkip      = 1   // least points nearest the corner ignored
+	cornerMaxMove   = 3.0 // least distance a vertex may move from the crack corner
 
 	// Straight-edge detection. A staircase-free edge of length L has
 	// sagitta at most maxStairDev, so if it is a chord of a curve that
-	// curve's radius is at least L²/(8·maxStairDev) ≈ L²/6, and the
-	// boundary direction L/4 beyond its end (the centre of a window of L/2
-	// points) differs from the edge by at most (L/4)/R = 1.5/L radians. A
-	// genuine straight edge meeting an arc turns far more. straightTurn is
-	// the safety factor on that bound; the window direction is a
-	// least-squares fit, whose noise is well below it.
+	// curve's radius is at least L²/(8·maxStairDev) ≈ L²/6. The direction
+	// of its end half (tangent L/4 inside the end) and of the L/2 points
+	// beyond the end (tangent L/4 outside) then differ by at most
+	// (L/2)/R = 3/L radians. A genuine straight edge meeting an arc turns
+	// far more. straightTurn is the safety factor on that bound; both
+	// directions are least-squares fits, whose noise is well below it.
 	minStraight  = 12.0
 	straightTurn = 3.0
 )
@@ -126,6 +131,7 @@ type vertex struct {
 	pos       geom.Vec2
 	in, out   int       // dense indices: run arrives at in, leaves from out
 	tIn, tOut geom.Vec2 // unit directions along the incoming and outgoing flanks
+	span      int       // flank window used, in dense points
 }
 
 func spline(pts []geom.Point, o Options) []fit.Segment {
@@ -217,17 +223,21 @@ func refineCorners(dense []geom.Vec2, groups [][]int) []vertex {
 	var verts []vertex
 	for g, grp := range groups {
 		in, out := grp[0]%n, grp[len(grp)-1]%n
-		// Flank windows stop halfway to the neighbouring groups.
+		// Flank windows are a quarter of the run on each side, and never
+		// more than halfway to the neighbouring group.
 		prev, next := groups[(g+len(groups)-1)%len(groups)], groups[(g+1)%len(groups)]
-		back := min(cornerWindow, gap(prev[len(prev)-1]%n, in, n)/2)
-		fwd := min(cornerWindow, gap(out, next[0]%n, n)/2)
+		back := flankWindow(gap(prev[len(prev)-1]%n, in, n))
+		fwd := flankWindow(gap(out, next[0]%n, n))
+		span := max(back, fwd)
+		skipIn, skipOut := max(cornerSkip, back/8), max(cornerSkip, fwd/8)
+		maxMove := math.Max(cornerMaxMove, float64(span)/4)
 
-		if back-cornerSkip >= 3 && fwd-cornerSkip >= 3 {
-			pIn, dIn := fit.FitLine(window(dense, in, -1, cornerSkip, back))
-			pOut, dOut := fit.FitLine(window(dense, out, +1, cornerSkip, fwd))
+		if back-skipIn >= 3 && fwd-skipOut >= 3 {
+			pIn, dIn := fit.FitLine(window(dense, in, -1, skipIn, back))
+			pOut, dOut := fit.FitLine(window(dense, out, +1, skipOut, fwd))
 			crack := dense[in].Add(dense[out]).Scale(0.5)
-			if x, ok := fit.Intersect(pIn, dIn, pOut, dOut); ok && x.Sub(crack).Len() <= cornerMaxMove {
-				verts = append(verts, vertex{pos: x, in: in, out: out, tIn: dIn, tOut: dOut})
+			if x, ok := fit.Intersect(pIn, dIn, pOut, dOut); ok && x.Sub(crack).Len() <= maxMove {
+				verts = append(verts, vertex{pos: x, in: in, out: out, tIn: dIn, tOut: dOut, span: span})
 				continue
 			}
 		}
@@ -240,7 +250,7 @@ func refineCorners(dense []geom.Vec2, groups [][]int) []vertex {
 			if k == len(grp)-1 {
 				f = max(fwd, 1)
 			}
-			verts = append(verts, vertex{pos: dense[c], in: c, out: c, tIn: flankDir(dense, c, -1, b), tOut: flankDir(dense, c, +1, f)})
+			verts = append(verts, vertex{pos: dense[c], in: c, out: c, tIn: flankDir(dense, c, -1, b), tOut: flankDir(dense, c, +1, f), span: span})
 		}
 	}
 	return verts
@@ -248,6 +258,12 @@ func refineCorners(dense []geom.Vec2, groups [][]int) []vertex {
 
 // gap is the number of dense steps from index a forward to index b.
 func gap(a, b, n int) int { return ((b-a)%n + n) % n }
+
+// flankWindow is the number of dense points used to fit a flank line when
+// the run on that side is runLen points long.
+func flankWindow(runLen int) int {
+	return min(max(cornerWindow, runLen/4), cornerMaxWindow, runLen/2)
+}
 
 // window returns the dense points from skip+1 to count steps away from i in
 // direction step, ordered away from i.
@@ -290,7 +306,7 @@ func straightEdgeVertices(pts []geom.Point, dense []geom.Vec2, have []vertex) []
 	// corner's line fit.
 	near := func(i int) bool {
 		for _, v := range have {
-			if gap(v.out, i, n) <= cornerWindow || gap(i, v.in, n) <= cornerWindow {
+			if gap(v.out, i, n) <= v.span || gap(i, v.in, n) <= v.span {
 				return true
 			}
 		}
@@ -316,26 +332,34 @@ func straightEdgeVertices(pts []geom.Point, dense []geom.Vec2, have []vertex) []
 				break
 			}
 		}
-		// The edge's own least-squares direction, not its chord: the chord
-		// between two crack vertices is skewed by up to 1/L radians.
+		// Least-squares directions, not chords: the chord between two
+		// crack vertices is skewed by up to 1/L radians.
 		p, d := fit.FitLine(run)
 		look := max(3, min(int(l/2), n/4))
+		half := min(look, len(run))
+		_, dEnd := fit.FitLine(run[len(run)-half:])
+		_, dStart := fit.FitLine(run[:half])
 		_, after := fit.FitLine(window(dense, ib, +1, 0, look))
 		_, before := fit.FitLine(window(dense, ia, -1, 0, look))
 		before = before.Scale(-1) // window runs backwards; orient forward
-		if max(angle(d, after), angle(before, d)) < straightTurn*1.5/l {
+		turnStart, turnEnd := angle(before, dStart), angle(dEnd, after)
+		thr := straightTurn * 3 / l
+		if max(turnStart, turnEnd) < thr {
 			continue // turns like a chord of a curve: fit it as a curve
 		}
-		// Sub-pixel position: project each crack end onto that line.
+		// A breakpoint goes only at an end where the boundary turns; an
+		// end the boundary continues straight through is left for the run
+		// fit, which joins collinear pieces into one line. Positions are
+		// the crack ends projected onto the edge's least-squares line.
 		project := func(q geom.Vec2) geom.Vec2 { return p.Add(d.Scale(q.Sub(p).Dot(d))) }
 		for _, e := range []struct {
-			idx int
-			pos geom.Vec2
-		}{{ia, project(dense[ia])}, {ib, project(dense[ib])}} {
-			if near(e.idx) {
+			idx  int
+			turn float64
+		}{{ia, turnStart}, {ib, turnEnd}} {
+			if e.turn < thr || near(e.idx) {
 				continue
 			}
-			out = append(out, vertex{pos: e.pos, in: e.idx, out: e.idx, tIn: d, tOut: d})
+			out = append(out, vertex{pos: project(dense[e.idx]), in: e.idx, out: e.idx, tIn: d, tOut: d, span: cornerWindow})
 		}
 	}
 	return out
