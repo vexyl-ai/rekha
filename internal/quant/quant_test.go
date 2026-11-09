@@ -26,8 +26,8 @@ func TestCellsCountsAndOrder(t *testing.T) {
 	if cells[0].Weight != 1 || cells[1].Weight != 3 || cells[0].Index >= cells[1].Index {
 		t.Fatalf("got %+v", cells)
 	}
-	// Cell centre of 6-bit cell containing 255 is 254 (252 + 2).
-	if d := colour.Dist(cells[1].Lab, colour.FromSRGB8(254, 2, 2)); d > 1e-9 {
+	// The extreme cells are centred on the channel extremes.
+	if d := colour.Dist(cells[1].Lab, colour.FromSRGB8(255, 0, 0)); d > 1e-9 {
 		t.Fatalf("red cell lab off by %v", d)
 	}
 }
@@ -129,6 +129,27 @@ func TestWuDeterministic(t *testing.T) {
 	for i := range a {
 		if a[i] != b[i] {
 			t.Fatalf("entry %d differs: %v vs %v", i, a[i], b[i])
+		}
+	}
+}
+
+// The extreme cells sit on pure black and pure white so that a flat
+// black-and-white picture quantises to #000000 and #ffffff exactly.
+func TestCellCentreEndpointsExact(t *testing.T) {
+	for bits := 1; bits <= 8; bits++ {
+		if r, g, b := CellCentre(0, bits); r != 0 || g != 0 || b != 0 {
+			t.Errorf("bits %d: cell 0 centre (%d,%d,%d), want black", bits, r, g, b)
+		}
+		top := 1<<(3*bits) - 1
+		if r, g, b := CellCentre(top, bits); r != 255 || g != 255 || b != 255 {
+			t.Errorf("bits %d: top cell centre (%d,%d,%d), want white", bits, r, g, b)
+		}
+		// Centres stay inside their own cells.
+		for idx := 0; idx < 1<<(3*bits); idx += 1 + idx/7 {
+			r, g, b := CellCentre(idx, bits)
+			if CellIndex(r, g, b, bits) != idx {
+				t.Fatalf("bits %d: centre of cell %d maps to cell %d", bits, idx, CellIndex(r, g, b, bits))
+			}
 		}
 	}
 }

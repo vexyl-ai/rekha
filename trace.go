@@ -7,8 +7,6 @@ import (
 	"math"
 	"sort"
 
-	"github.com/vexyl-ai/rekha/internal/bitmap"
-	"github.com/vexyl-ai/rekha/internal/contour"
 	"github.com/vexyl-ai/rekha/internal/fit"
 	"github.com/vexyl-ai/rekha/internal/geom"
 	"github.com/vexyl-ai/rekha/internal/svg"
@@ -31,31 +29,11 @@ func TraceReader(r io.Reader, o Options) (*Result, error) {
 
 // Trace vectorises img according to o.
 func Trace(img image.Image, o Options) (*Result, error) {
-	if err := o.Validate(); err != nil {
+	s, err := Segment(img, o)
+	if err != nil {
 		return nil, err
 	}
-	if o.Preset != PresetBW {
-		return nil, &ValidationError{"Preset", "not implemented until Phase 2"}
-	}
-
-	gray, w, h := bitmap.Gray(img)
-	th := uint8(math.Round(o.Threshold * 255))
-	if o.AutoThreshold {
-		th = bitmap.Otsu(gray)
-	}
-	bm := bitmap.FromGray(gray, w, h, th)
-	shapes := contour.BuildShapes(contour.Trace(bm, o.TurnPolicy), o.FilterSpeckle)
-
-	res := &Result{Width: w, Height: h}
-	for _, s := range shapes {
-		p := svg.Path{Fill: "#000000"}
-		p.Subpaths = append(p.Subpaths, svg.Subpath{Segs: segments(s.Outer.Pts, o)})
-		for _, hole := range s.Holes {
-			p.Subpaths = append(p.Subpaths, svg.Subpath{Segs: segments(hole.Pts, o)})
-		}
-		res.Paths = append(res.Paths, p)
-	}
-	return res, nil
+	return s.Finish(o)
 }
 
 // WriteSVG writes r as an SVG document with o.PathPrecision decimals.

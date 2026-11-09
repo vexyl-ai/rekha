@@ -21,12 +21,14 @@ func CellIndex(r, g, b uint8, bits int) int {
 	return int(r>>s)<<(2*bits) | int(g>>s)<<bits | int(b>>s)
 }
 
-// CellCentre returns the sRGB colour at the centre of cell idx.
+// CellCentre returns the sRGB colour that represents cell idx: the cell
+// coordinates stretched so that the first cell is pure black and the last
+// pure white, and a flat black-and-white picture quantises to #000000 and
+// #ffffff exactly. Every centre lies inside its own cell.
 func CellCentre(idx, bits int) (r, g, b uint8) {
-	s := 8 - bits
 	mask := 1<<bits - 1
-	half := uint8(1<<s) / 2
-	return uint8(idx>>(2*bits)&mask)<<s + half, uint8(idx>>bits&mask)<<s + half, uint8(idx&mask)<<s + half
+	stretch := func(v int) uint8 { return uint8((v*255 + mask/2) / mask) }
+	return stretch(idx >> (2 * bits) & mask), stretch(idx >> bits & mask), stretch(idx & mask)
 }
 
 // Cells counts the pixels of rgb (3 bytes per pixel) per cell at bits per

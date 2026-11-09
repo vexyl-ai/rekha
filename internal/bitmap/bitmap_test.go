@@ -36,3 +36,11 @@ func TestParse(t *testing.T) {
 		t.Fatal("Parse pattern wrong")
 	}
 }
+
+func TestClearResetsEveryPixel(t *testing.T) {
+	b := Parse([]string{"#.#", ".#."})
+	b.Clear()
+	if b.Count() != 0 || b.W != 3 || b.H != 2 {
+		t.Fatalf("after Clear: count %d, %dx%d", b.Count(), b.W, b.H)
+	}
+}

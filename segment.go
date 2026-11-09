@@ -94,16 +94,40 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 	}
 
 	s.Palette = make([]color.NRGBA, len(final))
-	for i, c := range final {
-		s.Palette[i] = nrgbaOf(c, o.Palette, pal)
+	if len(o.Palette) > 0 {
+		for i, c := range final {
+			s.Palette[i] = fixedEntry(c, o.Palette, pal)
+		}
+	} else {
+		meanColours(rgb, s.Labels, s.Palette)
 	}
 	return s
 }
 
-// nrgbaOf converts a final palette entry to sRGB. An entry that came from
-// a fixed palette keeps its exact input value.
-func nrgbaOf(c colour.OKLab, fixed []color.NRGBA, lab []colour.OKLab) color.NRGBA {
-	for i, l := range lab[:len(fixed)] {
+// meanColours sets each palette entry to the mean sRGB of the pixels that
+// carry its label: exact for flat art, and the colour that minimises the
+// squared error of a region elsewhere.
+func meanColours(rgb, labels []uint8, pal []color.NRGBA) {
+	sums := make([][4]int64, len(pal))
+	for p, l := range labels {
+		s := &sums[l]
+		s[0] += int64(rgb[3*p])
+		s[1] += int64(rgb[3*p+1])
+		s[2] += int64(rgb[3*p+2])
+		s[3]++
+	}
+	for i, s := range sums {
+		if s[3] == 0 {
+			continue
+		}
+		div := func(v int64) uint8 { return uint8((v + s[3]/2) / s[3]) }
+		pal[i] = color.NRGBA{R: div(s[0]), G: div(s[1]), B: div(s[2]), A: 255}
+	}
+}
+
+// fixedEntry returns the input palette colour that final entry c came from.
+func fixedEntry(c colour.OKLab, fixed []color.NRGBA, lab []colour.OKLab) color.NRGBA {
+	for i, l := range lab {
 		if l == c {
 			return fixed[i]
 		}

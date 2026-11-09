@@ -68,3 +68,10 @@ func Parse(rows []string) *Bitmap {
 	}
 	return b
 }
+
+// Clear sets every pixel to background, keeping the size.
+func (b *Bitmap) Clear() {
+	for i := range b.bits {
+		b.bits[i] = 0
+	}
+}

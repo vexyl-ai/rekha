@@ -2,7 +2,6 @@ package rekha
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"image"
 	"image/color"
@@ -33,16 +32,6 @@ func synth(t *testing.T, name string) *image.NRGBA {
 	}
 	t.Fatalf("no synthetic %q", name)
 	return nil
-}
-
-func TestTracePresetNotImplemented(t *testing.T) {
-	o := DefaultOptions()
-	o.Preset = PresetPoster
-	_, err := Trace(image.NewNRGBA(image.Rect(0, 0, 2, 2)), o)
-	var ve *ValidationError
-	if !errors.As(err, &ve) || ve.Field != "Preset" {
-		t.Fatalf("got %v", err)
-	}
 }
 
 func TestTraceEmptyImageNoPaths(t *testing.T) {
