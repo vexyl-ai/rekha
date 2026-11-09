@@ -90,3 +90,13 @@ func TestCircleStartAndOrientation(t *testing.T) {
 		t.Fatalf("start %v, want (50,23)", b.Pts[0])
 	}
 }
+
+func TestFitCircleRejectsSmallSquare(t *testing.T) {
+	// A 2×2 square is within 0.5 px of a circle of radius 1.2 in absolute
+	// terms, but 15 % of the radius off: not a circle at any scale.
+	for _, side := range []float64{2, 4, 6} {
+		if _, _, ok := FitCircle(square(10, 10, 10+side, 10+side), 0.5); ok {
+			t.Fatalf("%v px square taken for a circle", side)
+		}
+	}
+}

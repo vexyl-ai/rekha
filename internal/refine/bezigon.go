@@ -79,9 +79,12 @@ func straightCubic(c fit.Cubic, tol float64) bool {
 // Polyline flattens the bezigon to Flatten points per segment (t = i/Flatten,
 // i < Flatten), closed implicitly: the last point joins the first.
 func (b Bezigon) Polyline() []geom.Vec2 {
-	n := b.N()
-	out := make([]geom.Vec2, 0, n*Flatten)
-	for j := 0; j < n; j++ {
+	return polylineInto(make([]geom.Vec2, 0, b.N()*Flatten), b)
+}
+
+// polylineInto appends b's Polyline to out.
+func polylineInto(out []geom.Vec2, b Bezigon) []geom.Vec2 {
+	for j := 0; j < b.N(); j++ {
 		out = flattenInto(out, b.Segment(j))
 	}
 	return out

@@ -160,3 +160,45 @@ func TestRefineDeterministicAcrossProcs(t *testing.T) {
 		t.Fatal("output differs between GOMAXPROCS 1 and 8")
 	}
 }
+
+func TestRefineLeavesCheckerboardAlone(t *testing.T) {
+	_, _, plain, refined, o := tracePair(t, "checkerboard-2px", PresetBW)
+	var a, b bytes.Buffer
+	if err := plain.WriteSVG(&a, o); err != nil {
+		t.Fatal(err)
+	}
+	if err := refined.WriteSVG(&b, o); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a.Bytes(), b.Bytes()) {
+		t.Fatalf("refinement changed pixel-exact squares:\n%.300s\n---\n%.300s", a.String(), b.String())
+	}
+}
+
+// TestRefineCutoutNeverLoses: with the stroke off, refining cutout output
+// (outers and holes alike) scores at least what the plain fit scores.
+func TestRefineCutoutNeverLoses(t *testing.T) {
+	for _, name := range []string{"logo-holes", "three-layer-stack", "aa-abut"} {
+		img := synth(t, name)
+		o := PresetOptions(PresetPoster)
+		o.Hierarchical, o.CutoutStroke = HierarchicalCutout, 0
+		s, err := Segment(img, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plain, err := s.Finish(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.Refine.Enabled = true
+		refined, err := s.Finish(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, after := superPSNR(t, img, s, plain), superPSNR(t, img, s, refined)
+		t.Logf("%s cutout: %.2f → %.2f dB", name, before, after)
+		if after < before {
+			t.Errorf("%s cutout: refinement lost %.2f dB", name, before-after)
+		}
+	}
+}

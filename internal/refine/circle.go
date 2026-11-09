@@ -13,10 +13,16 @@ const kappa = 0.5523
 // circleSamples is the number of points per segment the circle fit uses.
 const circleSamples = 8
 
+// circleRelTol caps the circle fit tolerance at this fraction of the
+// radius: a polygon's deviation from its best circle grows with the
+// radius (a square's is 15 % of it), an anti-aliased circle's does not, so
+// an absolute tolerance alone takes every small square for a circle.
+const circleRelTol = 0.1
+
 // FitCircle fits a circle to the bezigon's outline (Kåsa's algebraic
 // least squares on circleSamples points per segment) and reports it when
 // the outline has at least three segments and every sample lies within
-// tol of the circle.
+// min(tol, circleRelTol·r) of the circle.
 func FitCircle(b Bezigon, tol float64) (centre geom.Vec2, r float64, ok bool) {
 	n := b.N()
 	if n < 3 {
@@ -63,6 +69,7 @@ func FitCircle(b Bezigon, tol float64) (centre geom.Vec2, r float64, ok bool) {
 	}
 	r = math.Sqrt(r2)
 	centre = geom.Vec2{X: cx + mean.X, Y: cy + mean.Y}
+	tol = math.Min(tol, circleRelTol*r)
 	for _, p := range pts {
 		if math.Abs(p.Sub(centre).Len()-r) > tol {
 			return geom.Vec2{}, 0, false

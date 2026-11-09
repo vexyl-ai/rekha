@@ -193,3 +193,16 @@ type Options struct {
 - Flattening point count for the SPT test (16 per segment is the default; fewer is acceptable if profiling demands).
 - Kåsa fit implementation and the sampling density for straight-cubic detection.
 - Worker-pool reuse of accumulation buffers.
+
+## As built (2026-11-09)
+
+Constants the implementation settled by measurement where the design above gave a starting value; the ledger of the executing plan records each ruling.
+
+- Data term scaled by `DataScale = 8` (squared coverage error ×64) and the handle prior weighted 0.5 (design: 0.1): with the published weights the data term could not outbid the barrier once a handle hooked onto a displaced anchor, and corners rounded.
+- Length prior normalised by the initial length `l0`, like the data term: the raw prior shrank thin shapes (`thin-lines` lost 5 dB; now gains 4).
+- Each sweep moves a piece's points at most 2 px (a per-point trust box) and evaluates the data term over the rows the piece can reach, not its whole window; the self-intersection prior tests the piece's edges against the edges whose box meets that reach, with arc lengths tabulated once per piece; the merge pass measures the energy change over the window of the segments it touched. Together these keep refinement linear in the outline length (a 3.2-megapixel logo: 14 s, from 140 s).
+- Segments straighter than 0.25 px are written as lines (`lineTol`).
+- A circle is accepted only when every sample is within `min(0.5·FitTolerance, 0.1·r)` of it: an absolute tolerance alone took every 2-px square for a circle (`checkerboard-2px` fell from exact to 20 dB).
+- A hole mask complements only measured shares; a boundary pixel with no measure of the colour keeps its hard value. Complementing the hard value zeroed fully-covered pixels on hole edges and cost cutout refinement 7 dB on `logo-holes`.
+- The cutout stroke goal (within 1 dB of stacked on `aa-abut` and `three-layer-stack`) is not met at any width: two independently refined curves of one boundary leave a sub-pixel seam that the 1:1 PSNR sees, and a 0.5 px stroke thickens every edge (2–7 dB). The default stays 0.5 as a zoom-time stopgap; shared boundaries remain the real fix.
+

@@ -1,6 +1,7 @@
 package refine
 
 import (
+	"fmt"
 	"math"
 	"math/rand/v2"
 	"testing"
@@ -283,5 +284,38 @@ func TestRefineNeverRaisesEnergy(t *testing.T) {
 	l0 := math.Max(start.Length(), 1)
 	if e0, e1 := energyWith(start, m, img64, DefaultWeights, l0), energyWith(got, m, img64, DefaultWeights, l0); e1 > e0 {
 		t.Fatalf("energy rose %v → %v", e0, e1)
+	}
+}
+
+// circleN is a circle of n equal cubic arcs with the standard handle
+// length 4/3·tan(θ/4)·r.
+func circleN(cx, cy, r float64, n int) Bezigon {
+	th := 2 * math.Pi / float64(n)
+	h := 4.0 / 3 * math.Tan(th/4) * r
+	pts := make([]geom.Vec2, 0, 3*n)
+	for i := 0; i < n; i++ {
+		a0, a1 := th*float64(i), th*float64(i+1)
+		p0 := v(cx+r*math.Cos(a0), cy+r*math.Sin(a0))
+		p3 := v(cx+r*math.Cos(a1), cy+r*math.Sin(a1))
+		pts = append(pts, p0, p0.Add(v(-math.Sin(a0), math.Cos(a0)).Scale(h)), p3.Sub(v(-math.Sin(a1), math.Cos(a1)).Scale(h)))
+	}
+	return Bezigon{Pts: pts}
+}
+
+// BenchmarkRefineLong refines a 200-segment outline: the cost per piece
+// must not grow with the outline's length.
+func BenchmarkRefineLong(b *testing.B) {
+	img := Window{X0: 0, Y0: 0, W: 512, H: 512}
+	m := maskOf(circle(256, 256, 200), img)
+	for _, n := range []int{25, 200} {
+		src := circleN(256, 256, 200, n)
+		for i := range src.Pts {
+			src.Pts[i] = src.Pts[i].Add(v(0.7, -0.4))
+		}
+		b.Run(fmt.Sprintf("n=%d", src.N()), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				Refine(src, m, img, Options{Sweeps: 1, MaxIter: 30, Weights: DefaultWeights})
+			}
+		})
 	}
 }

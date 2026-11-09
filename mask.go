@@ -31,8 +31,8 @@ func (m *coverageMask) At(x, y int) (cov, weight float32) {
 // outside 0; on boundary pixels (inside with a 4-neighbour outside, or the
 // reverse) it is the share of c the segmentation measured in that pixel
 // (Blend when c is the pixel's label, its complement when c is the
-// second colour, else the hard value), complemented for a hole, whose
-// curve encloses the other side. Pixels for which band reports true (the
+// second colour, complemented for a hole, whose curve encloses the other
+// side; else the hard value, which already sees the hole from its side). Pixels for which band reports true (the
 // stacked extension band) are hard 1, so the refined outline keeps
 // running along the dilated band.
 func (s *Segmentation) mask(c uint8, poly []geom.Point, hole bool, band func(p int) bool) *coverageMask {
@@ -75,15 +75,22 @@ func (s *Segmentation) mask(c uint8, poly []geom.Point, hole bool, band func(p i
 				m.cov[i] = hard
 				continue
 			}
+			// The hard value already sees the hole from its own side;
+			// only a measured share of c needs complementing. A pixel
+			// with no measure of c (fully another colour, its second
+			// colour meaningless) keeps the hard value.
 			share := hard
 			switch {
 			case s.Labels[p] == c:
 				share = float32(s.Blend[p]) / 255
+				if hole {
+					share = 1 - share
+				}
 			case s.Second[p] == c:
-				share = 1 - float32(s.Blend[p])/255
-			}
-			if hole {
-				share = 1 - share
+				share = float32(s.Blend[p]) / 255
+				if !hole {
+					share = 1 - share
+				}
 			}
 			m.cov[i] = share
 		}

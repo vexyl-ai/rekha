@@ -33,10 +33,11 @@ func MergeSplit(b Bezigon, m Mask, img Window, o Options) Bezigon {
 	out := Bezigon{Pts: append([]geom.Vec2(nil), b.Pts...)}
 	clampAll(out, img)
 	l0 := math.Max(out.Length(), 1)
-	out = mergePass(out, m, img, l0, o)
-	out = splitPass(out, m, img, l0, o)
+	sc := &scratch{}
+	out = mergePass(out, m, img, l0, o, sc)
+	out = splitPass(out, m, img, l0, o, sc)
 	for j := 0; j < out.N(); j++ {
-		refinePiece(out, j, m, img, l0, o)
+		refinePiece(out, j, m, img, l0, o, sc)
 	}
 	for _, p := range out.Pts {
 		if !finite(p.X) || !finite(p.Y) {
@@ -53,11 +54,51 @@ func dataEnergy(b Bezigon, m Mask, img Window, l0 float64) float64 {
 	return DataEnergy(cov, m, img, l0)
 }
 
+// localDataEnergy is the data term of b over the window wl alone. For
+// two outlines that differ only inside wl the difference of their local
+// terms is the difference of their whole-image terms: a change confined
+// to a box alters no coverage outside it, since the rows to its right
+// see the same net winding from a path with the same ends.
+func localDataEnergy(b Bezigon, m Mask, wl Window, l0 float64) float64 {
+	cov := make([]float32, wl.W*wl.H)
+	Coverage(b, wl, cov)
+	return DataEnergy(cov, m, wl, l0)
+}
+
+// segmentsBox is the bounding box of the control points of segments
+// from..to (cyclic, inclusive).
+func segmentsBox(b Bezigon, from, to int) bounds {
+	n := b.N()
+	r := bounds{lo: geom.Vec2{X: math.Inf(1), Y: math.Inf(1)}, hi: geom.Vec2{X: math.Inf(-1), Y: math.Inf(-1)}}
+	for k := from; k <= to; k++ {
+		for _, p := range b.Segment(((k % n) + n) % n) {
+			r.lo.X, r.lo.Y = math.Min(r.lo.X, p.X), math.Min(r.lo.Y, p.Y)
+			r.hi.X, r.hi.Y = math.Max(r.hi.X, p.X), math.Max(r.hi.Y, p.Y)
+		}
+	}
+	return r
+}
+
+// windowAround is the pixel window inside img that holds every box,
+// padded by one pixel.
+func windowAround(img Window, boxes ...bounds) Window {
+	lo, hi := geom.Vec2{X: math.Inf(1), Y: math.Inf(1)}, geom.Vec2{X: math.Inf(-1), Y: math.Inf(-1)}
+	for _, r := range boxes {
+		lo.X, lo.Y = math.Min(lo.X, r.lo.X), math.Min(lo.Y, r.lo.Y)
+		hi.X, hi.Y = math.Max(hi.X, r.hi.X), math.Max(hi.Y, r.hi.Y)
+	}
+	x0 := max(int(math.Floor(lo.X))-1, img.X0)
+	y0 := max(int(math.Floor(lo.Y))-1, img.Y0)
+	x1 := min(int(math.Ceil(hi.X))+1, img.X0+img.W)
+	y1 := min(int(math.Ceil(hi.Y))+1, img.Y0+img.H)
+	return Window{X0: x0, Y0: y0, W: max(x1-x0, 0), H: max(y1-y0, 0)}
+}
+
 // mergePass tries every joint whose angle is below mergeAngle: the two
 // segments become one cubic fitted to their flattened points, the pieces
 // around it are re-optimised, and the result stands if the data energy
 // rises by less than mergeRise. Never below two segments.
-func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options) Bezigon {
+func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch) Bezigon {
 	before := dataEnergy(b, m, img, l0)
 	for j := 0; j < b.N() && b.N() > 2; {
 		if AnglePrior(b, j) >= mergeAngle {
@@ -66,9 +107,12 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options) Bezigon {
 		}
 		cand := mergeJoint(b, j)
 		k := ((j-1)%cand.N() + cand.N()) % cand.N() // the merged segment
-		refinePiece(cand, k-1, m, img, l0, o)
-		refinePiece(cand, k, m, img, l0, o)
-		after := dataEnergy(cand, m, img, l0)
+		refinePiece(cand, k-1, m, img, l0, o, sc)
+		refinePiece(cand, k, m, img, l0, o, sc)
+		// Only segments j-2..j+1 of b (k-1..k+1 of cand) changed: the
+		// energy moves by the local difference.
+		wl := windowAround(img, segmentsBox(b, j-2, j+1), segmentsBox(cand, k-1, k+1))
+		after := before - localDataEnergy(b, m, wl, l0) + localDataEnergy(cand, m, wl, l0)
 		if after <= before*(1+mergeRise) {
 			b, before = cand, after
 			// Joint j is gone; the joint now at index k is the merged
@@ -125,7 +169,7 @@ func tangentOr(v, alt geom.Vec2) geom.Vec2 {
 // Residuals are measured once, before any split. The mean leaves the
 // segment itself out: with few segments one bad fit dominates the whole
 // bezigon's mean and could never exceed a multiple of it.
-func splitPass(b Bezigon, m Mask, img Window, l0 float64, o Options) Bezigon {
+func splitPass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch) Bezigon {
 	n := b.N()
 	cov := make([]float32, img.W*img.H)
 	Coverage(b, img, cov)
@@ -152,7 +196,7 @@ func splitPass(b Bezigon, m Mask, img Window, l0 float64, o Options) Bezigon {
 		}
 		b = splitSegment(b, j)
 		for _, p := range []int{j - 1, j, j + 1} {
-			refinePiece(b, p, m, img, l0, o)
+			refinePiece(b, p, m, img, l0, o, sc)
 		}
 	}
 	return b

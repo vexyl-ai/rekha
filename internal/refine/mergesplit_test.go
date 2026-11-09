@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/fit"
+	"github.com/vexyl-ai/rekha/internal/geom"
 )
 
 // dataOf is the data energy of b over the image at l0.
@@ -92,5 +93,29 @@ func TestSplitSegmentKeepsCurve(t *testing.T) {
 	}
 	if !near(got.Pts[3*2], b.Segment(1).At(0.5), 1e-9) {
 		t.Fatalf("new anchor %v, want %v", got.Pts[6], b.Segment(1).At(0.5))
+	}
+}
+
+// TestLocalDataEnergyDeltaMatchesGlobal: when only a few segments change,
+// the data energy difference measured over the window around them equals
+// the difference over the whole image.
+func TestLocalDataEnergyDeltaMatchesGlobal(t *testing.T) {
+	img := Window{X0: 0, Y0: 0, W: 64, H: 64}
+	m := maskOf(circle(32, 32, 20), img)
+	b := smoothBezigon(3, 8)
+	cand := Bezigon{Pts: append([]geom.Vec2(nil), b.Pts...)}
+	// Move segment 2's inner points and the joint into segment 3.
+	for _, i := range []int{7, 8, 9, 10} {
+		cand.Pts[i] = cand.Pts[i].Add(v(1.3, -0.8))
+	}
+	wl := windowAround(img, segmentsBox(b, 2, 3), segmentsBox(cand, 2, 3))
+	if wl.W >= img.W || wl.H >= img.H {
+		t.Fatalf("local window %+v is not local", wl)
+	}
+	const l0 = 100.0
+	global := dataOf(cand, m, img, l0) - dataOf(b, m, img, l0)
+	local := localDataEnergy(cand, m, wl, l0) - localDataEnergy(b, m, wl, l0)
+	if math.Abs(global-local) > 1e-6*math.Max(math.Abs(global), 1) {
+		t.Fatalf("global delta %v local delta %v", global, local)
 	}
 }

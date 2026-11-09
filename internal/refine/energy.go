@@ -135,7 +135,38 @@ func LengthPrior(b Bezigon, segs ...int) float64 {
 // optimiser can shrink it away.
 func SelfIntersectionPrior(b Bezigon) float64 {
 	pts := b.Polyline()
-	return selfIntersection(pts, 0, len(pts))
+	return selfIntersection(pts, 0, len(pts), nil, nil)
+}
+
+// arcLengths fills buf (grown as needed) with the arc length from pts[0]
+// to each vertex of the closed polyline, the last entry being its total.
+func arcLengths(pts []geom.Vec2, buf []float64) []float64 {
+	n := len(pts)
+	if cap(buf) < n+1 {
+		buf = make([]float64, n+1)
+	}
+	buf = buf[:n+1]
+	buf[0] = 0
+	for j := 1; j <= n; j++ {
+		buf[j] = buf[j-1] + pts[j%n].Sub(pts[j-1]).Len()
+	}
+	return buf
+}
+
+// edgeCandidates lists, appended to cand[:0], the edges of the closed
+// polyline pts whose bounding box meets the box lo..hi: the only edges a
+// curve confined to that box can cross.
+func edgeCandidates(pts []geom.Vec2, lo, hi geom.Vec2, cand []int) []int {
+	n := len(pts)
+	cand = cand[:0]
+	for k := 0; k < n; k++ {
+		a, b := pts[k], pts[(k+1)%n]
+		if max(a.X, b.X) < lo.X || min(a.X, b.X) > hi.X || max(a.Y, b.Y) < lo.Y || min(a.Y, b.Y) > hi.Y {
+			continue
+		}
+		cand = append(cand, k)
+	}
+	return cand
 }
 
 // selfIntersection sums the shorter arcs of the crossings of the closed
@@ -144,7 +175,9 @@ func SelfIntersectionPrior(b Bezigon) float64 {
 // range gives the part a piece can change. Every other edge is first
 // tested against the range's bounding box, so a piece costs O(n) plus
 // the few edges that come near it.
-func selfIntersection(pts []geom.Vec2, lo, hi int) float64 {
+// cand, if not nil, lists the only edges tested against the range (see
+// edgeCandidates); cum, if not nil, is the polyline's arcLengths table.
+func selfIntersection(pts []geom.Vec2, lo, hi int, cand []int, cum []float64) float64 {
 	n := len(pts)
 	if n < 4 {
 		return 0
@@ -158,10 +191,17 @@ func selfIntersection(pts []geom.Vec2, lo, hi int) float64 {
 		bx0, by0 = min(bx0, p.X), min(by0, p.Y)
 		bx1, by1 = max(bx1, p.X), max(by1, p.Y)
 	}
-	var cum []float64 // arc length to each vertex, built at the first crossing
-	total := 0.0
+	// cum, the arc length to each vertex, is built at the first crossing
+	// unless the caller supplied it.
 	e := 0.0
-	for k := 0; k < n; k++ {
+	for c := 0; c < n; c++ {
+		k := c
+		if cand != nil {
+			if c >= len(cand) {
+				break
+			}
+			k = cand[c]
+		}
 		b0, b1 := pts[k], pts[(k+1)%n]
 		if max(b0.X, b1.X) < bx0 || min(b0.X, b1.X) > bx1 || max(b0.Y, b1.Y) < by0 || min(b0.Y, b1.Y) > by1 {
 			continue
@@ -187,16 +227,12 @@ func selfIntersection(pts []geom.Vec2, lo, hi int) float64 {
 				continue
 			}
 			if cum == nil {
-				cum = make([]float64, n+1)
-				for j := 1; j <= n; j++ {
-					cum[j] = cum[j-1] + pts[j%n].Sub(pts[j-1]).Len()
-				}
-				total = cum[n]
+				cum = arcLengths(pts, nil)
 			}
 			sa := cum[i] + ta*(cum[i+1]-cum[i])
 			sb := cum[k] + tb*(cum[k+1]-cum[k])
 			arc := math.Abs(sb - sa)
-			e += math.Min(arc, total-arc)
+			e += math.Min(arc, cum[n]-arc)
 		}
 	}
 	return e

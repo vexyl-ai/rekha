@@ -103,3 +103,42 @@ func TestWeightsPrior(t *testing.T) {
 		t.Fatalf("%v vs %v", got, want)
 	}
 }
+
+// TestSelfIntersectionCandidatesMatchFull: pruning the other edges to the
+// ones whose box overlaps the range's reach changes nothing.
+func TestSelfIntersectionCandidatesMatchFull(t *testing.T) {
+	for _, b := range []Bezigon{figureEight(), smoothBezigon(3, 12), circle(32, 32, 20)} {
+		pts := b.Polyline()
+		for j := 0; j < b.N(); j++ {
+			lo, hi := Flatten*j, Flatten*(j+2)
+			r := reach(b, 3*j, 3*j+7, Window{X0: 0, Y0: 0, W: 64, H: 64})
+			cand := edgeCandidates(pts, r.lo, r.hi, nil)
+			if len(cand) > len(pts) {
+				t.Fatalf("piece %d: %d candidates for %d edges", j, len(cand), len(pts))
+			}
+			full, pruned := selfIntersection(pts, lo, hi, nil, nil), selfIntersection(pts, lo, hi, cand, nil)
+			if full != pruned {
+				t.Fatalf("piece %d: full %v pruned %v", j, full, pruned)
+			}
+		}
+	}
+	// Edges far from the box are never candidates.
+	pts := circle(32, 32, 20).Polyline()
+	if c := edgeCandidates(pts, v(10, 30), v(14, 34), nil); len(c) == len(pts) || len(c) == 0 {
+		t.Fatalf("box on the left rim: %d candidates of %d", len(c), len(pts))
+	}
+}
+
+// TestSelfIntersectionPrecomputedArcs: a caller-supplied arc-length table
+// gives the same prior as the one built on demand.
+func TestSelfIntersectionPrecomputedArcs(t *testing.T) {
+	pts := figureEight().Polyline()
+	cum := arcLengths(pts, nil)
+	if len(cum) != len(pts)+1 || cum[0] != 0 || cum[len(pts)] <= 0 {
+		t.Fatalf("arc table %d entries, first %v last %v", len(cum), cum[0], cum[len(pts)])
+	}
+	want := selfIntersection(pts, 0, len(pts), nil, nil)
+	if got := selfIntersection(pts, 0, len(pts), nil, cum); got != want || want <= 0 {
+		t.Fatalf("precomputed %v on-demand %v", got, want)
+	}
+}

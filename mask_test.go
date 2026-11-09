@@ -152,3 +152,49 @@ func TestMaskExtensionBandIsHard(t *testing.T) {
 	}
 	_ = corpus.Size
 }
+
+// TestMaskHoleEqualsEnclosedOuter: in cutout, the navy page's hole around
+// the red shape and the red shape's outer are the same curve seen from
+// either side, so their masks agree pixel for pixel: fully red pixels on
+// the hole's edge are 1 whatever their (meaningless) second colour is.
+func TestMaskHoleEqualsEnclosedOuter(t *testing.T) {
+	img := synth(t, "logo-holes")
+	o := PresetOptions(PresetPoster)
+	o.Hierarchical = HierarchicalCutout
+	s, err := Segment(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	red, navy := paletteIndex(t, s, 220, 30, 30), paletteIndex(t, s, 20, 30, 60)
+	var outer, hole *contour.Contour
+	layers := s.buildLayers(o)
+	for i, l := range layers {
+		if l.colour == int(red) && len(l.shape.Holes) == 1 {
+			outer = &layers[i].shape.Outer
+		}
+	}
+	if outer == nil {
+		t.Fatal("red shape with one hole not found")
+	}
+	for i, l := range layers {
+		if l.colour == int(navy) && l.depth == 0 {
+			for k := range l.shape.Holes {
+				if l.shape.Holes[k].Area2 == -outer.Area2 {
+					hole = &layers[i].shape.Holes[k]
+				}
+			}
+		}
+	}
+	if hole == nil {
+		t.Fatal("navy hole around the red shape not found")
+	}
+	om, hm := s.mask(red, outer.Pts, false, nil), s.mask(navy, hole.Pts, true, nil)
+	if om.x0 != hm.x0 || om.y0 != hm.y0 || om.w != hm.w || om.h != hm.h {
+		t.Fatalf("boxes differ: %+v vs %+v", *om, *hm)
+	}
+	for i := range om.cov {
+		if om.cov[i] != hm.cov[i] {
+			t.Fatalf("pixel (%d,%d): outer %v, hole %v", om.x0+i%om.w, om.y0+i/om.w, om.cov[i], hm.cov[i])
+		}
+	}
+}

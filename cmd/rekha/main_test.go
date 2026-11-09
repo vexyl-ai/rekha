@@ -219,3 +219,39 @@ func TestRunHierarchicalCutout(t *testing.T) {
 		t.Fatalf("bad hierarchical: exit %d, want 1 (%.80q)", code, out)
 	}
 }
+
+const circlePNG = "../../testdata/corpus/synthetic/circle-aa.png"
+
+func TestRunRefineFlag(t *testing.T) {
+	code, out, errb := runStdin(t, circlePNG, "--preset", "bw", "--refine", "--refine-passes", "2")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb)
+	}
+	ds := regexp.MustCompile(` d="([^"]*)"`).FindAllStringSubmatch(out, -1)
+	if len(ds) != 1 {
+		t.Fatalf("want one path, got %d in %.200q", len(ds), out)
+	}
+	if n := strings.Count(ds[0][1], "C"); n != 4 {
+		t.Fatalf("refined circle has %d cubics, want 4: %q", n, ds[0][1])
+	}
+	if code, _, errb := runStdin(t, circlePNG, "--refine", "--refine-passes", "0"); code != 1 || !strings.Contains(errb, "Refine") {
+		t.Fatalf("bad passes: exit %d, stderr %q", code, errb)
+	}
+}
+
+func TestRunCutoutStrokeFlag(t *testing.T) {
+	code, out, errb := runStdin(t, logoPNG, "--preset", "poster", "--hierarchical", "cutout")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb)
+	}
+	if !strings.Contains(out, `stroke-width="0.5"`) {
+		t.Fatalf("default poster cutout should carry stroke-width 0.5: %.300q", out)
+	}
+	code, out, errb = runStdin(t, logoPNG, "--preset", "poster", "--hierarchical", "cutout", "--cutout-stroke", "0")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb)
+	}
+	if strings.Contains(out, "stroke") {
+		t.Fatalf("--cutout-stroke 0 should emit no stroke attributes: %.300q", out)
+	}
+}

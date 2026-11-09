@@ -52,10 +52,11 @@ func Refine(b Bezigon, m Mask, img Window, o Options) Bezigon {
 	out := Bezigon{Pts: append([]geom.Vec2(nil), b.Pts...)}
 	clampAll(out, img)
 	l0 := math.Max(out.Length(), 1)
+	sc := &scratch{}
 	for sweep := 0; sweep < o.Sweeps; sweep++ {
 		maxMove := 0.0
 		for j := 0; j < n; j++ {
-			maxMove = math.Max(maxMove, refinePiece(out, j, m, img, l0, o))
+			maxMove = math.Max(maxMove, refinePiece(out, j, m, img, l0, o, sc))
 		}
 		if maxMove < sweepMove {
 			break
@@ -85,7 +86,19 @@ func pieceIndices(b Bezigon, j int) [5]int {
 // therefore evaluated only over the pixels within reach of the starting
 // curve (one span per row), where all the change is. Pixels outside the
 // image are scored too: the mask reports them empty.
-func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options) float64 {
+// scratch holds the per-piece buffers refinePiece reuses between calls:
+// the whole outline flattened, its arc-length table and the candidate
+// edges of the self-intersection prior.
+type scratch struct {
+	poly []geom.Vec2
+	cum  []float64
+	cand []int
+}
+
+func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options, sc *scratch) float64 {
+	if sc == nil {
+		sc = &scratch{}
+	}
 	n := b.N()
 	j = ((j % n) + n) % n
 	idx := pieceIndices(b, j)
@@ -146,6 +159,19 @@ func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options) fl
 	}
 	mov := make([]float32, win.W*win.H)
 	scale := float64(DataScale * DataScale / l0)
+	// The whole outline flattened once; only the piece's points are
+	// rewritten per evaluation, and only the edges whose box meets the
+	// piece's reach can cross it.
+	// Its arc lengths are those at the piece's start: the loop-size
+	// penalty is a barrier, not a fit, and the moving edges change the
+	// table by at most the piece's own length.
+	if o.Weights.Spt != 0 {
+		sc.poly = polylineInto(sc.poly[:0], b)
+		sc.cum = arcLengths(sc.poly, sc.cum)
+		sc.cand = edgeCandidates(sc.poly, r.lo, r.hi, sc.cand[:0])
+	}
+	poly, cand, cum := sc.poly, sc.cand, sc.cum
+	np := n * Flatten
 	// evalParts returns the data term and the full piece energy at x, with
 	// the points held inside their trust boxes.
 	evalParts := func(x []float64) (data, total float64) {
@@ -179,8 +205,10 @@ func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options) fl
 		w := o.Weights
 		e := data + w.Apt*AnglePrior(b, j, j+1, j+2) + w.Hpt*HandlePrior(b, j, j+1) + w.Lpt*LengthPrior(b, j, j+1)/l0
 		if w.Spt != 0 {
-			pts := b.Polyline()
-			e += w.Spt * selfIntersection(pts, Flatten*j, Flatten*(j+2))
+			for k := 0; k < 2*Flatten; k++ {
+				poly[(Flatten*j+k)%np] = moving[k]
+			}
+			e += w.Spt * selfIntersection(poly, Flatten*j, Flatten*(j+2), cand, cum)
 		}
 		return data, e
 	}
