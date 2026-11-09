@@ -2,6 +2,8 @@ package rekha
 
 import (
 	"errors"
+	"image/color"
+	"reflect"
 	"testing"
 )
 
@@ -53,4 +55,62 @@ func TestValidationErrorMessage(t *testing.T) {
 	if e.Error() != "Mode: unknown value \"curvy\"" {
 		t.Fatal(e.Error())
 	}
+}
+
+func TestPresetOptionsTable(t *testing.T) {
+	bw, poster, photo := PresetOptions(PresetBW), PresetOptions(PresetPoster), PresetOptions(PresetPhoto)
+	if !reflect.DeepEqual(DefaultOptions(), bw) {
+		t.Fatalf("DefaultOptions differs from PresetOptions(bw)")
+	}
+	checks := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{"bw.Hierarchical", bw.Hierarchical, HierarchicalCutout},
+		{"bw.MaxColors", bw.MaxColors, 2},
+		{"bw.Threshold", bw.Threshold, 0.5},
+		{"bw.FilterSpeckle", bw.FilterSpeckle, 4},
+		{"bw.FitTolerance", bw.FitTolerance, 1.0},
+		{"poster.Hierarchical", poster.Hierarchical, HierarchicalStacked},
+		{"poster.MaxColors", poster.MaxColors, 0},
+		{"poster.ColorTolerance", poster.ColorTolerance, 0.08},
+		{"poster.ColorPrecision", poster.ColorPrecision, 6},
+		{"poster.FilterSpeckle", poster.FilterSpeckle, 4},
+		{"poster.FitTolerance", poster.FitTolerance, 1.0},
+		{"photo.Hierarchical", photo.Hierarchical, HierarchicalStacked},
+		{"photo.ColorTolerance", photo.ColorTolerance, 0.04},
+		{"photo.FilterSpeckle", photo.FilterSpeckle, 16},
+		{"photo.FitTolerance", photo.FitTolerance, 1.5},
+		{"photo.Mode", photo.Mode, ModeSpline},
+		{"photo.CornerThreshold", photo.CornerThreshold, 60.0},
+	}
+	for _, c := range checks {
+		if !reflect.DeepEqual(c.got, c.want) {
+			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
+		}
+	}
+	for _, p := range []Preset{PresetBW, PresetPoster, PresetPhoto} {
+		if err := PresetOptions(p).Validate(); err != nil {
+			t.Errorf("%s preset invalid: %v", p, err)
+		}
+	}
+}
+
+func TestValidateNewFields(t *testing.T) {
+	bad := func(field string, mutate func(*Options)) {
+		t.Helper()
+		o := PresetOptions(PresetPoster)
+		mutate(&o)
+		var ve *ValidationError
+		if err := o.Validate(); !errors.As(err, &ve) || ve.Field != field {
+			t.Errorf("%s: got %v", field, err)
+		}
+	}
+	bad("ColorTolerance", func(o *Options) { o.ColorTolerance = 1.5 })
+	bad("Palette", func(o *Options) { o.Palette = make([]color.NRGBA, 257) })
+	bad("Palette", func(o *Options) {
+		o.Palette = []color.NRGBA{{255, 0, 0, 255}, {255, 0, 0, 255}}
+	})
+	bad("Hierarchical", func(o *Options) { o.Hierarchical = "x" })
 }

@@ -2,6 +2,7 @@ package rekha
 
 import (
 	"fmt"
+	"image/color"
 
 	"github.com/vexyl-ai/rekha/internal/contour"
 )
@@ -26,6 +27,20 @@ const (
 	PresetPhoto  Preset = "photo"
 )
 
+// Hierarchical selects how colour shapes are layered in the output.
+type Hierarchical string
+
+// Layering modes.
+const (
+	// HierarchicalStacked paints every shape's outer contour, larger and
+	// deeper shapes first, so each one covers what it encloses: no holes,
+	// no seams between abutting colours.
+	HierarchicalStacked Hierarchical = "stacked"
+	// HierarchicalCutout paints each shape with its holes cut out, as
+	// Phase 1 does for black on white.
+	HierarchicalCutout Hierarchical = "cutout"
+)
+
 // TurnPolicy decides how a boundary walk resolves a 2×2 checkerboard.
 type TurnPolicy = contour.TurnPolicy
 
@@ -45,7 +60,7 @@ type Options struct {
 	FilterSpeckle  int // pixels; 0..1024
 	ColorPrecision int // bits; 1..8
 	PathPrecision  int // decimals; 0..8
-	MaxColors      int // 0 = unlimited (bw forces 2); 0..256
+	MaxColors      int // palette cap; 0 = as many as ColorTolerance needs, up to 256
 
 	Threshold         float64    // 0..1; pixels darker than this are foreground
 	AutoThreshold     bool       // choose Threshold with Otsu's method
@@ -53,24 +68,47 @@ type Options struct {
 	SimplifyTolerance float64    // px; 0..10
 	CornerThreshold   float64    // degrees; 0..180
 	FitTolerance      float64    // px; 0.01..10
+
+	ColorTolerance float64       // OKLab distance 0..1 at which colours merge (white to black is 1)
+	Palette        []color.NRGBA // fixed palette, at most 256 distinct entries; empty = quantise
+	Hierarchical   Hierarchical
 }
 
-// DefaultOptions returns the bw/spline defaults.
-func DefaultOptions() Options {
-	return Options{
-		Preset:         PresetBW,
+// DefaultOptions returns the bw/spline defaults, PresetOptions(PresetBW).
+func DefaultOptions() Options { return PresetOptions(PresetBW) }
+
+// PresetOptions returns the defaults for preset p. An unknown preset
+// returns the bw defaults with Preset set to p, which Validate rejects.
+func PresetOptions(p Preset) Options {
+	o := Options{
+		Preset:         p,
 		Mode:           ModeSpline,
 		FilterSpeckle:  4,
 		ColorPrecision: 6,
 		PathPrecision:  2,
-		MaxColors:      0,
+		MaxColors:      2,
 
 		Threshold:         0.5,
 		TurnPolicy:        TurnMinority,
 		SimplifyTolerance: 0.75,
 		CornerThreshold:   60,
 		FitTolerance:      1.0,
+
+		Hierarchical: HierarchicalCutout,
 	}
+	switch p {
+	case PresetPoster:
+		o.MaxColors = 0
+		o.ColorTolerance = 0.08
+		o.Hierarchical = HierarchicalStacked
+	case PresetPhoto:
+		o.MaxColors = 0
+		o.ColorTolerance = 0.04
+		o.FilterSpeckle = 16
+		o.FitTolerance = 1.5
+		o.Hierarchical = HierarchicalStacked
+	}
+	return o
 }
 
 // ValidationError reports the first invalid field.
@@ -122,6 +160,24 @@ func (o Options) Validate() error {
 	}
 	if err := inRangeF("FitTolerance", o.FitTolerance, 0.01, 10); err != nil {
 		return err
+	}
+	if err := inRangeF("ColorTolerance", o.ColorTolerance, 0, 1); err != nil {
+		return err
+	}
+	if len(o.Palette) > 256 {
+		return &ValidationError{"Palette", fmt.Sprintf("%d entries, at most 256", len(o.Palette))}
+	}
+	for i, c := range o.Palette {
+		for _, d := range o.Palette[:i] {
+			if c == d {
+				return &ValidationError{"Palette", fmt.Sprintf("duplicate entry #%02x%02x%02x", c.R, c.G, c.B)}
+			}
+		}
+	}
+	switch o.Hierarchical {
+	case HierarchicalStacked, HierarchicalCutout:
+	default:
+		return &ValidationError{"Hierarchical", fmt.Sprintf("unknown value %q", string(o.Hierarchical))}
 	}
 	return nil
 }
