@@ -35,11 +35,12 @@ Potrace and VTracer are used only as binaries. Do not read their source; see `CO
 make bench                                  # all builtin tools plus bin/rekha, writes bench/out/
 ./bin/rekha-bench -tools potrace            # one tool
 ./bin/rekha-bench -tools rekha,potrace      # rekha against one reference
+./bin/rekha-bench -tools rekha-poster,vtracer  # colour preset against VTracer
 ./bin/rekha-bench -rekha /path/to/rekha     # benchmark another rekha build
 ./bin/rekha-bench -corpus path/to/images    # another corpus
 ```
 
-Rekha itself is always included (`-rekha` names the binary, default `bin/rekha`, which `make bench` builds first). It runs as `rekha --preset bw -o {out} {in}`, the same black-box treatment the reference tools get.
+Rekha itself is always included (`-rekha` names the binary, default `bin/rekha`, which `make bench` builds first) as three tools: `rekha` (`--preset bw`), `rekha-poster` and `rekha-photo`, each run as `rekha --preset <p> -o {out} {in}`, the same black-box treatment the reference tools get. Compare `rekha` with Potrace on bilevel images and `rekha-poster`/`rekha-photo` with VTracer on colour images.
 
 Outputs `bench/out/results.md` and `bench/out/results.csv` and prints the markdown table. Rows are sorted by image path then tool name, and error notes never contain scratch paths, so two runs differ only in the `ms` column.
 
@@ -57,7 +58,7 @@ Edit `BuiltinTools` in `internal/bench/tool.go`:
 - `{in}` and `{out}` are replaced with the prepared input path and the SVG output path.
 - `Input` is `png` or `bmp`. BMP inputs are composited onto white because BMP has no alpha.
 
-Rekha is not in `BuiltinTools`; it comes from `RekhaTool(bin)` so the binary path can be configured.
+Rekha is not in `BuiltinTools`; it comes from `RekhaTools(bin)` so the binary path can be configured.
 
 ## Vector Magic (manual, follow-up)
 
