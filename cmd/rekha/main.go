@@ -4,9 +4,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image/color"
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/vexyl-ai/rekha"
 	"github.com/vexyl-ai/rekha/internal/cli"
@@ -31,15 +33,20 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fs.PrintDefaults()
 	}
 
-	o := rekha.DefaultOptions()
-	var preset, mode, output, threshold, turnPolicy string
+	// The preset seeds every default, so it is read before the flags are
+	// defined; flags given on the command line then override it.
+	o := rekha.PresetOptions(presetArg(args))
+	var preset, mode, output, threshold, turnPolicy, palette, hierarchical string
 	var showVersion bool
-	fs.StringVar(&preset, "preset", string(o.Preset), "preset: bw, poster, photo")
+	fs.StringVar(&preset, "preset", string(o.Preset), "preset seeding the defaults: bw (cutout, 2 colours), poster (stacked, tolerance 0.08), photo (stacked, tolerance 0.04, speckle 16, fit 1.5)")
 	fs.StringVar(&mode, "mode", string(o.Mode), "mode: pixel, polygon, spline")
 	fs.IntVar(&o.FilterSpeckle, "filter-speckle", o.FilterSpeckle, "discard regions smaller than N pixels")
 	fs.IntVar(&o.ColorPrecision, "color-precision", o.ColorPrecision, "colour bits per channel (1-8)")
 	fs.IntVar(&o.PathPrecision, "path-precision", o.PathPrecision, "decimal places in path data (0-8)")
-	fs.IntVar(&o.MaxColors, "max-colors", o.MaxColors, "maximum colours, 0 = unlimited")
+	fs.IntVar(&o.MaxColors, "max-colors", o.MaxColors, "maximum colours (0-256), 0 = as many as --color-tolerance needs")
+	fs.Float64Var(&o.ColorTolerance, "color-tolerance", o.ColorTolerance, "OKLab distance at which colours merge (0-1)")
+	fs.StringVar(&palette, "palette", "", "fixed palette as comma-separated #rrggbb colours")
+	fs.StringVar(&hierarchical, "hierarchical", string(o.Hierarchical), "layering: stacked, cutout")
 	fs.StringVar(&threshold, "threshold", strconv.FormatFloat(o.Threshold, 'g', -1, 64), "foreground threshold 0..1, or auto (Otsu)")
 	fs.StringVar(&turnPolicy, "turn-policy", string(o.TurnPolicy), "checkerboard resolution: minority, majority, black, white")
 	fs.Float64Var(&o.SimplifyTolerance, "simplify", o.SimplifyTolerance, "polygon simplification tolerance in px (0-10)")
@@ -68,6 +75,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	o.Preset = rekha.Preset(preset)
 	o.Mode = rekha.Mode(mode)
 	o.TurnPolicy = rekha.TurnPolicy(turnPolicy)
+	o.Hierarchical = rekha.Hierarchical(hierarchical)
+	if palette != "" {
+		pal, err := parsePalette(palette)
+		if err != nil {
+			fmt.Fprintln(stderr, "rekha: --palette: "+err.Error())
+			return cli.ExitUsage
+		}
+		o.Palette = pal
+	}
 	if threshold == "auto" {
 		o.AutoThreshold = true
 	} else {
@@ -91,6 +107,44 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	return code
+}
+
+// presetArg returns the value of --preset in args before parsing, or bw.
+func presetArg(args []string) rekha.Preset {
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		name := strings.TrimLeft(a, "-")
+		if name == a || name == "" {
+			continue
+		}
+		if v, ok := strings.CutPrefix(name, "preset="); ok {
+			return rekha.Preset(v)
+		}
+		if name == "preset" && i+1 < len(args) {
+			return rekha.Preset(args[i+1])
+		}
+	}
+	return rekha.PresetBW
+}
+
+// parsePalette parses "#rrggbb,#rrggbb,…".
+func parsePalette(s string) ([]color.NRGBA, error) {
+	var pal []color.NRGBA
+	for _, tok := range strings.Split(s, ",") {
+		tok = strings.TrimSpace(tok)
+		hex, ok := strings.CutPrefix(tok, "#")
+		if !ok || len(hex) != 6 {
+			return nil, fmt.Errorf("%q is not a #rrggbb colour", tok)
+		}
+		v, err := strconv.ParseUint(hex, 16, 24)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a #rrggbb colour", tok)
+		}
+		pal = append(pal, color.NRGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 255})
+	}
+	return pal, nil
 }
 
 // traceOne traces input ("-" for stdin) and writes the SVG to out ("-" for
