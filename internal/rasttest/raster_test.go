@@ -30,8 +30,19 @@ func TestFillSquare(t *testing.T) {
 	}
 }
 
-func TestFillRingEvenOdd(t *testing.T) {
-	b := Fill(5, 5, []svg.Path{{Subpaths: []svg.Subpath{rect(0, 0, 5, 5), rect(1, 1, 4, 4)}}})
+// reverse returns the subpath walked the other way round, as a hole is.
+func reverse(sp svg.Subpath) svg.Subpath {
+	out := svg.Subpath{}
+	for i := len(sp.Segs) - 1; i >= 0; i-- {
+		s := sp.Segs[i]
+		out.Segs = append(out.Segs, ln(s.P[3], s.P[0]))
+	}
+	return out
+}
+
+// A hole runs opposite to its outer, so nonzero winding leaves it empty.
+func TestFillRingNonzero(t *testing.T) {
+	b := Fill(5, 5, []svg.Path{{Subpaths: []svg.Subpath{rect(0, 0, 5, 5), reverse(rect(1, 1, 4, 4))}}})
 	if b.Count() != 16 {
 		t.Fatalf("Count = %d, want 16", b.Count())
 	}
@@ -51,8 +62,8 @@ func TestPaintOrderAndHoles(t *testing.T) {
 		}}
 	}
 	paths := []svg.Path{
-		{Fill: "#ff0000", Subpaths: []svg.Subpath{sq(0, 0, 4, 4), sq(1, 1, 3, 3)}}, // red with a hole
-		{Fill: "#0000ff", Subpaths: []svg.Subpath{sq(3, 3, 6, 6)}},                 // blue on top
+		{Fill: "#ff0000", Subpaths: []svg.Subpath{sq(0, 0, 4, 4), reverse(sq(1, 1, 3, 3))}}, // red with a hole
+		{Fill: "#0000ff", Subpaths: []svg.Subpath{sq(3, 3, 6, 6)}},                          // blue on top
 	}
 	got := Paint(6, 6, paths, map[string]uint8{"#ff0000": 1, "#0000ff": 2})
 	want := []uint8{

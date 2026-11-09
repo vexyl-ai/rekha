@@ -188,3 +188,67 @@ func TestFinishDeterministicAcrossProcs(t *testing.T) {
 		}
 	}
 }
+
+// Two abutting colours at the same depth must not leave a seam: the
+// earlier sibling extends under the later one, so its path alone covers
+// the whole shared border and a margin beyond it. Siblings that do not
+// touch stay separate, or the later one's anti-aliased edge would blend
+// into the wrong colour.
+func TestStackedTouchingSiblingsExtendUnderLater(t *testing.T) {
+	red, blue, white := color.NRGBA{220, 30, 30, 255}, color.NRGBA{30, 60, 220, 255}, color.NRGBA{255, 255, 255, 255}
+	paint := func(img *image.NRGBA, inside func(x, y int) color.NRGBA) {
+		b := img.Bounds()
+		for y := 0; y < b.Dy(); y++ {
+			for x := 0; x < b.Dx(); x++ {
+				img.SetNRGBA(x, y, inside(x, y))
+			}
+		}
+	}
+	o := PresetOptions(PresetPoster)
+	o.Mode = ModePixel
+
+	abut := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	paint(abut, func(x, _ int) color.NRGBA {
+		if x < 32 {
+			return red
+		}
+		return blue
+	})
+	r, err := Trace(abut, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Paths) != 2 || r.Paths[0].Fill != hexOf(red) {
+		t.Fatalf("got %d paths, first %q; want red then blue", len(r.Paths), r.Paths[0].Fill)
+	}
+	under := rasttest.Fill(64, 64, r.Paths[:1])
+	if n := under.Count(); n <= 32*64 {
+		t.Errorf("red path alone covers %d pixels, want a margin under the blue", n)
+	}
+	for y := 0; y < 64; y++ {
+		if !under.Get(32, y) {
+			t.Fatalf("red does not run under the blue edge at row %d", y)
+		}
+	}
+
+	apart := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	paint(apart, func(x, y int) color.NRGBA {
+		switch {
+		case x >= 4 && x < 28 && y >= 20 && y < 44:
+			return red
+		case x >= 36 && x < 60 && y >= 20 && y < 44:
+			return blue
+		}
+		return white
+	})
+	r, err = Trace(apart, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Paths) != 2 {
+		t.Fatalf("got %d paths, want red and blue", len(r.Paths))
+	}
+	if n := rasttest.Fill(64, 64, r.Paths[:1]).Count(); n != 24*24 {
+		t.Errorf("red path covers %d pixels, want just its own %d", n, 24*24)
+	}
+}

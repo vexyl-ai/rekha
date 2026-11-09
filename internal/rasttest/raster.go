@@ -1,6 +1,7 @@
-// Package rasttest is a test-only even-odd scanline filler. It samples
-// pixel centres, which is exact for the pixel-mode output whose vertices
-// all lie on the lattice; cubics are flattened into flatten chords.
+// Package rasttest is a test-only nonzero-winding scanline filler, the
+// rule SVG applies by default. It samples pixel centres, which is exact
+// for the pixel-mode output whose vertices all lie on the lattice; cubics
+// are flattened into flatten chords.
 package rasttest
 
 import (
@@ -12,8 +13,8 @@ import (
 	"github.com/vexyl-ai/rekha/internal/svg"
 )
 
-// Fill rasterises paths into a w×h bitmap. Each path is filled even-odd on
-// its own and the results are OR-ed together.
+// Fill rasterises paths into a w×h bitmap. Each path is filled on its own
+// and the results are OR-ed together.
 func Fill(w, h int, paths []svg.Path) *bitmap.Bitmap {
 	out := bitmap.New(w, h)
 	for _, p := range paths {
@@ -37,12 +38,18 @@ func Paint(w, h int, paths []svg.Path, palette map[string]uint8) []uint8 {
 	return out
 }
 
+// crossing is where an edge crosses a scanline and in which direction.
+type crossing struct {
+	x    float64
+	wind int
+}
+
 // scan calls set for every pixel whose centre is inside p under the
-// even-odd rule.
+// nonzero winding rule.
 func scan(w, h int, p svg.Path, set func(x, y int)) {
 	for y := 0; y < h; y++ {
 		yc := float64(y) + 0.5
-		var xs []float64
+		var xs []crossing
 		for _, sp := range p.Subpaths {
 			for _, s := range sp.Segs {
 				for _, c := range chords(s) {
@@ -50,15 +57,24 @@ func scan(w, h int, p svg.Path, set func(x, y int)) {
 					if (a.Y <= yc) == (b.Y <= yc) {
 						continue
 					}
-					xs = append(xs, a.X+(yc-a.Y)*(b.X-a.X)/(b.Y-a.Y))
+					wind := 1
+					if b.Y < a.Y {
+						wind = -1
+					}
+					xs = append(xs, crossing{a.X + (yc-a.Y)*(b.X-a.X)/(b.Y-a.Y), wind})
 				}
 			}
 		}
-		sort.Float64s(xs)
-		for i := 0; i+1 < len(xs); i += 2 {
+		sort.Slice(xs, func(i, j int) bool { return xs[i].x < xs[j].x })
+		wind := 0
+		for i := 0; i+1 < len(xs); i++ {
+			wind += xs[i].wind
+			if wind == 0 {
+				continue
+			}
 			for x := 0; x < w; x++ {
 				xc := float64(x) + 0.5
-				if xc > xs[i] && xc < xs[i+1] {
+				if xc > xs[i].x && xc < xs[i+1].x {
 					set(x, y)
 				}
 			}
