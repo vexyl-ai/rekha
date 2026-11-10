@@ -1,6 +1,6 @@
 export CGO_ENABLED=0
 
-.PHONY: test lint wasm-check wasm wasm-test web-test build bench
+.PHONY: test lint wasm-check wasm wasm-test web-test serve build bench
 
 bench: build
 	./bin/rekha-bench -corpus testdata/corpus -out bench/out
@@ -23,6 +23,9 @@ wasm-test:
 
 web-test:
 	node --test web/
+
+serve: wasm
+	go run ./cmd/rekha-serve -static web
 
 build:
 	go build -o bin/ ./cmd/...
