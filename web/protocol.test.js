@@ -33,3 +33,20 @@ test('stale results are ignored', () => {
   assert.equal(r.accept(a), false);
   assert.equal(r.accept(b), true);
 });
+
+const { Handles } = require('./protocol.js');
+
+test('adopting a handle returns the previous one to free', () => {
+  const h = new Handles();
+  assert.equal(h.adopt(1), null);
+  assert.equal(h.adopt(2), 1);
+  assert.equal(h.current, 2);
+});
+
+test('release returns the current handle once', () => {
+  const h = new Handles();
+  h.adopt(5);
+  assert.equal(h.release(), 5);
+  assert.equal(h.release(), null);
+  assert.equal(h.current, null);
+});

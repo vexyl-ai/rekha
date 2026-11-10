@@ -1,7 +1,7 @@
 // Demo page: decodes the image in the browser, runs rekha.wasm in a
 // worker, re-segments only when a segmentation option changed, drops
 // stale replies, and cancels by terminating the worker.
-const { needsResegment, Requests } = self.RekhaProtocol;
+const { needsResegment, Requests, Handles } = self.RekhaProtocol;
 
 const $ = (id) => document.getElementById(id);
 const status = $('status');
@@ -18,7 +18,7 @@ const COMMON = { mode: 'spline', threshold: 0.5, thresholdAuto: false, refine: f
 let worker = null;
 let pending = new Map(); // id → {resolve, reject}
 let image = null;        // {width, height, data: Uint8ClampedArray}
-let handle = null;       // wasm segmentation handle
+let handles = new Handles(); // the live wasm segmentation handle
 let cachedOptions = null; // options the handle was segmented with
 let segmentMs = null;
 let svgText = '';
@@ -60,7 +60,8 @@ function startWorker() {
   if (worker) worker.terminate();
   for (const p of pending.values()) p.reject(new Error('cancelled'));
   pending = new Map();
-  handle = null; cachedOptions = null; segmentMs = null;
+  handles = new Handles(); // the old worker took its handles with it
+  cachedOptions = null; segmentMs = null;
   worker = new Worker('worker.js');
   worker.onmessage = (ev) => {
     const m = ev.data;
@@ -73,13 +74,20 @@ function startWorker() {
   worker.onerror = (e) => setStatus('worker error: ' + e.message, true);
 }
 
+function free(handle) {
+  if (handle !== null && worker) worker.postMessage({ id: 0, op: 'free', handle });
+}
+
 function call(msg, transfer) {
   const id = requests.next();
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
     worker.postMessage({ id, ...msg }, transfer || []);
   }).then((r) => {
-    if (!requests.accept(id)) throw new Error('superseded');
+    if (!requests.accept(id)) {
+      if (msg.op === 'segment') free(r.handle); // nobody will adopt it
+      throw new Error('superseded');
+    }
     return r;
   });
 }
@@ -129,15 +137,15 @@ async function run() {
   busy = true;
   $('cancel').disabled = false;
   try {
-    if (needsResegment(cachedOptions, options) || handle === null) {
+    if (needsResegment(cachedOptions, options) || handles.current === null) {
       setStatus('segmenting…');
       const copy = image.data.slice(); // keep ours; the worker gets a transferred copy
       const seg = await call({ op: 'segment', width: image.width, height: image.height, data: copy.buffer, options }, [copy.buffer]);
-      if (handle !== null) worker.postMessage({ id: 0, op: 'free', handle });
-      handle = seg.handle; cachedOptions = options; segmentMs = seg.millis;
+      free(handles.adopt(seg.handle));
+      cachedOptions = options; segmentMs = seg.millis;
     }
     setStatus(`segment ${segmentMs.toFixed(0)} ms · finishing…`);
-    const fin = await call({ op: 'finish', handle, options });
+    const fin = await call({ op: 'finish', handle: handles.current, options });
     showSVG(fin.svg);
     setStatus(`segment ${segmentMs.toFixed(0)} ms · finish ${fin.millis.toFixed(0)} ms · ${fin.paths} paths · ${(fin.bytes / 1024).toFixed(1)} KB · ${image.width}×${image.height}${image.note}`);
   } catch (e) {
@@ -160,7 +168,8 @@ async function load(file) {
     setStatus('cannot decode ' + file.name + ': ' + e.message, true);
     return;
   }
-  handle = null; cachedOptions = null;
+  free(handles.release());
+  cachedOptions = null;
   run();
 }
 

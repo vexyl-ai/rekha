@@ -35,12 +35,21 @@ type Limits struct {
 const maxFieldBytes = 4096
 
 type handler struct {
-	l       Limits
-	sem     chan struct{}
-	waiting atomic.Int64
-	traceFn func(io.Reader, rekha.Options) (*rekha.Result, error)
-	mux     *http.ServeMux
+	l        Limits
+	sem      chan struct{}
+	waiting  atomic.Int64 // requests waiting for a slot
+	inflight atomic.Int64 // requests admitted: reading, waiting or tracing
+	traceFn  func(io.Reader, rekha.Options) (*rekha.Result, error)
+	mux      *http.ServeMux
 }
+
+// panicError is a tracer panic caught on the trace goroutine.
+type panicError struct{ v any }
+
+func (e *panicError) Error() string { return fmt.Sprintf("rekha: internal error: %v", e.v) }
+
+// writeGrace is how long the response write may take after the trace.
+const writeGrace = 10 * time.Second
 
 // NewHandler routes /healthz, POST /v1/trace and, when static is a
 // directory, files under / for the demo page.
@@ -81,6 +90,14 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusMethodNotAllowed, "POST an image to /v1/trace")
 		return
 	}
+	// Admission before the body is read: at most Concurrency+Queue
+	// requests hold a body at once, so uploads cannot pile up memory.
+	if h.inflight.Add(1) > int64(h.l.Concurrency+h.l.Queue) {
+		h.inflight.Add(-1)
+		fail(w, http.StatusServiceUnavailable, "busy, try again")
+		return
+	}
+	defer h.inflight.Add(-1)
 	r.Body = http.MaxBytesReader(w, r.Body, h.l.MaxBytes)
 	img, fields, err := readRequest(r)
 	if err != nil {
@@ -125,6 +142,10 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 		select {
 		case h.sem <- struct{}{}:
 			h.waiting.Add(-1)
+		case <-time.After(h.l.Timeout):
+			h.waiting.Add(-1)
+			fail(w, http.StatusServiceUnavailable, fmt.Sprintf("no free slot within %s, try again", h.l.Timeout))
+			return
 		case <-ctx.Done():
 			h.waiting.Add(-1)
 			return
@@ -139,12 +160,24 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	go func() {
 		defer func() { <-h.sem }()
+		defer func() {
+			// net/http recovers panics on its own goroutine only; one here
+			// would end the process for every client.
+			if v := recover(); v != nil {
+				done <- outcome{err: &panicError{v}}
+			}
+		}()
 		res, err := h.traceFn(bytes.NewReader(img), o)
 		done <- outcome{res, err}
 	}()
 	select {
 	case out := <-done:
 		if out.err != nil {
+			var pe *panicError
+			if errors.As(out.err, &pe) {
+				fail(w, http.StatusInternalServerError, out.err.Error())
+				return
+			}
 			fail(w, http.StatusBadRequest, out.err.Error())
 			return
 		}
@@ -153,6 +186,9 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		// The server's write deadline started at the request header; the
+		// upload, the queue wait and the trace may have used it up.
+		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(writeGrace))
 		w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
 		w.Header().Set("X-Rekha-Paths", strconv.Itoa(len(out.res.Paths)))
 		w.Header().Set("X-Rekha-Millis", strconv.FormatInt(time.Since(start).Milliseconds(), 10))

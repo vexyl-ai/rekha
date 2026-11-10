@@ -34,9 +34,10 @@ Success: `200`, `Content-Type: image/svg+xml; charset=utf-8`, headers `X-Rekha-P
 | 405 | not POST |
 | 413 | body over `-max-bytes`, or image over `-max-pixels` |
 | 415 | neither multipart nor `image/*` |
-| 503 | queue full; retry after a second |
+| 500 | the tracer panicked on this input (the server keeps running) |
+| 503 | queue full, or no slot freed within `-timeout`; retry after a second |
 | 504 | trace exceeded `-timeout` |
 
 ## Behaviour under load
 
-Each trace holds one of `-concurrency` slots for its whole run. A request that finds no slot waits while fewer than `-queue` are already waiting, otherwise it is refused at once. A client that disconnects while waiting leaves the queue; one that disconnects (or times out) while its trace runs gets no answer, and the trace finishes in the background before its slot is freed, because the library has no cancellation. The pixel cap bounds that waste; set `-timeout` with the slowest preset (`poster --refine` on a `-max-pixels` image) in mind. `FuzzTraceHandler` feeds arbitrary bodies and content types through the handler; `make test` runs its seeds and `go test -fuzz FuzzTraceHandler ./cmd/rekha-serve` runs it for as long as you like.
+At most `-concurrency` + `-queue` requests are admitted at once, and admission happens before the body is read, so waiting uploads hold at most that many bodies in memory. Each trace holds one of `-concurrency` slots for its whole run. A request that finds no slot waits while fewer than `-queue` are already waiting and for at most `-timeout`, otherwise it is refused with 503. A client that disconnects while waiting leaves the queue; one that disconnects (or times out) while its trace runs gets no answer, and the trace finishes in the background before its slot is freed, because the library has no cancellation. The pixel cap bounds that waste; set `-timeout` with the slowest preset (`poster --refine` on a `-max-pixels` image) in mind. On SIGINT or SIGTERM the server stops accepting and waits up to `-timeout` + 10 s for in-flight requests. `FuzzTraceHandler` feeds arbitrary bodies and content types through the handler; `make test` runs its seeds and `go test -fuzz FuzzTraceHandler ./cmd/rekha-serve` runs it for as long as you like.

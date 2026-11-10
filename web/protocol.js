@@ -24,7 +24,17 @@
     accept(id) { return id === this.latest; }
   }
 
-  const api = { SEGMENT_KEYS, needsResegment, Requests };
+  // Handles tracks the one live segmentation handle so every handle it
+  // replaces or drops is freed in the worker; the wasm heap never shrinks.
+  class Handles {
+    constructor() { this.current = null; }
+    // adopt makes h current and returns the handle to free, if any.
+    adopt(h) { const prev = this.current; this.current = h; return prev; }
+    // release clears the current handle and returns it to free, once.
+    release() { const prev = this.current; this.current = null; return prev; }
+  }
+
+  const api = { SEGMENT_KEYS, needsResegment, Requests, Handles };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.RekhaProtocol = api;
 })(typeof self !== 'undefined' ? self : globalThis);

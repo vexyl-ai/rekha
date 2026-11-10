@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -67,14 +68,28 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go func() {
-		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), c.limits.Timeout)
-		defer cancel()
-		srv.Shutdown(shutdown)
-	}()
-	log.Printf("rekha-serve %s listening on %s (max %d bytes, %d pixels, %s, %d concurrent, queue %d)", version, c.addr, c.limits.MaxBytes, c.limits.MaxPixels, c.limits.Timeout, c.limits.Concurrency, c.limits.Queue)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	ln, err := net.Listen("tcp", c.addr)
+	if err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("rekha-serve %s listening on %s (max %d bytes, %d pixels, %s, %d concurrent, queue %d)", version, ln.Addr(), c.limits.MaxBytes, c.limits.MaxPixels, c.limits.Timeout, c.limits.Concurrency, c.limits.Queue)
+	if err := serve(ctx, srv, ln, c.limits.Timeout+writeGrace); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// serve runs srv on ln until ctx is done, then shuts it down gracefully,
+// waiting up to grace for in-flight requests before returning.
+func serve(ctx context.Context, srv *http.Server, ln net.Listener, grace time.Duration) error {
+	shutdownErr := make(chan error, 1)
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), grace)
+		defer cancel()
+		shutdownErr <- srv.Shutdown(shutdown)
+	}()
+	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return <-shutdownErr
 }

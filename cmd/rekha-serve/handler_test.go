@@ -282,3 +282,62 @@ func FuzzTraceHandler(f *testing.F) {
 		}
 	})
 }
+
+// readFails is a body that fails the test if anything reads it.
+type readFails struct{ t *testing.T }
+
+func (r readFails) Read([]byte) (int, error) {
+	r.t.Error("body was read before admission")
+	return 0, io.EOF
+}
+
+// A request that cannot be admitted (slot busy, queue full) is refused
+// before its body is read, so waiting uploads cannot pile up memory.
+func TestServeAdmissionBeforeBodyRead(t *testing.T) {
+	l := limits()
+	l.Concurrency, l.Queue = 1, 0
+	h := NewHandler(l, "")
+	release := blocking(h)
+	defer close(release)
+	go post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t)))
+	time.Sleep(50 * time.Millisecond)
+	req := httptest.NewRequest(http.MethodPost, "/v1/trace", readFails{t})
+	req.Header.Set("Content-Type", "image/png")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 503 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Waiting for a slot is bounded by the trace timeout: 503, not a hang.
+func TestServeQueueWaitTimesOut(t *testing.T) {
+	l := limits()
+	l.Concurrency, l.Queue, l.Timeout = 1, 1, 50*time.Millisecond
+	h := NewHandler(l, "")
+	release := blocking(h)
+	defer close(release)
+	go post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t)))
+	time.Sleep(20 * time.Millisecond)
+	start := time.Now()
+	rec := post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 503 || time.Since(start) > 2*time.Second {
+		t.Fatalf("%d after %s: %s", rec.Code, time.Since(start), rec.Body.String())
+	}
+}
+
+// A panic inside the tracer answers 500 and leaves the server running.
+func TestServePanicIsolated(t *testing.T) {
+	l := limits()
+	l.Concurrency = 1
+	h := NewHandler(l, "")
+	h.(*handler).traceFn = func(io.Reader, rekha.Options) (*rekha.Result, error) { panic("boom") }
+	rec := post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 500 || !strings.Contains(rec.Body.String(), "boom") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	h.(*handler).traceFn = rekha.TraceReader
+	if rec := post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t))); rec.Code != 200 {
+		t.Fatalf("after panic: %d %s", rec.Code, rec.Body.String())
+	}
+}
