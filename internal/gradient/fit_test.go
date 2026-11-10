@@ -72,11 +72,177 @@ func TestMergeMomentsEqualsAdding(t *testing.T) {
 func TestRampStops(t *testing.T) {
 	m := rampMoments()
 	f := m.fit()
-	r := ramp(&m, f, 0.5, 63.5)
+	b := newBins(0.5, 63.5)
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 64; x++ {
+			v := float64(x) / 63
+			b.add(float64(x)+0.5, [3]float64{v, v, v})
+		}
+	}
+	r := rampFrom(&m, f, b, 0.03)
 	if r.Stops[0].Colour != (color.NRGBA{0, 0, 0, 255}) || r.Stops[1].Colour != (color.NRGBA{255, 255, 255, 255}) {
 		t.Errorf("stops %+v", r.Stops)
 	}
 	if math.Abs(r.X0-0.5) > 1e-6 || math.Abs(r.X1-63.5) > 1e-6 || math.Abs(r.Y0-4) > 1e-6 || math.Abs(r.Y1-4) > 1e-6 {
 		t.Errorf("ends %+v", r)
+	}
+}
+
+func TestAlongMatchesFit(t *testing.T) {
+	m := rampMoments()
+	f := m.fit()
+	g := m.along(f.u)
+	if !g.ok || g.u != f.u || math.Abs(g.rms-f.rms) > 1e-12 || math.Abs(g.slope-f.slope) > 1e-12 || math.Abs(g.extent-f.extent) > 1e-9 || g.a != f.a || g.b != f.b {
+		t.Errorf("along %+v\nfit   %+v", g, f)
+	}
+}
+
+func TestAlongNoSpreadNotOK(t *testing.T) {
+	m := rampMoments()
+	if g := m.along([2]float64{0, 1}); g.ok && g.extent > 1e-9 && g.slope > 1e-9 {
+		t.Errorf("along y on a horizontal ramp: slope %g extent %g", g.slope, g.extent)
+	}
+	var one moments
+	one.add(0.5, 0.5, [3]float64{1, 1, 1})
+	if one.along([2]float64{1, 0}).ok {
+		t.Error("one pixel must not fit")
+	}
+}
+
+// linearBins fills bins over a w-pixel exact grey ramp 0..1 (v = x/(w-1)),
+// skipping x in [x0,x1) when x1 > x0, and returns the moments and fit too.
+func linearBins(w, x0, x1 int) (*moments, fitted, *bins) {
+	var m moments
+	b := newBins(0.5, float64(w)-0.5)
+	for y := 0; y < 8; y++ {
+		for x := 0; x < w; x++ {
+			if x >= x0 && x < x1 {
+				continue
+			}
+			v := float64(x) / float64(w-1)
+			m.add(float64(x)+0.5, float64(y)+0.5, [3]float64{v, v, v})
+			b.add(float64(x)+0.5, [3]float64{v, v, v})
+		}
+	}
+	return &m, m.fit(), b
+}
+
+func TestRampStopsLinearIsTwo(t *testing.T) {
+	m, f, b := linearBins(256, 0, 0)
+	if b.nb != 32 {
+		t.Fatalf("nb %d want 32", b.nb)
+	}
+	r := rampFrom(m, f, b, 0.03)
+	if r == nil {
+		t.Fatal("nil ramp")
+	}
+	want := []Stop{{Offset: 0, Colour: color.NRGBA{0, 0, 0, 255}}, {Offset: 1, Colour: color.NRGBA{255, 255, 255, 255}}}
+	if len(r.Stops) != 2 || r.Stops[0] != want[0] || r.Stops[1] != want[1] {
+		t.Errorf("stops %+v", r.Stops)
+	}
+	if math.Abs(r.X0-0.5) > 1e-6 || math.Abs(r.X1-255.5) > 1e-6 || math.Abs(r.Y0-4) > 1e-6 || math.Abs(r.Y1-4) > 1e-6 {
+		t.Errorf("ends %+v", r)
+	}
+}
+
+func TestStopsCurvedKeepsBends(t *testing.T) {
+	var m moments
+	b := newBins(0.5, 255.5)
+	curve := func(t float64) float64 { return float64((t / 255) * (t / 255)) }
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 256; x++ {
+			v := curve(float64(x))
+			m.add(float64(x)+0.5, float64(y)+0.5, [3]float64{v, v, v})
+			b.add(float64(x)+0.5, [3]float64{v, v, v})
+		}
+	}
+	const tol = 0.03
+	stops, _ := b.stops(tol)
+	if len(stops) < 3 {
+		t.Fatalf("%d stops, want a bent ramp: %+v", len(stops), stops)
+	}
+	for _, s := range stops {
+		want := curve(0.5 + float64(s.Offset*255))
+		if d := math.Abs(float64(s.Colour.G)/255 - want); d > tol {
+			t.Errorf("stop %+v is %.3f from the curve (%.3f)", s, d, want)
+		}
+	}
+	if stops[0].Offset != 0 || stops[len(stops)-1].Offset != 1 {
+		t.Errorf("ends %+v %+v", stops[0], stops[len(stops)-1])
+	}
+}
+
+func TestStopsSkipEmptyBins(t *testing.T) {
+	// Bins are 8 px wide over 256 px; x in [24,40) empties bins 3 and 4.
+	_, _, b := linearBins(256, 24, 40)
+	raw := b.raw()
+	if len(raw) != 30+2 {
+		t.Fatalf("%d raw stops, want 30 bins + 2 ends", len(raw))
+	}
+	for i := 1; i < len(raw); i++ {
+		if raw[i].offset <= raw[i-1].offset || raw[i].colour[0] < raw[i-1].colour[0] {
+			t.Errorf("raw stops not monotone at %d: %+v %+v", i, raw[i-1], raw[i])
+		}
+	}
+	if stops, _ := b.stops(0.03); len(stops) != 2 {
+		t.Errorf("a linear ramp with a hole still simplifies to 2 stops, got %+v", stops)
+	}
+}
+
+func TestStopsCapped(t *testing.T) {
+	_, _, b := linearBins(4000, 0, 0)
+	if b.nb != 64 {
+		t.Errorf("nb %d want 64", b.nb)
+	}
+	if raw := b.raw(); len(raw) > 66 {
+		t.Errorf("%d raw stops", len(raw))
+	}
+}
+
+func TestStopsNeedTwoBins(t *testing.T) {
+	b := newBins(0.5, 4.5)
+	for x := 0; x < 5; x++ {
+		b.add(float64(x)+0.5, [3]float64{0.5, 0.5, 0.5})
+	}
+	if stops, _ := b.stops(0.03); b.nb != 1 || stops != nil {
+		t.Errorf("nb %d stops %+v", b.nb, stops)
+	}
+}
+
+func TestRampFromPocketInEndBinIsNil(t *testing.T) {
+	// A flat region whose last bin holds a pocket of a nearby colour:
+	// the extrapolated end would amplify it past tol, the samples do not.
+	var m moments
+	b := newBins(0.5, 71.5)
+	for y := 0; y < 48; y++ {
+		for x := 0; x < 72; x++ {
+			c := [3]float64{130.0 / 255, 40.0 / 255, 160.0 / 255}
+			if x >= 64 && y < 24 {
+				c = [3]float64{136.0 / 255, 50.0 / 255, 164.0 / 255}
+			}
+			m.add(float64(x)+0.5, float64(y)+0.5, c)
+			b.add(float64(x)+0.5, c)
+		}
+	}
+	f := m.fit()
+	if !f.ok || f.rms > 0.03 {
+		t.Fatalf("fixture must be a ramp candidate: %+v", f)
+	}
+	if r := rampFrom(&m, f, b, 0.03); r != nil {
+		t.Errorf("pocket gave %+v", r.Stops)
+	}
+}
+
+func TestRampFromFlatIsNil(t *testing.T) {
+	var m moments
+	b := newBins(0.5, 63.5)
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 64; x++ {
+			m.add(float64(x)+0.5, float64(y)+0.5, [3]float64{0.5, 0.5, 0.5})
+			b.add(float64(x)+0.5, [3]float64{0.5, 0.5, 0.5})
+		}
+	}
+	if r := rampFrom(&m, m.fit(), b, 0.03); r != nil {
+		t.Errorf("flat gave %+v", r)
 	}
 }

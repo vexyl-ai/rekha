@@ -95,9 +95,8 @@ type fitted struct {
 // t = u·p in one dimension. ok is false when the pixels do not span a
 // plane (fewer than three, or collinear).
 func (m *moments) fit() fitted {
-	var f fitted
 	if m.n < 3 {
-		return f
+		return fitted{}
 	}
 	n := float64(m.n)
 	cxx := m.sxx - float64(m.sx*m.sx)/n
@@ -105,7 +104,7 @@ func (m *moments) fit() fitted {
 	cxy := m.sxy - float64(m.sx*m.sy)/n
 	det := float64(cxx*cyy) - float64(cxy*cxy)
 	if det <= 1e-9*float64(cxx*cyy) {
-		return f
+		return fitted{}
 	}
 	// Gradient of each channel's plane, and the 2×2 scatter of those.
 	var g11, g12, g22 float64
@@ -118,20 +117,32 @@ func (m *moments) fit() fitted {
 		g12 += float64(b * d)
 		g22 += float64(d * d)
 	}
-	f.ok = true
-	f.u = principal(g11, g12, g22)
-	ux, uy := f.u[0], f.u[1]
+	return m.along(principal(g11, g12, g22))
+}
+
+// along fits colour against t = u·p in one dimension for a given unit
+// direction u. ok is false with fewer than three pixels or when the
+// pixels do not spread along u.
+func (m *moments) along(u [2]float64) fitted {
+	var f fitted
+	if m.n < 3 {
+		return f
+	}
+	n := float64(m.n)
+	ux, uy := u[0], u[1]
 	st := float64(ux*m.sx) + float64(uy*m.sy)
 	stt := float64(ux*ux*m.sxx) + 2*float64(ux*uy*m.sxy) + float64(uy*uy*m.syy)
 	ctt := stt - float64(st*st)/n
+	if ctt <= 1e-12*n {
+		return f
+	}
+	f.ok = true
+	f.u = u
 	var rss, slope2 float64
 	for i := range m.sc {
 		sct := float64(ux*m.scx[i]) + float64(uy*m.scy[i])
 		cct := sct - float64(st*m.sc[i])/n
-		b := 0.0
-		if ctt > 1e-12*n {
-			b = cct / ctt
-		}
+		b := cct / ctt
 		a := (m.sc[i] - float64(b*st)) / n
 		f.a[i], f.b[i] = a, b
 		// Residual about the mean, less what the slope explains: the
@@ -141,7 +152,7 @@ func (m *moments) fit() fitted {
 	}
 	f.rms = math.Sqrt(math.Max(rss, 0) / n)
 	f.slope = math.Sqrt(slope2)
-	f.extent = 2 * math.Sqrt(3*math.Max(ctt, 0)/n)
+	f.extent = 2 * math.Sqrt(3*ctt/n)
 	return f
 }
 
@@ -170,22 +181,166 @@ func principal(p, q, r float64) [2]float64 {
 	return [2]float64{x, y}
 }
 
-// ramp builds the two-stop ramp of f between projections tmin and tmax
-// on u, through the pixels' centroid.
-func ramp(m *moments, f fitted, tmin, tmax float64) *Ramp {
+// binWidth is the length along u, in pixels, each colour sample of a ramp
+// covers; maxBins caps the samples on a long ramp.
+const (
+	binWidth = 8
+	maxBins  = 64
+)
+
+// bins collect the pixels of a ramp group by their projection t on its
+// direction, between the group's tmin and tmax, so the colour along the
+// ramp can be sampled.
+type bins struct {
+	tmin, tmax float64
+	nb         int
+	st         []float64    // Σt per bin
+	sc         [][3]float64 // Σcolour per bin
+	cnt        []int
+}
+
+func newBins(tmin, tmax float64) *bins {
+	nb := int(math.Ceil((tmax - tmin) / binWidth))
+	nb = max(1, min(nb, maxBins))
+	return &bins{tmin: tmin, tmax: tmax, nb: nb, st: make([]float64, nb), sc: make([][3]float64, nb), cnt: make([]int, nb)}
+}
+
+func (b *bins) add(t float64, c [3]float64) {
+	i := int(float64((t-b.tmin)/(b.tmax-b.tmin)) * float64(b.nb))
+	i = max(0, min(i, b.nb-1))
+	b.st[i] += t
+	b.cnt[i]++
+	for k, v := range c {
+		b.sc[i][k] += v
+	}
+}
+
+// rawStop is a colour sample along a ramp before quantisation.
+type rawStop struct {
+	offset float64
+	colour [3]float64
+}
+
+// raw samples the ramp: one stop per non-empty bin, at the bin's mean
+// projection (so an exactly linear ramp samples exactly on its line),
+// and one at each end by linear extrapolation of the two nearest
+// samples, clamped to 0..1. Fewer than two non-empty bins give nil.
+func (b *bins) raw() []rawStop {
+	span := b.tmax - b.tmin
+	var out []rawStop
+	for i := range b.cnt {
+		if b.cnt[i] == 0 {
+			continue
+		}
+		n := float64(b.cnt[i])
+		s := rawStop{offset: (b.st[i]/n - b.tmin) / span}
+		for k := range s.colour {
+			s.colour[k] = b.sc[i][k] / n
+		}
+		out = append(out, s)
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	ends := func(p, q rawStop, at float64) rawStop {
+		s := rawStop{offset: at}
+		f := (at - p.offset) / (q.offset - p.offset)
+		for k := range s.colour {
+			v := p.colour[k] + float64(f*(q.colour[k]-p.colour[k]))
+			s.colour[k] = math.Max(0, math.Min(1, v))
+		}
+		return s
+	}
+	first := ends(out[0], out[1], 0)
+	last := ends(out[len(out)-2], out[len(out)-1], 1)
+	return append(append([]rawStop{first}, out...), last)
+}
+
+// stops simplifies the raw samples by Douglas-Peucker in colour at tol/2
+// (a sample within tol/2 of the straight colour line between its kept
+// neighbours is dropped), then quantises them. span is the largest
+// colour distance between any two bin samples, the extrapolated ends
+// left out: a pocket of another colour in an end bin is amplified by the
+// extrapolation and must not count as colour change.
+func (b *bins) stops(tol float64) (stops []Stop, span float64) {
+	raw := b.raw()
+	if raw == nil {
+		return nil, 0
+	}
+	for i := 1; i < len(raw)-1; i++ {
+		for j := i + 1; j < len(raw)-1; j++ {
+			span = math.Max(span, cdist(raw[i].colour, raw[j].colour))
+		}
+	}
+	keep := make([]bool, len(raw))
+	keep[0], keep[len(raw)-1] = true, true
+	simplify(raw, keep, 0, len(raw)-1, tol/2)
+	for i, s := range raw {
+		if keep[i] {
+			stops = append(stops, Stop{Offset: s.offset, Colour: quantise(s.colour)})
+		}
+	}
+	return stops, span
+}
+
+func cdist(a, b [3]float64) float64 {
+	var d2 float64
+	for k := range a {
+		e := a[k] - b[k]
+		d2 += float64(e * e)
+	}
+	return math.Sqrt(d2)
+}
+
+// simplify marks, between kept samples lo and hi, the sample farthest in
+// colour from the line through them when it is farther than eps, and
+// recurses on both sides of it.
+func simplify(raw []rawStop, keep []bool, lo, hi int, eps float64) {
+	if hi-lo < 2 {
+		return
+	}
+	p, q := raw[lo], raw[hi]
+	best, far := -1, eps
+	for i := lo + 1; i < hi; i++ {
+		f := (raw[i].offset - p.offset) / (q.offset - p.offset)
+		var d2 float64
+		for k := range p.colour {
+			e := raw[i].colour[k] - p.colour[k] - float64(f*(q.colour[k]-p.colour[k]))
+			d2 += float64(e * e)
+		}
+		if d := math.Sqrt(d2); d > far {
+			best, far = i, d
+		}
+	}
+	if best < 0 {
+		return
+	}
+	keep[best] = true
+	simplify(raw, keep, lo, best, eps)
+	simplify(raw, keep, best, hi, eps)
+}
+
+func quantise(c [3]float64) color.NRGBA {
+	ch := func(v float64) uint8 { return uint8(math.Round(math.Max(0, math.Min(1, v)) * 255)) }
+	return color.NRGBA{R: ch(c[0]), G: ch(c[1]), B: ch(c[2]), A: 255}
+}
+
+// rampFrom builds the ramp of a group from its moments (for the
+// centroid), its fit (for the direction) and its bins (for the stops):
+// the line runs from projection tmin to tmax on u through the centroid.
+// nil when the stops cannot be sampled, or the sampled colour changes
+// less than max(tol, minSpan) along the ramp.
+func rampFrom(m *moments, f fitted, b *bins, tol float64) *Ramp {
+	stops, span := b.stops(tol)
+	if stops == nil || span < math.Max(tol, minSpan) {
+		return nil
+	}
 	n := float64(m.n)
 	cx, cy := m.sx/n, m.sy/n
 	tc := float64(f.u[0]*cx) + float64(f.u[1]*cy)
-	at := func(t float64) color.NRGBA {
-		ch := func(i int) uint8 {
-			v := f.a[i] + float64(f.b[i]*t)
-			return uint8(math.Round(math.Max(0, math.Min(1, v)) * 255))
-		}
-		return color.NRGBA{R: ch(0), G: ch(1), B: ch(2), A: 255}
-	}
 	return &Ramp{
-		X0: cx + float64((tmin-tc)*f.u[0]), Y0: cy + float64((tmin-tc)*f.u[1]),
-		X1: cx + float64((tmax-tc)*f.u[0]), Y1: cy + float64((tmax-tc)*f.u[1]),
-		Stops: []Stop{{Offset: 0, Colour: at(tmin)}, {Offset: 1, Colour: at(tmax)}},
+		X0: cx + float64((b.tmin-tc)*f.u[0]), Y0: cy + float64((b.tmin-tc)*f.u[1]),
+		X1: cx + float64((b.tmax-tc)*f.u[0]), Y1: cy + float64((b.tmax-tc)*f.u[1]),
+		Stops: stops,
 	}
 }

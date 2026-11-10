@@ -255,15 +255,39 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		e.tmin = math.Min(e.tmin, t)
 		e.tmax = math.Max(e.tmax, t)
 	}
+	// Sample the colour along each candidate from the pixels interior to
+	// the whole group (every 4-neighbour in the same group), so a band
+	// boundary's blend and the group's own anti-aliased edge do not pull
+	// a stop.
+	binsOf := map[int32]*bins{}
+	for r, e := range ext {
+		if e.tmax-e.tmin >= minLength {
+			binsOf[r] = newBins(e.tmin, e.tmax)
+		}
+	}
+	for p := 0; p < np; p++ {
+		r := find(comp[p])
+		b := binsOf[r]
+		if b == nil {
+			continue
+		}
+		x, y := p%w, p/w
+		if x > 0 && find(comp[p-1]) != r || x+1 < w && find(comp[p+1]) != r || y > 0 && find(comp[p-w]) != r || y+1 < h && find(comp[p+w]) != r {
+			continue
+		}
+		e := ext[r]
+		t := float64(e.f.u[0]*(float64(x)+0.5)) + float64(e.f.u[1]*(float64(y)+0.5))
+		b.add(t, colourOf(rgb, p))
+	}
 	sort.Slice(roots, func(i, j int) bool { return groups[roots[i]].first < groups[roots[j]].first })
 	fresh := map[int32]int{}
 	rampOf := map[int32]*Ramp{}
 	rampFor := func(r int32) *Ramp {
-		e := ext[r]
-		if e == nil || e.tmax-e.tmin < minLength || float64(e.f.slope*(e.tmax-e.tmin)) < math.Max(tol, minSpan) {
+		b := binsOf[r]
+		if b == nil {
 			return nil
 		}
-		return ramp(&groups[r].m, e.f, e.tmin, e.tmax)
+		return rampFrom(&groups[r].m, ext[r].f, b, tol)
 	}
 	// Merged groups always need a label (the rounds reserved one each);
 	// lone ramps take what is left, in scan order.
