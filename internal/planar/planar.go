@@ -270,11 +270,18 @@ func (m Map) Shapes() [][]int {
 			cs[k] = contour.Contour{Pts: m.Assemble(m.Loops[i]), Area2: m.Loops[i].Area2}
 		}
 		// Identify contours by the backing array of their points.
+		byPts := make(map[*geom.Point]int, len(cs))
+		for k := range cs {
+			if len(cs[k].Pts) > 0 {
+				byPts[&cs[k].Pts[0]] = idx[k]
+			}
+		}
 		which := func(c contour.Contour) int {
-			for k := range cs {
-				if len(cs[k].Pts) > 0 && &cs[k].Pts[0] == &c.Pts[0] {
-					return idx[k]
-				}
+			if len(c.Pts) == 0 {
+				return -1
+			}
+			if i, ok := byPts[&c.Pts[0]]; ok {
+				return i
 			}
 			return -1
 		}

@@ -15,7 +15,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -124,7 +126,9 @@ func (r *Runner) runOne(ctx context.Context, raster func(context.Context, string
 	fail := func(err error) { res.Err = strings.ReplaceAll(err.Error(), dir+string(filepath.Separator), "") }
 
 	if t.Dir != "" {
-		r.scoreReference(ctx, raster, src, imgPath, t.Dir, res)
+		if err := r.scoreReference(ctx, raster, dir, src, imgPath, t.Dir, res); err != nil {
+			fail(err)
+		}
 		return
 	}
 
@@ -175,42 +179,88 @@ func (r *Runner) runOne(ctx context.Context, raster func(context.Context, string
 }
 
 // scoreReference scores a hand-downloaded output for imgPath found in
-// refDir: <name>.svg is rasterised and measured like a tool's output (no
-// time), <name>.png is compared directly, and neither marks the row
-// "no reference".
-func (r *Runner) scoreReference(ctx context.Context, raster func(context.Context, string, int, int) (image.Image, error), src image.Image, imgPath, refDir string, res *Result) {
+// refDir: <name>.svg is copied into dir and rasterised and measured like
+// a tool's output (no time), <name>.png is compared directly, and
+// neither marks the row "no reference". An SVG whose own size (viewBox,
+// else width and height) is not the input's shape is an error: the
+// rasteriser would stretch it to the input's size and score the stretch.
+func (r *Runner) scoreReference(ctx context.Context, raster func(context.Context, string, int, int) (image.Image, error), dir string, src image.Image, imgPath, refDir string, res *Result) error {
 	name := strings.TrimSuffix(filepath.Base(imgPath), filepath.Ext(imgPath))
 	w, h := src.Bounds().Dx(), src.Bounds().Dy()
-	svgPath := filepath.Join(refDir, name+".svg")
-	if svg, err := os.ReadFile(svgPath); err == nil {
+	if svg, err := os.ReadFile(filepath.Join(refDir, name+".svg")); err == nil {
+		sw, sh, ok := svgSize(svg)
+		if !ok {
+			return fmt.Errorf("reference SVG has no viewBox or width/height")
+		}
+		if math.Abs(sw/sh-float64(w)/float64(h)) > sizeTol*float64(w)/float64(h) {
+			return fmt.Errorf("reference SVG is %gx%g for a %dx%d input", sw, sh, w, h)
+		}
 		res.Stats = metrics.Stats(svg)
-		rendered, err := raster(ctx, svgPath, w, h)
+		local := filepath.Join(dir, "ref.svg")
+		if err := os.WriteFile(local, svg, 0o644); err != nil {
+			return err
+		}
+		rendered, err := raster(ctx, local, w, h)
 		if err != nil {
-			res.Err = err.Error()
-			return
+			return err
 		}
 		res.PSNR, err = metrics.PSNR(src, rendered)
 		if err != nil {
 			res.PSNR = math.NaN()
-			res.Err = err.Error()
 		}
-		return
+		return err
 	}
-	pngPath := filepath.Join(refDir, name+".png")
-	ref, err := readPNG(pngPath)
+	ref, err := readPNG(filepath.Join(refDir, name+".png"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			res.Skipped = "no reference"
-		} else {
-			res.Err = err.Error()
+			return nil
 		}
-		return
+		return err
 	}
 	res.PSNR, err = metrics.PSNR(src, ref)
 	if err != nil {
 		res.PSNR = math.NaN()
-		res.Err = err.Error()
 	}
+	return err
+}
+
+// sizeTol is the relative aspect-ratio difference a reference SVG may
+// have from the input before its row is an error.
+const sizeTol = 0.01
+
+var (
+	svgTag    = regexp.MustCompile(`(?s)<svg\b[^>]*>`)
+	viewBoxRe = regexp.MustCompile(`\bviewBox\s*=\s*["']\s*([-\d.eE+]+)[\s,]+([-\d.eE+]+)[\s,]+([-\d.eE+]+)[\s,]+([-\d.eE+]+)\s*["']`)
+	widthRe   = regexp.MustCompile(`\bwidth\s*=\s*["']\s*([\d.eE+-]+)`)
+	heightRe  = regexp.MustCompile(`\bheight\s*=\s*["']\s*([\d.eE+-]+)`)
+)
+
+// svgSize is the size the root <svg> element declares: its viewBox, else
+// its width and height (units ignored; only the shape is compared).
+func svgSize(svg []byte) (w, h float64, ok bool) {
+	tag := svgTag.Find(svg)
+	if tag == nil {
+		return 0, 0, false
+	}
+	num := func(b []byte) (float64, bool) {
+		v, err := strconv.ParseFloat(string(b), 64)
+		return v, err == nil && v > 0
+	}
+	if m := viewBoxRe.FindSubmatch(tag); m != nil {
+		if w, okw := num(m[3]); okw {
+			if h, okh := num(m[4]); okh {
+				return w, h, true
+			}
+		}
+	}
+	mw, mh := widthRe.FindSubmatch(tag), heightRe.FindSubmatch(tag)
+	if mw == nil || mh == nil {
+		return 0, 0, false
+	}
+	w, okw := num(mw[1])
+	h, okh := num(mh[1])
+	return w, h, okw && okh
 }
 
 func listPNGs(root string) ([]string, error) {

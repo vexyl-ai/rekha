@@ -349,3 +349,38 @@ func FuzzPlanar(f *testing.F) {
 		}
 	})
 }
+
+// TestPlanarShapesLinear: Shapes on a 1024² 2-px checkerboard (131 072
+// loops per colour) must not search every contour of a colour per shape.
+func TestPlanarShapesLinear(t *testing.T) {
+	const n = 1024
+	labels := grid(n, n, func(x, y int) uint8 { return uint8((x/2 + y/2) % 2) })
+	m := build(labels, n, n)
+	start := time.Now()
+	shapes := m.Shapes()
+	// The linear search took 9 s natively; 5 s leaves room for amd64
+	// under emulation (1.7 s) and loaded runners.
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("Shapes took %v", d)
+	}
+	// Under the minority saddle rule one colour joins across every
+	// saddle (one outer, the other colour's cells as holes); every loop
+	// appears in exactly one shape.
+	seen := make([]bool, len(m.Loops))
+	for _, s := range shapes {
+		for _, i := range s {
+			if i < 0 || seen[i] {
+				t.Fatalf("loop %d missing or repeated", i)
+			}
+			seen[i] = true
+		}
+	}
+	for i, ok := range seen {
+		if !ok {
+			t.Fatalf("loop %d in no shape", i)
+		}
+	}
+	if len(shapes) < n*n/8 {
+		t.Fatalf("%d shapes, want at least %d", len(shapes), n*n/8)
+	}
+}

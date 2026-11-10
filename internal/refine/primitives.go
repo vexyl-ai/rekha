@@ -235,7 +235,8 @@ func FitRectangle(b Bezigon, m Mask, img Window, tol float64) (Bezigon, bool) {
 		sx, sy = sx+math.Cos(a), sy+math.Sin(a)
 	}
 	theta := math.Atan2(sy, sx) / 4
-	if math.Abs(theta)*180/math.Pi < rectAxisSnap || math.Abs(math.Abs(theta)-math.Pi/4)*180/math.Pi < rectAxisSnap {
+	// theta lies in (-45°, 45°]; a diamond is 45°, not an axis case.
+	if math.Abs(theta)*180/math.Pi < rectAxisSnap {
 		theta = 0
 	}
 	u := geom.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}

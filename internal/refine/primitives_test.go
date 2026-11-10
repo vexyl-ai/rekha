@@ -295,3 +295,29 @@ func TestFitArcsBesideBowedLine(t *testing.T) {
 		t.Fatalf("corner starts at %v, want the tangent point (34,110)", c[0])
 	}
 }
+
+// TestFitRectangleDiamond: a rectangle at 45° is the one orientation the
+// 4θ mean folds onto the axis test; it must snap like any other angle.
+func TestFitRectangleDiamond(t *testing.T) {
+	win := Window{0, 0, 256, 256}
+	a := 45 * math.Pi / 180
+	c, s := math.Cos(a), math.Sin(a)
+	var true4 [4]geom.Vec2
+	for i, d := range [4][2]float64{{-60, -40}, {60, -40}, {60, 40}, {-60, 40}} {
+		true4[i] = geom.Vec2{X: 128 + d[0]*c - d[1]*s, Y: 128 + d[0]*s + d[1]*c}
+	}
+	m := supersampled(rectBezigon(true4), win)
+	noisy := true4
+	for i, d := range [4]geom.Vec2{{X: 0.06, Y: -0.05}, {X: -0.07, Y: 0.04}, {X: 0.05, Y: 0.06}, {X: -0.04, Y: -0.07}} {
+		noisy[i] = noisy[i].Add(d)
+	}
+	out, ok := FitRectangle(rectBezigon(noisy), m, win, 0.5)
+	if !ok {
+		t.Fatal("diamond not recognised")
+	}
+	for i := range true4 {
+		if d := out.Pts[3*i].Sub(true4[i]).Len(); d > 0.1 {
+			t.Errorf("corner %d off by %v", i, d)
+		}
+	}
+}

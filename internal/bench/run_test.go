@@ -323,3 +323,53 @@ func TestReferenceToolSizeMismatch(t *testing.T) {
 		t.Fatalf("got %+v", rs[0])
 	}
 }
+
+func TestReferenceToolSVGViewBoxMismatch(t *testing.T) {
+	corpus, ref := t.TempDir(), t.TempDir()
+	writePNG(t, filepath.Join(corpus, "a.png"), blackImage(64, 64))
+	os.WriteFile(filepath.Join(ref, "a.svg"), []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><path d="M0 0h200v100H0z"/></svg>`), 0o644)
+	r := newRunner(t, stubRaster(64, 64))
+	rs, err := r.Run(context.Background(), corpus, []Tool{refTool(ref)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rs[0].Err, "200x100") || !math.IsNaN(rs[0].PSNR) {
+		t.Fatalf("got %+v", rs[0])
+	}
+}
+
+func TestReferenceToolSVGUniformScaleAccepted(t *testing.T) {
+	corpus, ref := t.TempDir(), t.TempDir()
+	writePNG(t, filepath.Join(corpus, "a.png"), blackImage(64, 64))
+	os.WriteFile(filepath.Join(ref, "a.svg"), []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="128pt" height="128pt"><path d="M0 0h128v128H0z"/></svg>`), 0o644)
+	r := newRunner(t, stubRaster(64, 64))
+	rs, err := r.Run(context.Background(), corpus, []Tool{refTool(ref)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rs[0].Err != "" || !math.IsInf(rs[0].PSNR, 1) {
+		t.Fatalf("got %+v", rs[0])
+	}
+}
+
+func TestReferenceToolRasterisesInScratch(t *testing.T) {
+	corpus, ref := t.TempDir(), t.TempDir()
+	writePNG(t, filepath.Join(corpus, "a.png"), blackImage(64, 64))
+	svg, _ := os.ReadFile("testdata/fixture.svg")
+	os.WriteFile(filepath.Join(ref, "a.svg"), svg, 0o644)
+	var seen string
+	r := newRunner(t, func(_ context.Context, p string, w, h int) (image.Image, error) {
+		seen = p
+		return blackImage(w, h), nil
+	})
+	rs, err := r.Run(context.Background(), corpus, []Tool{refTool(ref)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rs[0].Err != "" {
+		t.Fatalf("got %+v", rs[0])
+	}
+	if strings.HasPrefix(seen, ref) || !strings.HasPrefix(seen, r.WorkDir) {
+		t.Fatalf("rasterised %q; want a copy under %q, not the reference directory", seen, r.WorkDir)
+	}
+}
