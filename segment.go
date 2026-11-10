@@ -7,6 +7,7 @@ import (
 
 	"github.com/vexyl-ai/rekha/internal/bitmap"
 	"github.com/vexyl-ai/rekha/internal/colour"
+	"github.com/vexyl-ai/rekha/internal/gradient"
 	"github.com/vexyl-ai/rekha/internal/quant"
 	"github.com/vexyl-ai/rekha/internal/region"
 )
@@ -23,6 +24,15 @@ type Segmentation struct {
 	Labels        []uint8       // palette index per pixel
 	Second        []uint8       // second-nearest palette index per pixel
 	Blend         []uint8       // 128..255, share of Labels' colour in the pixel
+	// Ramps, when Options.Gradients merged bands, has one entry per
+	// palette index: the linear ramp that fills it, or nil for a flat
+	// colour. Nil altogether when no option asked for ramps.
+	Ramps []*gradient.Ramp
+}
+
+// hasRamp reports whether palette index c is filled by a gradient.
+func (s *Segmentation) hasRamp(c int) bool {
+	return s.Ramps != nil && s.Ramps[c] != nil
 }
 
 // Segment reduces img to a Segmentation under o. The bw preset thresholds
@@ -98,6 +108,10 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 		}
 	}
 
+	if o.Gradients {
+		s.mergeRamps(rgb, final, pal, o)
+		return s
+	}
 	s.Palette = make([]color.NRGBA, len(final))
 	if len(o.Palette) > 0 {
 		for i, c := range final {
@@ -107,6 +121,38 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 		meanColours(rgb, s.Labels, s.Palette)
 	}
 	return s
+}
+
+// mergeRamps joins adjacent bands that form one linear ramp (see
+// internal/gradient), relabels, and rebuilds Second, Blend and the
+// palette for the new labels. Inside a ramp a pixel is wholly its own
+// colour; elsewhere a second colour that was absorbed entirely becomes
+// the pixel's own. A fixed palette keeps its entries for the labels that
+// stay flat; merged regions take their mean.
+func (s *Segmentation) mergeRamps(rgb []uint8, final, pal []colour.OKLab, o Options) {
+	g := gradient.Merge(rgb, s.Labels, s.Width, s.Height, len(final), o.GradientTolerance)
+	s.Labels = g.Labels
+	for p, l := range s.Labels {
+		if g.Ramps[l] != nil {
+			s.Second[p], s.Blend[p] = l, 255
+			continue
+		}
+		if ns := g.OldToNew[s.Second[p]]; ns >= 0 {
+			s.Second[p] = uint8(ns)
+		} else {
+			s.Second[p], s.Blend[p] = l, 255
+		}
+	}
+	s.Ramps = g.Ramps
+	s.Palette = make([]color.NRGBA, g.N)
+	meanColours(rgb, s.Labels, s.Palette)
+	if len(o.Palette) > 0 {
+		for i, c := range final {
+			if ns := g.OldToNew[i]; ns >= 0 {
+				s.Palette[ns] = fixedEntry(c, o.Palette, pal)
+			}
+		}
+	}
 }
 
 // meanColours sets each palette entry to the mean sRGB of the pixels that

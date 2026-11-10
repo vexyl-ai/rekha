@@ -46,9 +46,16 @@ func TestTraceGoldenColour(t *testing.T) {
 		}
 	}
 	cases = append(cases, tc{"gradient-h", PresetPhoto, ModeSpline})
+	// The gradient option has its own goldens on the two ramp fixtures.
+	for _, name := range []string{"gradient-h", "gradient-shapes"} {
+		cases = append(cases, tc{name, PresetPhoto, "gradients-spline"})
+	}
 	for _, c := range cases {
 		o := PresetOptions(c.preset)
 		o.Mode = c.mode
+		if c.mode == "gradients-spline" {
+			o.Mode, o.Gradients = ModeSpline, true
+		}
 		r, err := Trace(synth(t, c.name), o)
 		if err != nil {
 			t.Fatal(err)

@@ -77,6 +77,9 @@ type Options struct {
 
 	Refine       RefineOptions // spline mode only
 	CutoutStroke float64       // px, 0..4, default 0; cutout polygon/spline paths are stroked in their fill to hide seams
+
+	Gradients         bool    // colour presets: merge adjacent bands that form one linear ramp into a gradient fill
+	GradientTolerance float64 // 0..1, default 0.03; RMS sRGB distance (channels 0..1) a ramp may leave
 }
 
 // RefineOptions controls the Phase 3 refinement of spline output: each
@@ -112,6 +115,8 @@ func PresetOptions(p Preset) Options {
 		FitTolerance:      1.0,
 
 		Hierarchical: HierarchicalCutout,
+
+		GradientTolerance: 0.03,
 
 		Refine: RefineOptions{Sweeps: 3, MaxIter: 30, Weights: refine.DefaultWeights, MergeSplit: true, Primitives: true},
 	}
@@ -204,6 +209,9 @@ func (o Options) Validate() error {
 		}
 	}
 	if err := inRangeF("CutoutStroke", o.CutoutStroke, 0, 4); err != nil {
+		return err
+	}
+	if err := inRangeF("GradientTolerance", o.GradientTolerance, 0, 1); err != nil {
 		return err
 	}
 	return nil

@@ -13,9 +13,11 @@ import (
 	"github.com/vexyl-ai/rekha/internal/svg"
 )
 
-// Result is a traced image: filled paths in pixel coordinates.
+// Result is a traced image: filled paths in pixel coordinates, and the
+// gradients (Options.Gradients) that some of them are filled with.
 type Result struct {
 	Width, Height int
+	Gradients     []svg.LinearGradient
 	Paths         []svg.Path
 }
 
@@ -39,7 +41,7 @@ func Trace(img image.Image, o Options) (*Result, error) {
 
 // WriteSVG writes r as an SVG document with o.PathPrecision decimals.
 func (r *Result) WriteSVG(w io.Writer, o Options) error {
-	return svg.Write(w, r.Width, r.Height, r.Paths, o.PathPrecision)
+	return svg.WriteDocument(w, svg.Document{Width: r.Width, Height: r.Height, Gradients: r.Gradients, Paths: r.Paths}, o.PathPrecision)
 }
 
 // segments converts one closed crack loop into path segments for o.Mode.

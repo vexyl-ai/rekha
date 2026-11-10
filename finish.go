@@ -11,6 +11,7 @@ import (
 	"github.com/vexyl-ai/rekha/internal/contour"
 	"github.com/vexyl-ai/rekha/internal/fit"
 	"github.com/vexyl-ai/rekha/internal/geom"
+	"github.com/vexyl-ai/rekha/internal/gradient"
 	"github.com/vexyl-ai/rekha/internal/par"
 	"github.com/vexyl-ai/rekha/internal/planar"
 	"github.com/vexyl-ai/rekha/internal/refine"
@@ -150,8 +151,18 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	// mode is exact and the bw preset has no abutting colours.
 	stroke := !stacked && o.Preset != PresetBW && o.Mode != ModePixel && o.CutoutStroke > 0
 	mergeable := false
+	gradientIDs := map[int]int{} // palette index → index into res.Gradients
 	for i, l := range layers {
 		fill := colour.FromSRGB8(s.Palette[l.colour].R, s.Palette[l.colour].G, s.Palette[l.colour].B).Hex()
+		if s.hasRamp(l.colour) {
+			id, ok := gradientIDs[l.colour]
+			if !ok {
+				id = len(res.Gradients)
+				gradientIDs[l.colour] = id
+				res.Gradients = append(res.Gradients, linearGradient(fmt.Sprintf("g%d", id), s.Ramps[l.colour]))
+			}
+			fill = fmt.Sprintf("url(#g%d)", id)
+		}
 		// Stacked outers of one colour share a <path>; cutout keeps one
 		// path per shape, as Phase 1 did. A layer with holes (an extended
 		// region around a pocket) stays alone: a later shape of the same
@@ -174,6 +185,15 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 		mergeable = stacked && outersOnly
 	}
 	return res, nil
+}
+
+// linearGradient is the SVG form of a ramp.
+func linearGradient(id string, r *gradient.Ramp) svg.LinearGradient {
+	g := svg.LinearGradient{ID: id, X1: r.X0, Y1: r.Y0, X2: r.X1, Y2: r.Y1}
+	for _, st := range r.Stops {
+		g.Stops = append(g.Stops, svg.Stop{Offset: st.Offset, Colour: fmt.Sprintf("#%02x%02x%02x", st.Colour.R, st.Colour.G, st.Colour.B)})
+	}
+	return g
 }
 
 // assembleSegs concatenates the arc fits of loop l, reversed where the
@@ -349,7 +369,7 @@ func (s *Segmentation) buildLayersMap(o Options) ([]layer, *planar.Map) {
 	}
 	omit := make([]bool, len(layers))
 	for i, l := range layers {
-		omit[i] = l.depth == 0 && s.nearWhite(l.colour) && 2*area0[l.colour] >= total0
+		omit[i] = l.depth == 0 && s.nearWhite(l.colour) && 2*area0[l.colour] >= total0 && !s.hasRamp(l.colour)
 		layers[i].omit = omit[i]
 	}
 	if stacked {
