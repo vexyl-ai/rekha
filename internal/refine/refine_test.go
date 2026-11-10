@@ -485,3 +485,45 @@ func TestSweepEarlyExit(t *testing.T) {
 		t.Fatalf("%d sweeps, want 1", sweeps)
 	}
 }
+
+// circleFrom is circleN with its first anchor at angle a0.
+func circleFrom(cx, cy, r float64, n int, a0 float64) Bezigon {
+	th := 2 * math.Pi / float64(n)
+	h := 4.0 / 3 * math.Tan(th/4) * r
+	pts := make([]geom.Vec2, 0, 3*n)
+	for i := 0; i < n; i++ {
+		b0, b1 := a0+th*float64(i), a0+th*float64(i+1)
+		p0 := v(cx+r*math.Cos(b0), cy+r*math.Sin(b0))
+		p3 := v(cx+r*math.Cos(b1), cy+r*math.Sin(b1))
+		pts = append(pts, p0, p0.Add(v(-math.Sin(b0), math.Cos(b0)).Scale(h)), p3.Sub(v(-math.Sin(b1), math.Cos(b1)).Scale(h)))
+	}
+	return Bezigon{Pts: pts}
+}
+
+// A long arc hugging the image border has handles well outside the
+// image (a 120° arc's handles reach 0.77 r along the tangents). They
+// are not on the curve, so they must stay where the fit put them: a
+// bezigon that already matches its mask is not moved by refinement.
+func TestRefineKeepsHandlesBeyondImage(t *testing.T) {
+	truth := circleFrom(32, 32, 31, 3, math.Pi/6) // anchors at 30°, 150°, 270°: one arc centred on the bottom edge
+	outside := 0
+	for i, p := range truth.Pts {
+		if i%3 != 0 && (p.Y > 65 || p.X < -1 || p.X > 65) {
+			outside++
+		}
+	}
+	if outside == 0 {
+		t.Fatal("fixture has no handle beyond the padded image")
+	}
+	m := supersampled(truth, img64)
+	got := Refine(truth, m, img64, DefaultOptions)
+	l0 := math.Max(truth.Length(), 1)
+	e0, e1 := energyWith(truth, m, img64, DefaultWeights, l0), energyWith(got, m, img64, DefaultWeights, l0)
+	t.Logf("curve moved %.4f px max; energy %.4f → %.4f", curveDist(got, truth), e0, e1)
+	if d := curveDist(got, truth); d > 0.2 {
+		t.Fatalf("a fitting arc with handles beyond the image moved %v px, want ≤ 0.2", d)
+	}
+	if e1 > e0 {
+		t.Fatalf("energy rose %v → %v", e0, e1)
+	}
+}

@@ -95,7 +95,7 @@ const (
 	// workers: loops are refined in parallel already, and a batch of a
 	// few pieces costs more to hand out than to run.
 	parallelPieces = 16
-	clampPad       = 1 // control points may leave the image by this much
+	clampPad       = 1 // anchors may leave the image by this much
 )
 
 // sweepHook, when set, is called at the start of every sweep (tests).
@@ -337,11 +337,15 @@ func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options, sc
 	for k, i := range idx {
 		first[k] = b.Pts[i]
 	}
-	// Per-point trust box, clipped to the image.
+	// Per-point trust box; an anchor's is clipped to the image, a
+	// handle's is not (see clampFree).
 	plo, phi := make([]geom.Vec2, len(idx)), make([]geom.Vec2, len(idx))
-	for k := range idx {
-		plo[k] = clampPoint(first[k].Sub(geom.Vec2{X: moveLimit, Y: moveLimit}), img)
-		phi[k] = clampPoint(first[k].Add(geom.Vec2{X: moveLimit, Y: moveLimit}), img)
+	for k, i := range idx {
+		plo[k] = first[k].Sub(geom.Vec2{X: moveLimit, Y: moveLimit})
+		phi[k] = first[k].Add(geom.Vec2{X: moveLimit, Y: moveLimit})
+		if i%3 == 0 {
+			plo[k], phi[k] = clampPoint(plo[k], img), clampPoint(phi[k], img)
+		}
 	}
 	// Spans: per window row, the cells the moving curve can touch.
 	moving := make([]geom.Vec2, 0, 2*Flatten+1)
@@ -501,12 +505,28 @@ func newSpans(pts []geom.Vec2, win Window) spans {
 	return sp
 }
 
-// clampFree moves the free points of b to within clampPad of the image.
+// clampFree moves the free anchors of b to within clampPad of the image,
+// carrying each moved anchor's handles with it so a line stays a line
+// and a tangent keeps its direction. Handles are not on the curve and
+// may lie any distance outside: a long arc hugging the border puts them
+// there, and clamping them would bend the arc away from the edge.
 func clampFree(b Bezigon, img Window, o Options) {
 	n := b.N()
-	for i := range b.Pts {
-		if o.freePoint(i, n) {
-			b.Pts[i] = clampPoint(b.Pts[i], img)
+	m := len(b.Pts)
+	for i := 0; i < m; i += 3 {
+		if !o.freePoint(i, n) {
+			continue
+		}
+		p := clampPoint(b.Pts[i], img)
+		d := p.Sub(b.Pts[i])
+		if d.X == 0 && d.Y == 0 {
+			continue
+		}
+		b.Pts[i] = p
+		for _, h := range []int{(i + 1) % m, (i + m - 1) % m} {
+			if o.freePoint(h, n) {
+				b.Pts[h] = b.Pts[h].Add(d)
+			}
 		}
 	}
 }
