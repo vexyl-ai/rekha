@@ -75,8 +75,8 @@ type Options struct {
 	Palette        []color.NRGBA // fixed palette, at most 256 distinct entries; empty = quantise
 	Hierarchical   Hierarchical
 
-	Refine       RefineOptions // spline mode only
-	CutoutStroke float64       // px, 0..4, default 0; cutout polygon/spline paths are stroked in their fill to hide seams
+	Refine RefineOptions // spline mode only
+	Stroke float64       // px, 0..4, default 0; polygon/spline colour shapes are stroked in their fill to hide hairline seams between fitted edges when viewed enlarged
 
 	Gradients         bool    // colour presets: merge adjacent bands that form one linear ramp into a gradient fill
 	GradientTolerance float64 // 0..1, default 0.03; RMS sRGB distance (channels 0..1) a ramp may leave
@@ -208,7 +208,7 @@ func (o Options) Validate() error {
 			return err
 		}
 	}
-	if err := inRangeF("CutoutStroke", o.CutoutStroke, 0, 4); err != nil {
+	if err := inRangeF("Stroke", o.Stroke, 0, 4); err != nil {
 		return err
 	}
 	if err := inRangeF("GradientTolerance", o.GradientTolerance, 0, 1); err != nil {

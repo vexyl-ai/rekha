@@ -26,12 +26,20 @@ The other 15 corpus images (aa-abut, big-poster 2048², checkerboard-2px, circle
 | photo | 155 | 86 216 | 5 876 | 36.72 |
 | photo --gradients (two-stop, v1) | 203 | 48 396 | 8 073 | 38.72 |
 | photo --gradients (multi-stop, v2) | 201 | 47 234 | 10 148 | 39.42 |
+| photo --gradients (v3 cleanup) | 82 | 33 142 | 10 829 | 39.82 |
+| photo --gradients --stroke 0.5 (v3) | 82 | 38 094 | 10 829 | 37.82 (40.07 inside the frame) |
 
 v1: 23 gradients. The banded feathers become smooth ramps (see the spec's intent); bytes drop by 44 % and PSNR rises 2.0 dB. The `<path>` count rises because a region with a ramp of its own carries a label of its own, so consecutive stacked shapes that used to share one `<path>` by colour are now separate elements; nodes are what the paths cost, and the byte count shows the net effect. Gradient merging adds about 2 s on 16 megapixels (components, moments and the merge passes are single-threaded).
 
 ### Multi-stop ramps (v2, same day)
 
 v1 merged a curved feather (orange → pink → magenta) only in the chunks a straight line fits, and the chunks met at a seam worse than the band step. v2 keeps the linear pass, then joins its groups across bends along a shared direction (the least-squares planes' direction while it fits within tol, else the principal axis of the colour-gradient structure tensor, sign-free so a ramp that rises then falls has a direction; per-pixel gradients of tol or more are left out so outlines do not vote), samples the colour in 8-px bins along it, simplifies the samples by Douglas-Peucker at tol/2 (an exactly linear ramp keeps two stops; both gradient goldens are byte-identical), and dissolves any joined group whose samples leave an RMS error above tol back into its linear groups. On the bird: 21 gradients with 63 stops, PSNR up a further 0.70 dB and bytes down 2 %; the pink wing feather is one smooth ramp with no seam. The torn seam across the tail body remains: that region's colour changes in two directions at once (the body's ramp crossed by a shadow band), which no single `<linearGradient>` holds, and the join that tried it was dissolved. The 15 flat-art images are still byte-identical. Merging now costs about 4 s on 16 megapixels.
+
+### Cleanup (v3, same day)
+
+Three things were left at 4× on the bird: specks inside the ramps, the torn seam across the tail body, and a white sliver at the sharp tip of a stacked feather. v3 does three things. A joined group whose model fails no longer dissolves wholesale: its members are re-joined pair by pair, each union checked against the image, at most 32 checks per group. Components under 16 pixels that border a ramp take the ramp's label when their mean colour is within tol of the ramp's colour at their centroid; this is what removes the specks, and with them 119 of 201 `<path>` elements and 30 % of the bytes, PSNR up 0.40 dB. `--stroke` (the old `--cutout-stroke`, still accepted) now applies in stacked output too.
+
+Honest accounting. The pairwise replay changed nothing on the bird: the dissolved tail-body group has no pair whose union fits, so the torn seam stays, for the reason given above (two-directional colour). The stroke is a blunt tool: at 0.5 px it raises PSNR inside the picture by 0.24 dB (seams between siblings close) but the bird has a 1-px black frame that the page-sized white shape's stroke paints over, so the whole-image figure drops; and the sliver at the feather tip is a wedge about 1.25 px wide beyond the navy tip, which only a 2-px stroke closes, and a 2-px stroke costs 5 dB inside the picture (every sibling edge is smeared by a pixel). Cutout output closes the tip exactly because neighbours share one boundary curve, at 68 KB against 33 KB. The lasting fix is shared boundaries in stacked output, not a wider stroke. The 15 flat-art images are still byte-identical; both gradient goldens too.
 
 ## Verdict on the photo default
 

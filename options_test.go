@@ -154,15 +154,15 @@ func TestValidateRefineRanges(t *testing.T) {
 
 func TestPresetCutoutStroke(t *testing.T) {
 	for p, want := range map[Preset]float64{PresetBW: 0, PresetPoster: 0, PresetPhoto: 0} {
-		if got := PresetOptions(p).CutoutStroke; got != want {
+		if got := PresetOptions(p).Stroke; got != want {
 			t.Errorf("%s: CutoutStroke %v, want %v", p, got, want)
 		}
 	}
 	for _, v := range []float64{-1, 5} {
 		o := PresetOptions(PresetPoster)
-		o.CutoutStroke = v
+		o.Stroke = v
 		var ve *ValidationError
-		if err := o.Validate(); !errors.As(err, &ve) || ve.Field != "CutoutStroke" {
+		if err := o.Validate(); !errors.As(err, &ve) || ve.Field != "Stroke" {
 			t.Errorf("CutoutStroke %v: got %v", v, err)
 		}
 	}

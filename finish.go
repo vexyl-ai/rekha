@@ -145,11 +145,12 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 		subpaths[i][k] = svg.Subpath{Segs: segs}
 	})
 
-	// Cutout shapes of different colours meet along fitted edges that
-	// drift apart by up to the tolerance, and the background shows through
+	// Shapes of different colours meet along fitted edges that drift
+	// apart by up to the tolerance (cutout neighbours everywhere, stacked
+	// siblings at a sharp junction), and the background shows through
 	// the hairline; stroking each path in its own colour closes it. Pixel
 	// mode is exact and the bw preset has no abutting colours.
-	stroke := !stacked && o.Preset != PresetBW && o.Mode != ModePixel && o.CutoutStroke > 0
+	stroke := o.Preset != PresetBW && o.Mode != ModePixel && o.Stroke > 0
 	mergeable := false
 	gradientIDs := map[int]int{} // palette index → index into res.Gradients
 	for i, l := range layers {
@@ -179,7 +180,7 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 		}
 		path := svg.Path{Fill: fill, Subpaths: subpaths[i]}
 		if stroke {
-			path.Stroke, path.StrokeWidth = fill, o.CutoutStroke
+			path.Stroke, path.StrokeWidth = fill, o.Stroke
 		}
 		res.Paths = append(res.Paths, path)
 		mergeable = stacked && outersOnly

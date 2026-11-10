@@ -14,7 +14,7 @@ const PRESETS = {
   poster: { hierarchical: 'stacked', maxColors: 0, colorTolerance: 0.08, filterSpeckle: 4 },
   photo:  { hierarchical: 'stacked', maxColors: 0, colorTolerance: 0.04, filterSpeckle: 16 },
 };
-const COMMON = { mode: 'spline', threshold: 0.5, thresholdAuto: false, refine: false, refinePasses: 3, cutoutStroke: 0, pathPrecision: 2, gradients: false, gradientTolerance: 0.03 };
+const COMMON = { mode: 'spline', threshold: 0.5, thresholdAuto: false, refine: false, refinePasses: 3, stroke: 0, pathPrecision: 2, gradients: false, gradientTolerance: 0.03 };
 
 let worker = null;
 let pending = new Map();         // id → {resolve, reject}
@@ -47,7 +47,7 @@ function readOptions() {
     gradientTolerance: +$('gradientTolerance').value,
     refine: $('refine').checked,
     refinePasses: +$('refinePasses').value,
-    cutoutStroke: +$('cutoutStroke').value,
+    stroke: +$('stroke').value,
     pathPrecision: +$('pathPrecision').value,
   };
 }
@@ -210,7 +210,7 @@ document.addEventListener('paste', (e) => {
 
 // Controls.
 $('preset').addEventListener('change', () => { applyPreset($('preset').value); run(); });
-for (const id of ['mode', 'hierarchical', 'maxColors', 'colorTolerance', 'threshold', 'thresholdAuto', 'filterSpeckle', 'gradients', 'gradientTolerance', 'refine', 'refinePasses', 'cutoutStroke', 'pathPrecision']) {
+for (const id of ['mode', 'hierarchical', 'maxColors', 'colorTolerance', 'threshold', 'thresholdAuto', 'filterSpeckle', 'gradients', 'gradientTolerance', 'refine', 'refinePasses', 'stroke', 'pathPrecision']) {
   $(id).addEventListener('change', () => run());
 }
 function cancel() { startWorker(); setStatus('Cancelled. Change a setting to trace again.'); }

@@ -182,7 +182,7 @@ func TestRefineCutoutNeverLoses(t *testing.T) {
 	for _, name := range []string{"logo-holes", "three-layer-stack", "aa-abut"} {
 		img := synth(t, name)
 		o := PresetOptions(PresetPoster)
-		o.Hierarchical, o.CutoutStroke = HierarchicalCutout, 0
+		o.Hierarchical, o.Stroke = HierarchicalCutout, 0
 		s, err := Segment(img, o)
 		if err != nil {
 			t.Fatal(err)

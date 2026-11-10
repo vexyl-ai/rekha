@@ -22,7 +22,7 @@ make serve           # rekha-serve -static web → http://localhost:8080
 | `trace(image, options)` | segment + finish without keeping a handle | `{ok, svg, paths, bytes, width, height, palette, millis}` |
 | `free(handle)` | – | undefined |
 
-Options use the CLI flag names in camelCase: `preset` (`bw`, `poster`, `photo`; seeds every other default exactly as the CLI), `mode`, `hierarchical`, `maxColors`, `colorTolerance`, `colorPrecision`, `threshold` (number or `"auto"`), `turnPolicy`, `filterSpeckle`, `simplify`, `cornerThreshold`, `fitTolerance`, `palette` (`"#rrggbb,#rrggbb"` or an array), `refine`, `refinePasses`, `cutoutStroke`, `gradients`, `gradientTolerance`, `pathPrecision`. Unknown keys and out-of-range values are errors with the field named. The authoritative list is `internal/apiopts.Params`.
+Options use the CLI flag names in camelCase: `preset` (`bw`, `poster`, `photo`; seeds every other default exactly as the CLI), `mode`, `hierarchical`, `maxColors`, `colorTolerance`, `colorPrecision`, `threshold` (number or `"auto"`), `turnPolicy`, `filterSpeckle`, `simplify`, `cornerThreshold`, `fitTolerance`, `palette` (`"#rrggbb,#rrggbb"` or an array), `refine`, `refinePasses`, `stroke` (`cutoutStroke` still accepted), `gradients`, `gradientTolerance`, `pathPrecision`. Unknown keys and out-of-range values are errors with the field named. The authoritative list is `internal/apiopts.Params`.
 
 `segment` is the expensive, option-light half (quantisation); `finish` is the fit. Keep the handle and call `finish` again when the user moves a control that is not one of `preset`, `threshold`, `colorPrecision`, `colorTolerance`, `maxColors`, `palette`, `filterSpeckle`; re-segment when one of those changes. Handles hold about 3 bytes per pixel until freed.
 

@@ -110,3 +110,15 @@ func TestParseGradients(t *testing.T) {
 		t.Errorf("segment keys %s", keys)
 	}
 }
+
+func TestParseStrokeAlias(t *testing.T) {
+	if o := mustParse(t, `{"stroke":0.5}`); o.Stroke != 0.5 {
+		t.Errorf("stroke: %+v", o.Stroke)
+	}
+	if o := mustParse(t, `{"cutoutStroke":0.3}`); o.Stroke != 0.3 {
+		t.Errorf("cutoutStroke alias: %+v", o.Stroke)
+	}
+	if o := mustParse(t, `{"cutoutStroke":0.3,"stroke":0.5}`); o.Stroke != 0.5 {
+		t.Errorf("stroke wins over the alias: %+v", o.Stroke)
+	}
+}

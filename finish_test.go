@@ -342,14 +342,14 @@ func TestWhiteContentAtEdgeKept(t *testing.T) {
 	}
 }
 
-// Cutout colour paths carry a stroke in their own colour so abutting
-// shapes overlap by half its width; stacked output and the bw preset
-// never do.
+// Colour paths carry a stroke in their own colour so abutting shapes
+// overlap by half its width, in cutout and stacked output alike; the bw
+// preset never does.
 func TestCutoutPathsCarryStroke(t *testing.T) {
 	img := synth(t, "aa-abut")
 	o := PresetOptions(PresetPoster)
 	o.Hierarchical = HierarchicalCutout
-	o.CutoutStroke = 0.5 // opt-in
+	o.Stroke = 0.5 // opt-in
 	r, err := Trace(img, o)
 	if err != nil {
 		t.Fatal(err)
@@ -367,8 +367,8 @@ func TestCutoutPathsCarryStroke(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, p := range r.Paths {
-		if p.Stroke != "" || p.StrokeWidth != 0 {
-			t.Fatalf("stacked path %d has stroke %q %v", i, p.Stroke, p.StrokeWidth)
+		if p.Stroke != p.Fill || p.StrokeWidth != 0.5 {
+			t.Fatalf("stacked path %d: stroke %q width %v, want fill %q and 0.5", i, p.Stroke, p.StrokeWidth, p.Fill)
 		}
 	}
 	if r, err = Trace(synth(t, "circle-aa"), PresetOptions(PresetBW)); err != nil {

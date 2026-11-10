@@ -283,3 +283,22 @@ func TestFlagGradients(t *testing.T) {
 		t.Errorf("no gradient in output:\n%s", out.String())
 	}
 }
+
+func TestFlagStrokeAlias(t *testing.T) {
+	// --stroke seals seams in stacked output too; --cutout-stroke is the
+	// old name for the same value, and the last one given wins.
+	code, out, errb := runStdin(t, logoPNG, "--preset", "poster", "--stroke", "0.5")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb)
+	}
+	if !strings.Contains(out, `stroke-width="0.5"`) {
+		t.Fatalf("--stroke 0.5 on stacked output should carry stroke-width 0.5: %.300q", out)
+	}
+	code, out, errb = runStdin(t, logoPNG, "--preset", "poster", "--cutout-stroke", "0.5", "--stroke", "0.3")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb)
+	}
+	if !strings.Contains(out, `stroke-width="0.3"`) {
+		t.Fatalf("the last of --cutout-stroke/--stroke wins: %.300q", out)
+	}
+}

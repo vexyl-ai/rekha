@@ -34,7 +34,8 @@ type Params struct {
 	Hierarchical      *string    `json:"hierarchical"`
 	Refine            *bool      `json:"refine"`
 	RefinePasses      *int       `json:"refinePasses"`
-	CutoutStroke      *float64   `json:"cutoutStroke"`
+	CutoutStroke      *float64   `json:"cutoutStroke"` // old name for stroke
+	Stroke            *float64   `json:"stroke"`
 	Gradients         *bool      `json:"gradients"`
 	GradientTolerance *float64   `json:"gradientTolerance"`
 }
@@ -164,7 +165,8 @@ func Parse(jsonText []byte) (rekha.Options, error) {
 		o.Refine.Enabled = *p.Refine
 	}
 	setInt(&o.Refine.Sweeps, p.RefinePasses)
-	setFloat(&o.CutoutStroke, p.CutoutStroke)
+	setFloat(&o.Stroke, p.CutoutStroke)
+	setFloat(&o.Stroke, p.Stroke)
 	if p.Gradients != nil {
 		o.Gradients = *p.Gradients
 	}
