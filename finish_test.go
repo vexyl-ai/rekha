@@ -167,12 +167,24 @@ func TestFinishAllWhiteIsEmpty(t *testing.T) {
 	}
 }
 
+// refined returns o with refinement on.
+func refined(o Options) Options {
+	o.Refine.Enabled = true
+	return o
+}
+
+// TestFinishDeterministicAcrossProcs: the output never depends on the
+// worker count; big-poster (skipped under -short) exercises the refiner's
+// parallel piece classes over hundreds of loops.
 func TestFinishDeterministicAcrossProcs(t *testing.T) {
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(0))
 	for _, tc := range []struct {
 		name string
 		o    Options
-	}{{"three-layer-stack", PresetOptions(PresetPoster)}, {"noisy-disc", PresetOptions(PresetPhoto)}} {
+	}{{"three-layer-stack", PresetOptions(PresetPoster)}, {"noisy-disc", PresetOptions(PresetPhoto)}, {"big-poster", refined(PresetOptions(PresetPoster))}} {
+		if tc.name == "big-poster" && testing.Short() {
+			continue
+		}
 		img := synth(t, tc.name)
 		var out [2][]byte
 		for i, procs := range []int{1, 8} {

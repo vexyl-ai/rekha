@@ -3,6 +3,7 @@ package rekha
 import (
 	"github.com/vexyl-ai/rekha/internal/contour"
 	"github.com/vexyl-ai/rekha/internal/geom"
+	"github.com/vexyl-ai/rekha/internal/refine"
 )
 
 // maskPad is how many pixels beyond the contour's bounding box the mask
@@ -15,6 +16,11 @@ const maskPad = 2
 type coverageMask struct {
 	x0, y0, w, h int
 	cov          []float32
+}
+
+// Box implements refine.Boxed: the mask is zero outside its box.
+func (m *coverageMask) Box() refine.Window {
+	return refine.Window{X0: m.x0, Y0: m.y0, W: m.w, H: m.h}
 }
 
 // At implements refine.Mask.

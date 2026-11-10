@@ -3,16 +3,15 @@ package rekha
 import (
 	"fmt"
 	"math"
-	"runtime"
 	"sort"
 	"sync"
-	"sync/atomic"
 
 	"github.com/vexyl-ai/rekha/internal/bitmap"
 	"github.com/vexyl-ai/rekha/internal/colour"
 	"github.com/vexyl-ai/rekha/internal/contour"
 	"github.com/vexyl-ai/rekha/internal/fit"
 	"github.com/vexyl-ai/rekha/internal/geom"
+	"github.com/vexyl-ai/rekha/internal/par"
 	"github.com/vexyl-ai/rekha/internal/planar"
 	"github.com/vexyl-ai/rekha/internal/refine"
 	"github.com/vexyl-ai/rekha/internal/svg"
@@ -113,6 +112,11 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 			jobs = append(jobs, [2]int{i, k})
 		}
 	}
+	// Longest contours first: a big loop started last would run alone at
+	// the end. Results are indexed by job, so the order never shows.
+	sort.SliceStable(jobs, func(a, b int) bool {
+		return len(layers[jobs[a][0]].contours[jobs[a][1]].Pts) > len(layers[jobs[b][0]].contours[jobs[b][1]].Pts)
+	})
 	refining := o.Refine.Enabled && o.Mode == ModeSpline
 	img := refine.Window{X0: 0, Y0: 0, W: s.Width, H: s.Height}
 	if pm != nil && refining {
@@ -616,28 +620,4 @@ func pointLess(a, b geom.Point) bool {
 
 // parallel runs fn(0..n-1) on GOMAXPROCS workers and waits. Callers index
 // results by i, so output never depends on scheduling.
-func parallel(n int, fn func(i int)) {
-	workers := min(runtime.GOMAXPROCS(0), n)
-	if workers <= 1 {
-		for i := 0; i < n; i++ {
-			fn(i)
-		}
-		return
-	}
-	var next atomic.Int64
-	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				i := int(next.Add(1)) - 1
-				if i >= n {
-					return
-				}
-				fn(i)
-			}
-		}()
-	}
-	wg.Wait()
-}
+func parallel(n int, fn func(i int)) { par.Do(n, fn) }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"runtime"
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/fit"
@@ -22,8 +23,9 @@ func TestMinimizeQuadratic(t *testing.T) {
 		return s
 	}
 	x := minimize(make([]float64, 10), f, nil, 30)
+	// The forward-difference gradient shifts the minimum by fdStep/2.
 	for i, v := range x {
-		if math.Abs(v-float64(i)) > 1e-3 {
+		if math.Abs(v-float64(i)) > fdStep {
 			t.Fatalf("x[%d] = %v", i, v)
 		}
 	}
@@ -411,5 +413,75 @@ func TestMergeSplitRespectsFixed(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("frozen segment %v changed or split", want)
+	}
+}
+
+// TestRefineParallelClassesDeterministic: a 200-segment loop refined on
+// one worker and on eight gives identical points.
+func TestRefineParallelClassesDeterministic(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(0))
+	ideal := circleN(32, 32, 24, 200)
+	m := maskOf(ideal, img64)
+	b := perturb(ideal, 5, 0.6)
+	var out [2]Bezigon
+	for i, procs := range []int{1, 8} {
+		runtime.GOMAXPROCS(procs)
+		out[i] = Refine(b, m, img64, DefaultOptions)
+	}
+	for i := range out[0].Pts {
+		if out[0].Pts[i] != out[1].Pts[i] {
+			t.Fatalf("point %d differs: %v vs %v", i, out[0].Pts[i], out[1].Pts[i])
+		}
+	}
+}
+
+// TestRefineNoNewCrossings: a thin two-pixel bar refined against an empty
+// mask wants to collapse; its sides may not cross.
+func TestRefineNoNewCrossings(t *testing.T) {
+	bar := FromSegments([]fit.Segment{
+		{Line: true, P: fit.Cubic{v(30, 10), v(30, 10), v(32, 10), v(32, 10)}},
+		{Line: true, P: fit.Cubic{v(32, 10), v(32, 10), v(32, 54), v(32, 54)}},
+		{Line: true, P: fit.Cubic{v(32, 54), v(32, 54), v(30, 54), v(30, 54)}},
+		{Line: true, P: fit.Cubic{v(30, 54), v(30, 54), v(30, 10), v(30, 10)}},
+	})
+	empty := coverageMask{win: img64, cov: make([]float32, 64*64)}
+	if CrossingCount(bar) != 0 {
+		t.Fatal("fixture crosses itself")
+	}
+	got := Refine(bar, empty, img64, DefaultOptions)
+	if c := CrossingCount(got); c != 0 {
+		t.Fatalf("%d crossings after refinement", c)
+	}
+}
+
+// TestRefineTinyLoops: bezigons of one to four segments refine without
+// panicking and come back finite.
+func TestRefineTinyLoops(t *testing.T) {
+	for n := 1; n <= 4; n++ {
+		b := circleN(32, 32, 16, n)
+		m := maskOf(circle(32, 32, 16), img64)
+		got := Refine(perturb(b, uint64(n), 0.5), m, img64, DefaultOptions)
+		if got.N() != n {
+			t.Fatalf("N = %d → %d", n, got.N())
+		}
+		for _, p := range got.Pts {
+			if !finite(p.X) || !finite(p.Y) {
+				t.Fatalf("N = %d: non-finite point", n)
+			}
+		}
+	}
+}
+
+// TestSweepEarlyExit: a loop already at its minimum stops after one
+// sweep.
+func TestSweepEarlyExit(t *testing.T) {
+	ideal := circle(32, 32, 20)
+	m := maskOf(ideal, img64)
+	sweeps := 0
+	sweepHook = func() { sweeps++ }
+	defer func() { sweepHook = nil }()
+	Refine(ideal, m, img64, DefaultOptions)
+	if sweeps != 1 {
+		t.Fatalf("%d sweeps, want 1", sweeps)
 	}
 }

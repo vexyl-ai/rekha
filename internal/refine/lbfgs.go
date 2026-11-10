@@ -2,7 +2,10 @@ package refine
 
 import "math"
 
-// Optimiser constants: finite-difference step in pixels, L-BFGS memory,
+// Optimiser constants: finite-difference step in pixels (a forward
+// difference biases the minimum by half a step, 0.005 px, which no
+// rendering shows; a smaller step amplifies last-bit noise in the energy
+// into different merge decisions on amd64 and arm64), L-BFGS memory,
 // Armijo constant and the two stopping tolerances (relative energy
 // decrease and largest coordinate move in pixels).
 const (
@@ -16,18 +19,17 @@ const (
 
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
-// gradient is the central finite-difference gradient of f at x; a
-// coordinate whose perturbed values are not finite gets zero slope.
-func gradient(x []float64, f func([]float64) float64, g []float64) {
+// gradient is the forward finite-difference gradient of f at x, where f
+// is fx: one evaluation per coordinate. A coordinate whose perturbed
+// value is not finite gets zero slope.
+func gradient(x []float64, fx float64, f func([]float64) float64, g []float64) {
 	for i := range x {
 		xi := x[i]
 		x[i] = xi + fdStep
 		fp := f(x)
-		x[i] = xi - fdStep
-		fm := f(x)
 		x[i] = xi
-		if finite(fp) && finite(fm) {
-			g[i] = (fp - fm) / (2 * fdStep)
+		if finite(fp) {
+			g[i] = (fp - fx) / fdStep
 		} else {
 			g[i] = 0
 		}
@@ -48,7 +50,7 @@ func minimize(x0 []float64, f func([]float64) float64, ok func(x, xn []float64) 
 		return x0
 	}
 	g := make([]float64, n)
-	gradient(x, f, g)
+	gradient(x, fx, f, g)
 	var sHist, yHist [][]float64
 	d := make([]float64, n)
 	xn := make([]float64, n)
@@ -90,7 +92,7 @@ func minimize(x0 []float64, f func([]float64) float64, ok func(x, xn []float64) 
 		if !accepted {
 			break
 		}
-		gradient(xn, f, gn)
+		gradient(xn, fn, f, gn)
 		s, y := make([]float64, n), make([]float64, n)
 		for i := range s {
 			s[i] = xn[i] - x[i]

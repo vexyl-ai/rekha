@@ -99,7 +99,7 @@ func TestDataEnergyZeroOnOwnCoverage(t *testing.T) {
 func TestWeightsPrior(t *testing.T) {
 	sq := square(0, 0, 10, 10)
 	w := DefaultWeights
-	want := w.Spt*SelfIntersectionPrior(sq) + w.Apt*AnglePrior(sq) + w.Hpt*HandlePrior(sq) + w.Opt*HandleOrderPrior(sq) + w.Lpt*LengthPrior(sq)/40
+	want := w.Apt*AnglePrior(sq) + w.Hpt*HandlePrior(sq) + w.Opt*HandleOrderPrior(sq) + w.Lpt*LengthPrior(sq)/40
 	if got := w.Prior(sq, 40); math.Abs(got-want) > 1e-12 {
 		t.Fatalf("%v vs %v", got, want)
 	}

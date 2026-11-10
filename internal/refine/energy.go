@@ -15,7 +15,6 @@ type Mask interface {
 
 // Weights scale the four priors of Yang et al. 2016 (eq. 11).
 type Weights struct {
-	Spt float64 // self-intersection: shorter arc of every crossing
 	Apt float64 // angle variation: absolute joint angles (L1 corner sparsity)
 	Hpt float64 // short handles: inverse barrier on handle lengths
 	Lpt float64 // curve length
@@ -32,7 +31,7 @@ type Weights struct {
 // Opt (not in the paper) is 0.1: on the goal images it cuts the total
 // handle-order violation from 107 px to 2 px at the same PSNR, where 1.0
 // strands the gross-loop fixture.
-var DefaultWeights = Weights{Spt: 1.0, Apt: 0.08, Hpt: 0.5, Lpt: 0.1, Opt: 0.1}
+var DefaultWeights = Weights{Apt: 0.08, Hpt: 0.5, Lpt: 0.1, Opt: 0.1}
 
 // minHandle floors handle lengths in the barrier so a collapsed handle
 // gives a huge but finite energy.
@@ -47,6 +46,32 @@ const minHandle = 1e-6
 // the measured balance: perturbed smooth shapes recover within 0.05 px
 // and square corners hold.
 const DataScale = 8
+
+// Boxed is a Mask that is zero outside a window: energies over the whole
+// image can then be taken over the loop's box joined with that window.
+type Boxed interface {
+	Mask
+	Box() Window
+}
+
+// loopWindow is the part of img where b's coverage or m can be nonzero:
+// the control points' box padded by a pixel, joined with the mask's box
+// when it has one; otherwise img. Energies over it equal those over img.
+func loopWindow(b Bezigon, m Mask, img Window) Window {
+	bm, ok := m.(Boxed)
+	if !ok {
+		return img
+	}
+	r := segmentsBox(b, 0, b.N()-1)
+	x0, y0 := int(math.Floor(r.lo.X))-1, int(math.Floor(r.lo.Y))-1
+	x1, y1 := int(math.Ceil(r.hi.X))+1, int(math.Ceil(r.hi.Y))+1
+	mb := bm.Box()
+	x0, y0 = min(x0, mb.X0), min(y0, mb.Y0)
+	x1, y1 = max(x1, mb.X0+mb.W), max(y1, mb.Y0+mb.H)
+	x0, y0 = max(x0, img.X0), max(y0, img.Y0)
+	x1, y1 = min(x1, img.X0+img.W), min(y1, img.Y0+img.H)
+	return Window{X0: x0, Y0: y0, W: max(x1-x0, 0), H: max(y1-y0, 0)}
+}
 
 // DataEnergy is Σ weight·(DataScale·(cov − mask))² over the window divided
 // by l0, the initial arc length, so prior weights mean the same for every
@@ -217,15 +242,47 @@ func edgeCandidates(pts []geom.Vec2, lo, hi geom.Vec2, cand []int) []int {
 // selfIntersection sums the shorter arcs of the crossings of the closed
 // polyline pts in which at least one edge has index in [lo, hi) (edge i
 // runs from pts[i] to pts[i+1]); the full range gives the prior, a piece's
-// range gives the part a piece can change. Every other edge is first
-// tested against the range's bounding box, so a piece costs O(n) plus
-// the few edges that come near it.
-// cand, if not nil, lists the only edges tested against the range (see
-// edgeCandidates); cum, if not nil, is the polyline's arcLengths table.
+// range gives the part a piece can change. cand, if not nil, lists the
+// only edges tested against the range (see edgeCandidates); cum, if not
+// nil, is the polyline's arcLengths table.
 func selfIntersection(pts []geom.Vec2, lo, hi int, cand []int, cum []float64) float64 {
 	n := len(pts)
+	e := 0.0
+	forCrossings(pts, lo, hi, cand, func(i, k int, ta, tb float64) {
+		if cum == nil {
+			cum = arcLengths(pts, nil)
+		}
+		sa := cum[i] + float64(ta*(cum[i+1]-cum[i]))
+		sb := cum[k] + float64(tb*(cum[k+1]-cum[k]))
+		arc := math.Abs(sb - sa)
+		e += math.Min(arc, cum[n]-arc)
+	})
+	return e
+}
+
+// CrossingCount is the number of crossings of the flattened outline with
+// itself: zero for a simple outline.
+func CrossingCount(b Bezigon) int {
+	pts := b.Polyline()
+	return countCrossings(pts, 0, len(pts), nil)
+}
+
+// countCrossings counts the crossings selfIntersection would sum.
+func countCrossings(pts []geom.Vec2, lo, hi int, cand []int) int {
+	c := 0
+	forCrossings(pts, lo, hi, cand, func(int, int, float64, float64) { c++ })
+	return c
+}
+
+// forCrossings calls fn(i, k, ta, tb) for every crossing of the closed
+// polyline pts between an edge i in the range [lo, hi) and an edge k (a
+// pair with both edges in the range is reported once, from the earlier
+// edge). Every other edge is first tested against the range's bounding
+// box, so a piece costs O(n) plus the few edges that come near it.
+func forCrossings(pts []geom.Vec2, lo, hi int, cand []int, fn func(i, k int, ta, tb float64)) {
+	n := len(pts)
 	if n < 4 {
-		return 0
+		return
 	}
 	m := min(hi-lo, n) // edges in the range
 	lo = ((lo % n) + n) % n
@@ -236,9 +293,6 @@ func selfIntersection(pts []geom.Vec2, lo, hi int, cand []int, cum []float64) fl
 		bx0, by0 = min(bx0, p.X), min(by0, p.Y)
 		bx1, by1 = max(bx1, p.X), max(by1, p.Y)
 	}
-	// cum, the arc length to each vertex, is built at the first crossing
-	// unless the caller supplied it.
-	e := 0.0
 	for c := 0; c < n; c++ {
 		k := c
 		if cand != nil {
@@ -257,8 +311,6 @@ func selfIntersection(pts []geom.Vec2, lo, hi int, cand []int, cum []float64) fl
 			if k == i || k == (i+1)%n || (k+1)%n == i {
 				continue // the edge itself or an adjacent one
 			}
-			// A pair with both edges in the range is counted once, from
-			// the earlier edge.
 			if rk < m && rk < r {
 				continue
 			}
@@ -267,20 +319,11 @@ func selfIntersection(pts []geom.Vec2, lo, hi int, cand []int, cum []float64) fl
 				max(a0.Y, a1.Y) < min(b0.Y, b1.Y) || max(b0.Y, b1.Y) < min(a0.Y, a1.Y) {
 				continue
 			}
-			ta, tb, ok := segmentCross(a0, a1, b0, b1)
-			if !ok {
-				continue
+			if ta, tb, ok := segmentCross(a0, a1, b0, b1); ok {
+				fn(i, k, ta, tb)
 			}
-			if cum == nil {
-				cum = arcLengths(pts, nil)
-			}
-			sa := cum[i] + float64(ta*(cum[i+1]-cum[i]))
-			sb := cum[k] + float64(tb*(cum[k+1]-cum[k]))
-			arc := math.Abs(sb - sa)
-			e += math.Min(arc, cum[n]-arc)
 		}
 	}
-	return e
 }
 
 // segmentCross reports whether segments a and b cross (half-open in each
@@ -304,7 +347,7 @@ func segmentCross(a0, a1, b0, b1 geom.Vec2) (ta, tb float64, ok bool) {
 // Prior is the weighted sum of the four priors over the whole bezigon,
 // the length prior relative to l0, the initial length (see PriorAt).
 func (w Weights) Prior(b Bezigon, l0 float64) float64 {
-	return float64(w.Spt*SelfIntersectionPrior(b)) + float64(w.Apt*AnglePrior(b)) + float64(w.Hpt*HandlePrior(b)) + float64(w.Opt*HandleOrderPrior(b)) + w.Lpt*LengthPrior(b)/math.Max(l0, 1)
+	return float64(w.Apt*AnglePrior(b)) + float64(w.Hpt*HandlePrior(b)) + float64(w.Opt*HandleOrderPrior(b)) + w.Lpt*LengthPrior(b)/math.Max(l0, 1)
 }
 
 // The length prior is measured relative to the initial length l0, as the

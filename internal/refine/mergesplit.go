@@ -20,6 +20,13 @@ const (
 	// which a segment is never split, however its neighbours fit: an RMS
 	// edge error of 0.1 px.
 	splitFloor = 0.01
+	// mergeMaxDev is the furthest, in pixels, a merged cubic may lie from
+	// the two curves it replaces and still be tried: the piece optimiser
+	// moves a point by at most moveLimit, so a cubic further out than
+	// that is almost never brought back within the energy budget (on the
+	// big-poster corpus, 12 of 685 such tries were), and the two
+	// optimisations it would cost are the dearest part of the pass.
+	mergeMaxDev = moveLimit
 )
 
 // MergeSplit adjusts the segment count after the sweeps: one merge pass
@@ -58,11 +65,13 @@ func MergeSplitTracked(b Bezigon, m Mask, img Window, o Options) (Bezigon, Optio
 	return out, o
 }
 
-// dataEnergy is the data term of b over the whole image at l0.
+// dataEnergy is the data term of b over the whole image at l0, taken
+// over the loop's window (see loopWindow).
 func dataEnergy(b Bezigon, m Mask, img Window, l0 float64) float64 {
-	cov := make([]float32, img.W*img.H)
-	Coverage(b, img, cov)
-	return DataEnergy(cov, m, img, l0)
+	win := loopWindow(b, m, img)
+	cov := make([]float32, win.W*win.H)
+	Coverage(b, win, cov)
+	return DataEnergy(cov, m, win, l0)
 }
 
 // localDataEnergy is the data term of b over the window wl alone. For
@@ -116,6 +125,7 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 	// with, so the whole pass costs at most mergeRise.
 	before := dataEnergy(b, m, img, l0)
 	budget := float64(before * (1 + mergeRise))
+	crossings := CrossingCount(b) // of b; it changes only when a merge is kept
 	for j := 0; j < b.N() && b.N() > 2; {
 		if o.fixed(j) || o.frozen(j) || o.frozen((j+b.N()-1)%b.N()) || AnglePrior(b, j) >= mergeAngle {
 			j++
@@ -124,8 +134,17 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 		cand := mergeJoint(b, j)
 		co := o.withoutJoint(j)
 		k := ((j-1)%cand.N() + cand.N()) % cand.N() // the merged segment
+		if mergeDeviation(b, j, cand.Segment(k)) > mergeMaxDev {
+			j++
+			continue
+		}
 		refinePiece(cand, k-1, m, img, l0, co, sc)
 		refinePiece(cand, k, m, img, l0, co, sc)
+		candCrossings := CrossingCount(cand)
+		if candCrossings > crossings {
+			j++
+			continue // the merged cubic crosses the outline
+		}
 		// Only segments j-2..j+1 of b (k-1..k+1 of cand) changed: the
 		// energy moves by the local difference.
 		wl := windowAround(img, segmentsBox(b, j-2, j+1), segmentsBox(cand, k-1, k+1))
@@ -137,7 +156,7 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 		// √splitFloor px over the merged segment.
 		localBudget := float64(localBefore*(1+mergeRise)) + float64(DataScale*DataScale*splitFloor)*math.Max(LengthPrior(cand, k), 1)/l0
 		if after <= budget && localAfter <= localBudget {
-			b, before, o = cand, after, co
+			b, before, o, crossings = cand, after, co, candCrossings
 			// Joint j is gone; the joint now at index k is the merged
 			// segment's start, which the next iteration examines.
 			if j > 0 {
@@ -175,6 +194,38 @@ func mergeJoint(b Bezigon, j int) Bezigon {
 	return out
 }
 
+// mergeDeviation is the furthest any flattened point of the two segments
+// around joint j lies from the flattened cubic c that would replace them.
+func mergeDeviation(b Bezigon, j int, c fit.Cubic) float64 {
+	n := b.N()
+	prev := ((j-1)%n + n) % n
+	cp, cn := b.Segment(prev), b.Segment(j)
+	var buf [2*Flatten + 1]geom.Vec2
+	pts := append(flattenInto(flattenInto(buf[:0], cp), cn), cn[3])
+	var cbuf [Flatten + 1]geom.Vec2
+	cpts := append(flattenInto(cbuf[:0], c), c[3])
+	worst := 0.0
+	for _, p := range pts {
+		best := math.Inf(1)
+		for i := 0; i+1 < len(cpts); i++ {
+			best = math.Min(best, segmentDistance(p, cpts[i], cpts[i+1]))
+		}
+		worst = math.Max(worst, best)
+	}
+	return worst
+}
+
+// segmentDistance is the distance from p to the segment a–b.
+func segmentDistance(p, a, b geom.Vec2) float64 {
+	d := b.Sub(a)
+	l2 := d.LenSq()
+	if l2 == 0 {
+		return p.Sub(a).Len()
+	}
+	t := math.Min(math.Max(p.Sub(a).Dot(d)/l2, 0), 1)
+	return p.Sub(a.Add(d.Scale(t))).Len()
+}
+
 // tangentOr is the unit direction of v, or of alt when v is degenerate.
 func tangentOr(v, alt geom.Vec2) geom.Vec2 {
 	if v.LenSq() < minHandle*minHandle {
@@ -195,12 +246,13 @@ func tangentOr(v, alt geom.Vec2) geom.Vec2 {
 // segment is never split.
 func splitPass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch) (Bezigon, Options) {
 	n := b.N()
-	cov := make([]float32, img.W*img.H)
-	Coverage(b, img, cov)
+	win := loopWindow(b, m, img)
+	cov := make([]float32, win.W*win.H)
+	Coverage(b, win, cov)
 	resid, length := make([]float64, n), make([]float64, n)
 	var sumR, sumL float64
 	for j := 0; j < n; j++ {
-		resid[j] = segmentResidual(cov, m, img, b.Segment(j))
+		resid[j] = segmentResidual(cov, m, win, b.Segment(j))
 		length[j] = math.Max(LengthPrior(b, j), 1)
 		sumR += resid[j]
 		sumL += length[j]
@@ -228,7 +280,7 @@ func splitPass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 
 // segmentResidual sums the squared coverage error (0..1 scale) over the
 // window of a segment's control points padded by one pixel, clipped to
-// the image.
+// img, the window cov was rasterised over.
 func segmentResidual(cov []float32, m Mask, img Window, c fit.Cubic) float64 {
 	x0, y0, x1, y1 := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
 	for _, p := range c {

@@ -143,3 +143,24 @@ func TestMergePassWithinBudget(t *testing.T) {
 		}
 	}
 }
+
+// TestMergeDeviation: a cubic split in half merges back within a tenth
+// of a pixel (the refit and the flattening are not exact); an S-curve of
+// two tangent-continuous cubics cannot be one cubic and deviates by
+// pixels.
+func TestMergeDeviation(t *testing.T) {
+	c := fit.Cubic{{X: 0, Y: 0}, {X: 10, Y: 20}, {X: 30, Y: 20}, {X: 40, Y: 0}}
+	b := Bezigon{Pts: []geom.Vec2{c[0], c[1], c[2], c[3], {X: 40, Y: -10}, {X: 0, Y: -10}}}
+	halves := splitSegment(b, 0)
+	if d := mergeDeviation(halves, 1, mergeJoint(halves, 1).Segment(0)); d > 0.1 {
+		t.Fatalf("halves of one cubic deviate %v", d)
+	}
+	s := Bezigon{Pts: []geom.Vec2{
+		{X: 0, Y: 0}, {X: 20, Y: 0}, {X: 20, Y: 30}, // bends up
+		{X: 40, Y: 30}, {X: 60, Y: 30}, {X: 60, Y: 0}, // bends down, tangent continuous
+		{X: 80, Y: 0}, {X: 80, Y: -20}, {X: 0, Y: -20},
+	}}
+	if d := mergeDeviation(s, 1, mergeJoint(s, 1).Segment(0)); d < 2 {
+		t.Fatalf("S-curve merged cubic deviates only %v", d)
+	}
+}

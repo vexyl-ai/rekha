@@ -221,7 +221,7 @@ func (r RefineOptions) validate() error {
 	for _, w := range []struct {
 		name string
 		v    float64
-	}{{"Spt", r.Weights.Spt}, {"Apt", r.Weights.Apt}, {"Hpt", r.Weights.Hpt}, {"Lpt", r.Weights.Lpt}} {
+	}{{"Apt", r.Weights.Apt}, {"Hpt", r.Weights.Hpt}, {"Lpt", r.Weights.Lpt}} {
 		if math.IsNaN(w.v) || math.IsInf(w.v, 0) || w.v < 0 {
 			return &ValidationError{"Refine", fmt.Sprintf("weight %s %g must be finite and non-negative", w.name, w.v)}
 		}
