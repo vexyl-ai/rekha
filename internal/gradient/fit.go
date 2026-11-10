@@ -3,6 +3,7 @@ package gradient
 import (
 	"image/color"
 	"math"
+	"sort"
 )
 
 // minPixels is the smallest region that takes part in a merge; anything
@@ -37,11 +38,15 @@ type Ramp struct {
 }
 
 // moments are the sums a least-squares plane per channel needs, over
-// pixel centres. They add under a merge, so a union is never re-scanned.
+// pixel centres, and the structure tensor of the colour gradient (the
+// sum of ∇c·∇cᵀ over channels and pixels), whose principal axis is the
+// direction the colour changes along whichever way it changes. They add
+// under a merge, so a union is never re-scanned.
 type moments struct {
 	n                     int
 	sx, sy, sxx, sxy, syy float64
 	sc, scx, scy, scc     [3]float64
+	gxx, gxy, gyy         float64
 }
 
 func (m *moments) add(x, y float64, c [3]float64) {
@@ -59,8 +64,21 @@ func (m *moments) add(x, y float64, c [3]float64) {
 	}
 }
 
+// addGrad accumulates a pixel's colour gradient (per channel, in colour
+// units per pixel) into the structure tensor.
+func (m *moments) addGrad(gx, gy [3]float64) {
+	for i := range gx {
+		m.gxx += float64(gx[i] * gx[i])
+		m.gxy += float64(gx[i] * gy[i])
+		m.gyy += float64(gy[i] * gy[i])
+	}
+}
+
 func (m *moments) merge(o *moments) {
 	m.n += o.n
+	m.gxx += o.gxx
+	m.gxy += o.gxy
+	m.gyy += o.gyy
 	m.sx += o.sx
 	m.sy += o.sy
 	m.sxx += o.sxx
@@ -72,6 +90,16 @@ func (m *moments) merge(o *moments) {
 		m.scy[i] += o.scy[i]
 		m.scc[i] += o.scc[i]
 	}
+}
+
+// spread is the RMS distance of the colours from their mean.
+func (m *moments) spread() float64 {
+	n := float64(m.n)
+	var v float64
+	for i := range m.sc {
+		v += m.scc[i] - float64(m.sc[i]*m.sc[i])/n
+	}
+	return math.Sqrt(math.Max(v, 0) / n)
 }
 
 // mean is the average colour.
@@ -90,10 +118,13 @@ type fitted struct {
 	extent     float64 // pixels the fit spans along u (a uniform strip's width from the spread of t)
 }
 
-// fit chooses the direction u from the per-channel least-squares planes
-// (the principal direction of their gradients), then fits colour against
-// t = u·p in one dimension. ok is false when the pixels do not span a
-// plane (fewer than three, or collinear).
+// fit chooses the direction u as the principal axis of the structure
+// tensor, which ignores the sign of the change so a colour that rises
+// then falls along one line still fits along that line; without
+// gradients (none accumulated) it takes the principal direction of the
+// per-channel least-squares planes. It then fits colour against t = u·p
+// in one dimension. ok is false when the pixels do not span a plane
+// (fewer than three, or collinear).
 func (m *moments) fit() fitted {
 	if m.n < 3 {
 		return fitted{}
@@ -105,6 +136,9 @@ func (m *moments) fit() fitted {
 	det := float64(cxx*cyy) - float64(cxy*cxy)
 	if det <= 1e-9*float64(cxx*cyy) {
 		return fitted{}
+	}
+	if m.gxx+m.gyy > 0 {
+		return m.along(principal(m.gxx, m.gxy, m.gyy))
 	}
 	// Gradient of each channel's plane, and the 2×2 scatter of those.
 	var g11, g12, g22 float64
@@ -256,12 +290,30 @@ func (b *bins) raw() []rawStop {
 	return append(append([]rawStop{first}, out...), last)
 }
 
-// stops simplifies the raw samples by Douglas-Peucker in colour at tol/2
-// (a sample within tol/2 of the straight colour line between its kept
-// neighbours is dropped), then quantises them. span is the largest
-// colour distance between any two bin samples, the extrapolated ends
-// left out: a pocket of another colour in an end bin is amplified by the
-// extrapolation and must not count as colour change.
+// model simplifies the raw samples by Douglas-Peucker in colour at
+// tol/2: a sample within tol/2 of the straight colour line between its
+// kept neighbours is dropped. nil when the ramp cannot be sampled.
+func (b *bins) model(tol float64) []rawStop {
+	raw := b.raw()
+	if raw == nil {
+		return nil
+	}
+	keep := make([]bool, len(raw))
+	keep[0], keep[len(raw)-1] = true, true
+	simplify(raw, keep, 0, len(raw)-1, tol/2)
+	out := raw[:0:0]
+	for i, s := range raw {
+		if keep[i] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// stops quantises the model. span is the largest colour distance
+// between any two bin samples, the extrapolated ends left out: a pocket
+// of another colour in an end bin is amplified by the extrapolation and
+// must not count as colour change.
 func (b *bins) stops(tol float64) (stops []Stop, span float64) {
 	raw := b.raw()
 	if raw == nil {
@@ -272,15 +324,28 @@ func (b *bins) stops(tol float64) (stops []Stop, span float64) {
 			span = math.Max(span, cdist(raw[i].colour, raw[j].colour))
 		}
 	}
-	keep := make([]bool, len(raw))
-	keep[0], keep[len(raw)-1] = true, true
-	simplify(raw, keep, 0, len(raw)-1, tol/2)
-	for i, s := range raw {
-		if keep[i] {
-			stops = append(stops, Stop{Offset: s.offset, Colour: quantise(s.colour)})
-		}
+	for _, s := range b.model(tol) {
+		stops = append(stops, Stop{Offset: s.offset, Colour: quantise(s.colour)})
 	}
 	return stops, span
+}
+
+// colourAt interpolates a model at offset o in 0..1.
+func colourAt(model []rawStop, o float64) [3]float64 {
+	i := sort.Search(len(model), func(i int) bool { return model[i].offset >= o })
+	if i == 0 {
+		return model[0].colour
+	}
+	if i == len(model) {
+		return model[len(model)-1].colour
+	}
+	p, q := model[i-1], model[i]
+	f := (o - p.offset) / (q.offset - p.offset)
+	var c [3]float64
+	for k := range c {
+		c[k] = p.colour[k] + float64(f*(q.colour[k]-p.colour[k]))
+	}
+	return c
 }
 
 func cdist(a, b [3]float64) float64 {

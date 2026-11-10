@@ -304,3 +304,92 @@ func TestMergeHubAbsorbsIslandsInOnePass(t *testing.T) {
 		t.Errorf("N %d", r.N)
 	}
 }
+
+// curveImage is a horizontal grey image v = 255·curve(x/(w-1)) with
+// optional ±noise, labelled into bands by equal colour ranges of the
+// curve (so bands are narrow where the curve is steep, as a quantiser
+// would make them).
+func curveImage(w, h, bands int, curve func(float64) float64, noise int, seed uint64) (rgb, labels []uint8) {
+	rgb = make([]uint8, 3*w*h)
+	labels = make([]uint8, w*h)
+	rng := rand.New(rand.NewPCG(seed, 1))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			p := y*w + x
+			c := curve(float64(x) / float64(w-1))
+			v := clamp8(int(math.Round(c*255)) + rng.IntN(2*noise+1) - noise)
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = v, v, v
+			labels[p] = uint8(min(int(c*float64(bands)), bands-1))
+		}
+	}
+	return rgb, labels
+}
+
+func TestMergeCurvedRampJoins(t *testing.T) {
+	quad := func(s float64) float64 { return float64(s * s) }
+	rgb, labels := curveImage(256, 32, 8, quad, 0, 1)
+	r := Merge(rgb, labels, 256, 32, 8, 0.03)
+	if r.N != 1 || r.Ramps[0] == nil {
+		t.Fatalf("N %d ramps %v", r.N, r.Ramps)
+	}
+	s := r.Ramps[0].Stops
+	if len(s) < 3 {
+		t.Fatalf("a quadratic ramp needs more than two stops: %+v", s)
+	}
+	for _, st := range s {
+		want := quad(st.Offset)
+		if d := math.Abs(float64(st.Colour.R)/255 - want); d > 0.03 {
+			t.Errorf("stop %+v is %.3f from the curve", st, d)
+		}
+	}
+}
+
+func TestMergeNoisyCurvedRampJoins(t *testing.T) {
+	quad := func(s float64) float64 { return float64(s * s) }
+	rgb, labels := curveImage(256, 32, 8, quad, 4, 2)
+	r := Merge(rgb, labels, 256, 32, 8, 0.03)
+	if r.N != 1 || r.Ramps[0] == nil || len(r.Ramps[0].Stops) < 3 {
+		t.Fatalf("N %d ramps %v", r.N, r.Ramps)
+	}
+}
+
+func TestMergeRiseAndFall(t *testing.T) {
+	hump := func(s float64) float64 { return math.Sin(math.Pi * s) }
+	rgb, labels := curveImage(256, 32, 8, hump, 0, 3)
+	r := Merge(rgb, labels, 256, 32, 8, 0.03)
+	if r.N != 1 || r.Ramps[0] == nil {
+		t.Fatalf("N %d ramps %v", r.N, r.Ramps)
+	}
+	s := r.Ramps[0].Stops
+	peak := 0
+	for i, st := range s {
+		if st.Colour.R > s[peak].Colour.R {
+			peak = i
+		}
+	}
+	if peak == 0 || peak == len(s)-1 || s[peak].Colour.R < 240 || s[0].Colour.R > 15 || s[len(s)-1].Colour.R > 15 {
+		t.Errorf("stops should rise then fall: %+v", s)
+	}
+}
+
+func TestMergeLonePocketStaysFlat(t *testing.T) {
+	// One flat band with a pocket of a nearby colour in its middle: the
+	// samples bump by tol but nothing ramps, so the band stays flat.
+	const w, h = 192, 64
+	rgb := make([]uint8, 3*w*h)
+	labels := make([]uint8, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			p := y*w + x
+			c := [3]uint8{30, 60, 220}
+			if x >= 96 && x < 112 && y >= 8 && y < 56 {
+				c = [3]uint8{42, 70, 222}
+			}
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = c[0], c[1], c[2]
+		}
+	}
+	r := Merge(rgb, labels, w, h, 1, 0.03)
+	if r.N != 1 || r.Ramps[0] != nil {
+		t.Errorf("N %d ramps %+v", r.N, r.Ramps)
+	}
+}
