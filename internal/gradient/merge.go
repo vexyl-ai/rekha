@@ -306,9 +306,25 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 				mergedNow++
 			}
 		}
-		inGroup := make([]bool, ncomp) // per linear root, for the check
+		inGroup := make([]bool, ncomp)      // per linear root, for the check
+		dissolvedOf := make([]int32, ncomp) // linear root → dissolved root, else -1
+		for i := range dissolvedOf {
+			dissolvedOf[i] = -1
+		}
+		for r, ms := range members {
+			for _, m := range ms {
+				dissolvedOf[m] = r
+			}
+		}
+		pixels := map[int32][]int{} // dissolved root → its pixels
+		for p := 0; p < np; p++ {
+			if r := dissolvedOf[r1[comp[p]]]; r >= 0 {
+				pixels[r] = append(pixels[r], p)
+			}
+		}
 		for _, r := range dissolved {
 			ms := members[r]
+			pix := pixels[r]
 			slices.Sort(ms)
 			isMember := map[int32]bool{}
 			for _, m := range ms {
@@ -381,7 +397,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 				for _, x := range under[rb] {
 					inGroup[x] = true
 				}
-				ok := modelFits(rgb, comp, w, h, r1, inGroup, &m, tol)
+				ok := modelFits(rgb, comp, w, h, r1, inGroup, pix, &m, tol)
 				for _, x := range under[ra] {
 					inGroup[x] = false
 				}
@@ -672,9 +688,10 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 // modelFits reports whether the union of the linear groups flagged in
 // in (per linear root, r1 per component) is reproduced within tol by a
 // ramp sampled along the union's direction: the same measure sample
-// applies to a joined group, over the union's interior pixels.
-func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, m *moments, tol float64) bool {
-	np := w * h
+// applies to a joined group, over the union's interior pixels. pix is
+// the pixels to walk (a superset of the union's), so a check costs the
+// dissolved group, not the image.
+func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, pix []int, m *moments, tol float64) bool {
 	f := m.fitWithin(tol)
 	if !f.ok {
 		return false
@@ -683,7 +700,7 @@ func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, m *mo
 		return float64(f.u[0]*(float64(p%w)+0.5)) + float64(f.u[1]*(float64(p/w)+0.5))
 	}
 	tmin, tmax := math.Inf(1), math.Inf(-1)
-	for p := 0; p < np; p++ {
+	for _, p := range pix {
 		if in[r1[comp[p]]] {
 			t := proj(p)
 			tmin = math.Min(tmin, t)
@@ -699,7 +716,7 @@ func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, m *mo
 			(y == 0 || in[r1[comp[p-w]]]) && (y == h-1 || in[r1[comp[p+w]]])
 	}
 	b := newBins(tmin, tmax)
-	for p := 0; p < np; p++ {
+	for _, p := range pix {
 		if in[r1[comp[p]]] && inside(p) {
 			b.add(proj(p), colourOf(rgb, p))
 		}
@@ -710,7 +727,7 @@ func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, m *mo
 	}
 	var err float64
 	cnt := 0
-	for p := 0; p < np; p++ {
+	for _, p := range pix {
 		if in[r1[comp[p]]] && inside(p) {
 			d := dist(colourAt(model, (proj(p)-tmin)/(tmax-tmin)), colourOf(rgb, p))
 			err += float64(d * d)

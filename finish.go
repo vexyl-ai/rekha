@@ -69,6 +69,9 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	if err := o.Validate(); err != nil {
 		return nil, err
 	}
+	if o.Stroke == 0 {
+		o.Stroke = o.CutoutStroke
+	}
 	res := &Result{Width: s.Width, Height: s.Height}
 	if s.Width*s.Height == 0 || len(s.Palette) == 0 {
 		return res, nil

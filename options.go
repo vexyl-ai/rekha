@@ -77,6 +77,8 @@ type Options struct {
 
 	Refine RefineOptions // spline mode only
 	Stroke float64       // px, 0..4, default 0; polygon/spline colour shapes are stroked in their fill to hide hairline seams between fitted edges when viewed enlarged
+	// Deprecated: use Stroke. CutoutStroke is read when Stroke is 0.
+	CutoutStroke float64
 
 	Gradients         bool    // colour presets: merge adjacent bands that form one linear ramp into a gradient fill
 	GradientTolerance float64 // 0..1, default 0.03; RMS sRGB distance (channels 0..1) a ramp may leave
@@ -209,6 +211,9 @@ func (o Options) Validate() error {
 		}
 	}
 	if err := inRangeF("Stroke", o.Stroke, 0, 4); err != nil {
+		return err
+	}
+	if err := inRangeF("CutoutStroke", o.CutoutStroke, 0, 4); err != nil {
 		return err
 	}
 	if err := inRangeF("GradientTolerance", o.GradientTolerance, 0, 1); err != nil {

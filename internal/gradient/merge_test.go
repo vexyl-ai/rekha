@@ -596,20 +596,43 @@ func TestMergePartialDissolveSplits(t *testing.T) {
 	}
 }
 
-func TestMergePartialDissolveLabelBudget(t *testing.T) {
-	c := newCanvas(640, 33)
-	c.quad(0, 0)
-	c.wander(256, 8)
-	for y := 0; y < 32; y++ {
+// bentCanvas is a 256×64 hub: a merged chunk M (labels 0 and 1, a linear
+// ramp 128..204 along x over columns 0..128 of the lower half) meets a
+// wandering band W (label 2, columns 128..256 of the lower half, 204 at
+// its left edge, bending more and more along y with x) which in turn
+// meets two lone bands A (label 3) and B (label 4) above it, a quadratic
+// fall 204..24 along x that no line fits but one multi-stop ramp does.
+// The join pass takes all four across soft edges, the group fits no
+// model, and in the replay only A with B fits. F (label 5, flat 128)
+// fills the upper-left quarter and joins nothing.
+func bentCanvas() *canvas {
+	c := newCanvas(256, 64)
+	for y := 0; y < 64; y++ {
 		for x := 0; x < 256; x++ {
-			s := float64(255-x) / 255
-			v := 0.2 + float64(0.6*float64(s*s))
-			c.set(384+x, y, uint8(math.Round(v*255)), 9+uint8(min(int((v-0.2)/0.6*8), 7)))
+			s := float64(x-128) / 128
+			switch {
+			case x < 128 && y < 32:
+				c.set(x, y, 128, 5)
+			case x < 128:
+				c.set(x, y, uint8(128+76*x/127), uint8(x/64))
+			case y < 32:
+				c.set(x, y, clamp8(int(math.Round(204-float64(180*float64(s*s))))), 3+uint8((x-128)/64))
+			default:
+				g := 1 - float64(2*float64(y-32))/31
+				c.set(x, y, clamp8(int(math.Round(204-float64(180*float64(s*s))*g))), 2)
+			}
 		}
 	}
-	const n = 253
-	for k := 17; k < n; k++ { // a speck of every other label on the last row
-		c.set(2*k+1, 32, 128, uint8(k))
+	return c
+}
+
+func TestMergePartialDissolveLabelBudget(t *testing.T) {
+	// Budget: with M merged, A+B need the 257th label; with n = 255 the
+	// replay must refuse the lone-only sub-group and keep A and B apart.
+	c := bentCanvas()
+	const n = 255
+	for k := 6; k < n; k++ { // a speck of every other label on the last row
+		c.set(k, 63, 128, uint8(k))
 	}
 	r := Merge(c.rgb, c.labels, c.w, c.h, n, 0.03)
 	if r.N > 256 {
@@ -619,6 +642,61 @@ func TestMergePartialDissolveLabelBudget(t *testing.T) {
 		if int(l) >= r.N {
 			t.Fatalf("label %d past N %d at %d", l, r.N, p)
 		}
+	}
+	if r.Labels[48*256+30] != r.Labels[48*256+100] || r.Ramps[r.Labels[48*256+30]] == nil {
+		t.Errorf("M must stay one ramp")
+	}
+	if r.Labels[16*256+150] == r.Labels[16*256+220] {
+		t.Errorf("A and B joined: the 257th label was spent")
+	}
+	// With a label to spare, A and B re-join as a ramp of their own.
+	c = bentCanvas()
+	r = Merge(c.rgb, c.labels, c.w, c.h, 6, 0.03)
+	if r.Labels[16*256+150] != r.Labels[16*256+220] || r.Ramps[r.Labels[16*256+150]] == nil {
+		t.Errorf("A and B must re-join after the dissolve: labels %d %d ramps %v", r.Labels[16*256+150], r.Labels[16*256+220], r.Ramps)
+	}
+	if r.Labels[48*256+30] == r.Labels[16*256+150] {
+		t.Errorf("M must not join A: the hub must dissolve")
+	}
+}
+
+// modelFits walks only the pixels it is given, so a dissolved group's
+// pixels are gathered once and each replay check costs the union, not
+// the image.
+func TestModelFitsWalksGivenPixels(t *testing.T) {
+	rgb, labels := rampImage(128, 32, 2)
+	w, h := 128, 32
+	comp := make([]int32, w*h)
+	for p := range comp {
+		comp[p] = int32(labels[p])
+	}
+	r1 := []int32{0, 1}
+	in := []bool{true, true}
+	var m moments
+	var all, left []int
+	for p := 0; p < w*h; p++ {
+		all = append(all, p)
+		if p%w < 64 {
+			left = append(left, p)
+		}
+	}
+	for p := 0; p < w*h; p++ {
+		if p%w >= 64 && (p/w+p%w)%2 == 0 { // checkerboard noise on the right half
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = 0, 0, 0
+		}
+	}
+	for _, p := range all {
+		m.add(float64(p%w)+0.5, float64(p/w)+0.5, colourOf(rgb, p))
+	}
+	if modelFits(rgb, comp, w, h, r1, in, all, &m, 0.03) {
+		t.Errorf("the noisy right half must fail")
+	}
+	m = moments{}
+	for _, p := range left {
+		m.add(float64(p%w)+0.5, float64(p/w)+0.5, colourOf(rgb, p))
+	}
+	if !modelFits(rgb, comp, w, h, r1, in, left, &m, 0.03) {
+		t.Errorf("the clean left half alone must fit")
 	}
 }
 
