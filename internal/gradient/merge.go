@@ -9,6 +9,9 @@ import (
 // maxLabels is the palette size a uint8 label map can address.
 const maxLabels = 256
 
+// maxReplay caps the model checks spent re-joining one dissolved group.
+const maxReplay = 32
+
 // Result of Merge: labels renumbered compactly by first appearance.
 type Result struct {
 	Labels   []uint8 // new label per pixel
@@ -241,59 +244,192 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	}
 	passes(func(ga, gb *group, e *edge, f fitted) bool { return f.rms <= tol && sidesFollow(ga, gb, f) })
 	// Snapshot the linear groups, then join across bends.
-	parent1 := slices.Clone(parent)
-	groups1 := slices.Clone(groups)
-	find1 := func(i int32) int32 {
-		for parent1[i] != i {
-			i = parent1[i]
-		}
-		return i
+	r1 := make([]int32, ncomp)
+	for i := range r1 {
+		r1[i] = find(int32(i))
 	}
+	groups1 := slices.Clone(groups)
 	release = false
 	passes(func(ga, gb *group, e *edge, f fitted) bool { return sidesBend(ga, gb, f, tol) })
+	r2 := make([]int32, ncomp)
+	for i := range r2 {
+		r2[i] = find(int32(i))
+	}
 
 	// Every merged group, and every lone band with enough interior
 	// pixels that is linear within tol, is a ramp candidate; its colour
 	// is sampled along its direction. A group joined across bends must
-	// reproduce its pixels within tol or it dissolves into its linear
-	// groups, which are sampled in its place.
-	ext := sample(rgb, comp, w, h, find, groups, tol)
-	dissolved := map[int32]bool{}
+	// reproduce its pixels within tol or it dissolves into the linear
+	// groups it was made of, which are then joined again pair by pair,
+	// closest mean colours first, each join kept only when the model of
+	// the union fits (at most maxReplay checks per dissolved group, so a
+	// hub with thousands of members costs a bounded number of passes).
+	// Labels: a group formed from lone bands only needs a label the join
+	// pass has not reserved, so it forms only while the budget allows.
+	ext := sample(rgb, comp, w, h, r2, groups, tol)
+	fails := func(e *extent) bool { return e == nil || e.model == nil || e.err > float64(tol*tol)*float64(e.cnt) }
+	var dissolved []int32
 	for r, e := range ext {
-		if find1(r) != r || groups1[r].comps != groups[r].comps {
-			if e.model == nil || e.err > float64(tol*tol)*float64(e.cnt) {
-				dissolved[r] = true
-			}
+		if groups[r].comps != groups1[r].comps && fails(e) {
+			dissolved = append(dissolved, r)
 		}
 	}
-	for i := range comps {
-		if dissolved[find(int32(i))] {
-			delete(ext, find(int32(i)))
-		}
-	}
+	slices.Sort(dissolved)
 	if len(dissolved) > 0 {
-		find2 := find
-		eff := func(i int32) int32 {
-			if r := find2(i); !dissolved[r] {
-				return r
-			}
-			return find1(i)
+		isDissolved := map[int32]bool{}
+		for _, r := range dissolved {
+			isDissolved[r] = true
 		}
+		members := map[int32][]int32{} // dissolved root → its linear groups
+		for i := range comps {
+			if r := r2[i]; isDissolved[r] {
+				delete(ext, r)
+				if r1[i] == int32(i) {
+					members[r] = append(members[r], int32(i))
+				}
+				r2[i] = r1[i]
+				groups[r1[i]] = groups1[r1[i]]
+			}
+		}
+		mergedNow := 0
 		for i := range groups {
-			if dissolved[find(int32(i))] && find1(int32(i)) == int32(i) {
-				groups[i] = groups1[i]
+			if r2[i] == int32(i) && groups[i].merged {
+				mergedNow++
 			}
 		}
-		for r, e := range sample(rgb, comp, w, h, eff, groups, tol) {
-			if dissolved[find2(r)] {
+		inGroup := make([]bool, ncomp) // per linear root, for the check
+		for _, r := range dissolved {
+			ms := members[r]
+			slices.Sort(ms)
+			isMember := map[int32]bool{}
+			for _, m := range ms {
+				isMember[m] = true
+			}
+			type pair struct {
+				a, b  int32
+				dmean float64
+			}
+			seen := map[[2]int32]bool{}
+			var pairs []pair
+			for _, k := range edgeKeys {
+				a, b := r1[k[0]], r1[k[1]]
+				if a == b || !isMember[a] || !isMember[b] {
+					continue
+				}
+				if a > b {
+					a, b = b, a
+				}
+				if seen[[2]int32{a, b}] {
+					continue
+				}
+				seen[[2]int32{a, b}] = true
+				pairs = append(pairs, pair{a: a, b: b, dmean: dist(groups1[a].m.mean(), groups1[b].m.mean())})
+			}
+			sort.Slice(pairs, func(i, j int) bool {
+				if pairs[i].dmean != pairs[j].dmean {
+					return pairs[i].dmean < pairs[j].dmean
+				}
+				if pairs[i].a != pairs[j].a {
+					return pairs[i].a < pairs[j].a
+				}
+				return pairs[i].b < pairs[j].b
+			})
+			parent3 := map[int32]int32{}
+			under := map[int32][]int32{}
+			for _, m := range ms {
+				parent3[m] = m
+				under[m] = []int32{m}
+			}
+			find3 := func(i int32) int32 {
+				for parent3[i] != i {
+					i = parent3[i]
+				}
+				return i
+			}
+			checks := 0
+			for _, pr := range pairs {
+				ra, rb := find3(pr.a), find3(pr.b)
+				if ra == rb {
+					continue
+				}
+				if checks >= maxReplay {
+					break
+				}
+				checks++
+				if ra > rb {
+					ra, rb = rb, ra
+				}
+				m := groups1[ra].m
+				for _, x := range under[ra][1:] {
+					m.merge(&groups1[x].m)
+				}
+				for _, x := range under[rb] {
+					m.merge(&groups1[x].m)
+				}
+				for _, x := range under[ra] {
+					inGroup[x] = true
+				}
+				for _, x := range under[rb] {
+					inGroup[x] = true
+				}
+				ok := modelFits(rgb, comp, w, h, r1, inGroup, &m, tol)
+				for _, x := range under[ra] {
+					inGroup[x] = false
+				}
+				for _, x := range under[rb] {
+					inGroup[x] = false
+				}
+				if !ok {
+					continue
+				}
+				parent3[rb] = ra
+				under[ra] = append(under[ra], under[rb]...)
+				delete(under, rb)
+			}
+			var subRoots []int32
+			for root, us := range under {
+				if len(us) > 1 {
+					subRoots = append(subRoots, root)
+				}
+			}
+			slices.Sort(subRoots)
+			for _, root := range subRoots {
+				us := under[root]
+				slices.Sort(us)
+				lone := 0
+				for _, m := range us {
+					if !groups1[m].merged {
+						lone++
+					}
+				}
+				if lone == len(us) && mergedNow+1+n > maxLabels {
+					continue // no label free for a new ramp
+				}
+				g := groups1[root]
+				for _, m := range us[1:] {
+					g.m.merge(&groups1[m].m)
+					g.comps += groups1[m].comps
+				}
+				g.merged = true
+				groups[root] = g
+				for i := range comps {
+					if slices.Contains(us, r1[i]) {
+						r2[i] = root
+					}
+				}
+				mergedNow += 1 - (len(us) - lone)
+			}
+		}
+		// Sample what changed: the reverted linear groups and the new ones.
+		for r, e := range sample(rgb, comp, w, h, r2, groups, tol) {
+			if isDissolved[find(r)] {
 				ext[r] = e
 			}
 		}
-		find = eff
 	}
 	var roots []int32
 	for i := range groups {
-		if find(int32(i)) == int32(i) {
+		if r2[i] == int32(i) {
 			roots = append(roots, int32(i))
 		}
 	}
@@ -332,7 +468,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	}
 	pre := make([]int, ncomp)
 	for i := range comps {
-		if l, ok := fresh[find(int32(i))]; ok {
+		if l, ok := fresh[r2[i]]; ok {
 			pre[i] = l
 		} else {
 			pre[i] = int(comps[i].label)
@@ -349,7 +485,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		l := pre[comp[p]]
 		if remap[l] < 0 {
 			remap[l] = len(ramps)
-			ramps = append(ramps, rampOf[find(comp[p])])
+			ramps = append(ramps, rampOf[r2[comp[p]]])
 		}
 		res.Labels[p] = uint8(remap[l])
 	}
@@ -420,14 +556,15 @@ type extent struct {
 	cnt        int
 }
 
-// sample measures every root group that may carry a ramp: a merged
-// group, or a lone band with enough interior pixels that is linear
-// within tol. The extent along u is measured over all the group's
+// sample measures every root group (root[i] per component) that may
+// carry a ramp: a merged group, or a lone band with enough interior
+// pixels that is linear within tol. The extent along u is measured over all the group's
 // pixels; the colour is sampled from the pixels interior to the group
 // (every 4-neighbour in the same group), so a band boundary's blend and
 // the group's own anti-aliased edge do not pull a stop.
-func sample(rgb []uint8, comp []int32, w, h int, find func(int32) int32, groups []group, tol float64) map[int32]*extent {
+func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, tol float64) map[int32]*extent {
 	np := w * h
+	find := func(i int32) int32 { return root[i] }
 	ext := map[int32]*extent{}
 	for i := range groups {
 		g := &groups[i]
@@ -480,6 +617,57 @@ func sample(rgb []uint8, comp []int32, w, h int, find func(int32) int32, groups 
 		e.cnt++
 	}
 	return ext
+}
+
+// modelFits reports whether the union of the linear groups flagged in
+// in (per linear root, r1 per component) is reproduced within tol by a
+// ramp sampled along the union's direction: the same measure sample
+// applies to a joined group, over the union's interior pixels.
+func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, m *moments, tol float64) bool {
+	np := w * h
+	f := m.fitWithin(tol)
+	if !f.ok {
+		return false
+	}
+	proj := func(p int) float64 {
+		return float64(f.u[0]*(float64(p%w)+0.5)) + float64(f.u[1]*(float64(p/w)+0.5))
+	}
+	tmin, tmax := math.Inf(1), math.Inf(-1)
+	for p := 0; p < np; p++ {
+		if in[r1[comp[p]]] {
+			t := proj(p)
+			tmin = math.Min(tmin, t)
+			tmax = math.Max(tmax, t)
+		}
+	}
+	if tmax-tmin < minLength {
+		return false
+	}
+	inside := func(p int) bool {
+		x, y := p%w, p/w
+		return (x == 0 || in[r1[comp[p-1]]]) && (x == w-1 || in[r1[comp[p+1]]]) &&
+			(y == 0 || in[r1[comp[p-w]]]) && (y == h-1 || in[r1[comp[p+w]]])
+	}
+	b := newBins(tmin, tmax)
+	for p := 0; p < np; p++ {
+		if in[r1[comp[p]]] && inside(p) {
+			b.add(proj(p), colourOf(rgb, p))
+		}
+	}
+	model := b.model(tol)
+	if model == nil {
+		return false
+	}
+	var err float64
+	cnt := 0
+	for p := 0; p < np; p++ {
+		if in[r1[comp[p]]] && inside(p) {
+			d := dist(colourAt(model, (proj(p)-tmin)/(tmax-tmin)), colourOf(rgb, p))
+			err += float64(d * d)
+			cnt++
+		}
+	}
+	return err <= float64(tol*tol)*float64(cnt)
 }
 
 // interior reports whether every in-image 4-neighbour of pixel p carries
