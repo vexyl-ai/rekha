@@ -256,3 +256,30 @@ func TestRunCutoutStrokeFlag(t *testing.T) {
 		t.Fatalf("default cutout should emit no stroke attributes: %.300q", out)
 	}
 }
+
+func TestFlagGradients(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "ramp.png")
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 32))
+	for y := 0; y < 32; y++ {
+		for x := 0; x < 64; x++ {
+			v := uint8(x * 255 / 63)
+			img.SetNRGBA(x, y, color.NRGBA{v, v, v, 255})
+		}
+	}
+	f, err := os.Create(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	var out, errb bytes.Buffer
+	if code := run([]string{"--preset", "photo", "--gradients", "--gradient-tolerance", "0.05", "-o", "-", in}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "<linearGradient") {
+		t.Errorf("no gradient in output:\n%s", out.String())
+	}
+}

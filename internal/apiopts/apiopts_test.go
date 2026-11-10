@@ -87,7 +87,7 @@ func TestFromStringsBadNumber(t *testing.T) {
 }
 
 func TestSegmentKeys(t *testing.T) {
-	want := []string{"preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle"}
+	want := []string{"preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance"}
 	if got := SegmentKeys(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}
@@ -97,5 +97,16 @@ func TestParsePaletteErrors(t *testing.T) {
 	_, err := ParsePalette("fff")
 	if err == nil || err.Error() != `"fff" is not a #rrggbb colour` {
 		t.Fatalf("err %v", err)
+	}
+}
+
+func TestParseGradients(t *testing.T) {
+	o := mustParse(t, `{"preset":"photo","gradients":true,"gradientTolerance":0.05}`)
+	if !o.Gradients || o.GradientTolerance != 0.05 {
+		t.Fatalf("got %+v", o)
+	}
+	keys := strings.Join(SegmentKeys(), ",")
+	if !strings.Contains(keys, "gradients") || !strings.Contains(keys, "gradientTolerance") {
+		t.Errorf("segment keys %s", keys)
 	}
 }

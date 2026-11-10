@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { SEGMENT_KEYS, needsResegment, Requests } = require('./protocol.js');
 
 test('segment keys', () => {
-  assert.deepEqual(SEGMENT_KEYS, ['preset', 'threshold', 'colorPrecision', 'colorTolerance', 'maxColors', 'palette', 'filterSpeckle']);
+  assert.deepEqual(SEGMENT_KEYS, ['preset', 'threshold', 'colorPrecision', 'colorTolerance', 'maxColors', 'palette', 'filterSpeckle', 'gradients', 'gradientTolerance']);
 });
 
 test('needsResegment on preset change', () => {
@@ -66,4 +66,9 @@ test('paste picks the first image item', () => {
 test('paste without an image gives null', () => {
   assert.equal(imageFileFromItems([{ kind: 'string', type: 'text/plain', getAsFile: () => null }]), null);
   assert.equal(imageFileFromItems(null), null);
+});
+
+test('gradient keys re-segment', () => {
+  assert.ok(SEGMENT_KEYS.includes('gradients') && SEGMENT_KEYS.includes('gradientTolerance'));
+  assert.equal(needsResegment({ gradients: false }, { gradients: true }), true);
 });

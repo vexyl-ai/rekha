@@ -18,23 +18,25 @@ import (
 // Params is the JSON shape shared by the wasm and HTTP entry points. Every
 // field is optional; the preset seeds the rest exactly as the CLI.
 type Params struct {
-	Preset          *string    `json:"preset"`
-	Mode            *string    `json:"mode"`
-	FilterSpeckle   *int       `json:"filterSpeckle"`
-	ColorPrecision  *int       `json:"colorPrecision"`
-	PathPrecision   *int       `json:"pathPrecision"`
-	MaxColors       *int       `json:"maxColors"`
-	Threshold       *Threshold `json:"threshold"` // number or "auto"
-	TurnPolicy      *string    `json:"turnPolicy"`
-	Simplify        *float64   `json:"simplify"`
-	CornerThreshold *float64   `json:"cornerThreshold"`
-	FitTolerance    *float64   `json:"fitTolerance"`
-	ColorTolerance  *float64   `json:"colorTolerance"`
-	Palette         *Palette   `json:"palette"` // "#rrggbb,#rrggbb" or ["#rrggbb", …]
-	Hierarchical    *string    `json:"hierarchical"`
-	Refine          *bool      `json:"refine"`
-	RefinePasses    *int       `json:"refinePasses"`
-	CutoutStroke    *float64   `json:"cutoutStroke"`
+	Preset            *string    `json:"preset"`
+	Mode              *string    `json:"mode"`
+	FilterSpeckle     *int       `json:"filterSpeckle"`
+	ColorPrecision    *int       `json:"colorPrecision"`
+	PathPrecision     *int       `json:"pathPrecision"`
+	MaxColors         *int       `json:"maxColors"`
+	Threshold         *Threshold `json:"threshold"` // number or "auto"
+	TurnPolicy        *string    `json:"turnPolicy"`
+	Simplify          *float64   `json:"simplify"`
+	CornerThreshold   *float64   `json:"cornerThreshold"`
+	FitTolerance      *float64   `json:"fitTolerance"`
+	ColorTolerance    *float64   `json:"colorTolerance"`
+	Palette           *Palette   `json:"palette"` // "#rrggbb,#rrggbb" or ["#rrggbb", …]
+	Hierarchical      *string    `json:"hierarchical"`
+	Refine            *bool      `json:"refine"`
+	RefinePasses      *int       `json:"refinePasses"`
+	CutoutStroke      *float64   `json:"cutoutStroke"`
+	Gradients         *bool      `json:"gradients"`
+	GradientTolerance *float64   `json:"gradientTolerance"`
 }
 
 // Threshold is a foreground threshold: a number in 0..1 or "auto" (Otsu).
@@ -163,6 +165,10 @@ func Parse(jsonText []byte) (rekha.Options, error) {
 	}
 	setInt(&o.Refine.Sweeps, p.RefinePasses)
 	setFloat(&o.CutoutStroke, p.CutoutStroke)
+	if p.Gradients != nil {
+		o.Gradients = *p.Gradients
+	}
+	setFloat(&o.GradientTolerance, p.GradientTolerance)
 	if err := o.Validate(); err != nil {
 		return rekha.Options{}, err
 	}
@@ -213,5 +219,5 @@ func rewriteFieldError(err error, kv map[string]string) error {
 // SegmentKeys lists the Params keys that change the segmentation (and so
 // need Segment to run again); every other key only changes Finish.
 func SegmentKeys() []string {
-	return []string{"preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle"}
+	return []string{"preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance"}
 }
