@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rekha demo</title>
+<link rel="stylesheet" href="rekha.css">
+</head>
+<body>
+<header>
+  <h1>Rekha</h1>
+  <input type="file" id="file" accept="image/*">
+  <label>preset <select id="preset"><option>bw</option><option>poster</option><option>photo</option></select></label>
+  <label>mode <select id="mode"><option>spline</option><option>polygon</option><option>pixel</option></select></label>
+  <label>layers <select id="hierarchical"><option>stacked</option><option>cutout</option></select></label>
+  <label>max colours <input type="number" id="maxColors" min="0" max="256" step="1"></label>
+  <label>colour tol <input type="number" id="colorTolerance" min="0" max="1" step="0.01"></label>
+  <label>threshold <input type="number" id="threshold" min="0" max="1" step="0.05"> <input type="checkbox" id="thresholdAuto"> auto</label>
+  <label>speckle <input type="number" id="filterSpeckle" min="0" max="1024" step="1"></label>
+  <label><input type="checkbox" id="refine"> refine</label>
+  <label>passes <input type="number" id="refinePasses" min="1" max="10" step="1"></label>
+  <label>cutout stroke <input type="number" id="cutoutStroke" min="0" max="4" step="0.1"></label>
+  <label>precision <input type="number" id="pathPrecision" min="0" max="8" step="1"></label>
+  <label>pixel cap <input type="number" id="pixelCap" min="10000" step="100000" value="4000000"></label>
+</header>
+<main>
+  <section><h2>Source</h2><div class="pane" id="sourcePane"><div class="drop" id="drop">Drop an image here or choose a file</div></div></section>
+  <section><h2>SVG</h2><div class="pane" id="resultPane"></div></section>
+</main>
+<footer>
+  <span id="status">Loading rekha.wasm…</span>
+  <button id="cancel" disabled>Cancel</button>
+  <button id="download" disabled>Download SVG</button>
+</footer>
+<script src="protocol.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

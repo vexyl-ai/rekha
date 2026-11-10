@@ -22,7 +22,7 @@ wasm-test:
 	GOOS=js GOARCH=wasm go test -exec "$$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./cmd/rekha-wasm $(ARGS)
 
 web-test:
-	@echo "no web tests yet"
+	node --test web/
 
 build:
 	go build -o bin/ ./cmd/...
