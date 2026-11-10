@@ -79,3 +79,18 @@ func TestMixDistFollowsSRGBBlend(t *testing.T) {
 		t.Fatalf("green reads as a red/blue mixture: %.3f", d)
 	}
 }
+
+// srgbToLinear is a table; it must equal the sRGB transfer formula for
+// every 8-bit value so quantisation output is unchanged by the table.
+func TestSRGBToLinearTableMatchesFormula(t *testing.T) {
+	for c := 0; c < 256; c++ {
+		v := float64(c) / 255
+		want := v / 12.92
+		if v > 0.04045 {
+			want = math.Pow((v+0.055)/1.055, 2.4)
+		}
+		if got := srgbToLinear(uint8(c)); got != want {
+			t.Fatalf("%d: table %v formula %v", c, got, want)
+		}
+	}
+}

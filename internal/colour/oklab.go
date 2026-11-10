@@ -13,13 +13,21 @@ import (
 type OKLab struct{ L, A, B float64 }
 
 // srgbToLinear decodes one 8-bit sRGB channel to linear light.
-func srgbToLinear(c uint8) float64 {
-	v := float64(c) / 255
-	if v <= 0.04045 {
-		return v / 12.92
+func srgbToLinear(c uint8) float64 { return linearOf[c] }
+
+// linearOf tabulates the sRGB transfer function for the 256 channel
+// values; math.Pow per channel was most of the colour lookup's cost.
+var linearOf = func() (t [256]float64) {
+	for c := range t {
+		v := float64(c) / 255
+		if v <= 0.04045 {
+			t[c] = v / 12.92
+		} else {
+			t[c] = math.Pow((v+0.055)/1.055, 2.4)
+		}
 	}
-	return math.Pow((v+0.055)/1.055, 2.4)
-}
+	return t
+}()
 
 // linearToSRGB8 encodes linear light to an 8-bit sRGB channel, clamped.
 func linearToSRGB8(v float64) uint8 {

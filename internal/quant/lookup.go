@@ -18,33 +18,47 @@ import (
 // colour the cell is mixed with, which for a navy pixel holding a little
 // red is red, though blue lies nearer navy. Blend is the soft coverage
 // mask later phases refine boundaries with.
+//
+// Cells are computed the first time they are asked for: an image touches
+// a few thousand of the 262,144 cells at 6 bits, and the eager table was
+// most of a colour segmentation's time (all of it under WebAssembly).
 type Lookup struct {
 	Bits                   int
-	Nearest, Second, Blend []uint8
+	nearest, second, blend []uint8
+	done                   []bool
+	palette                []colour.OKLab
+	srgb                   [][3]float64
 }
 
-// NewLookup builds the table for palette at bits per channel.
+// NewLookup prepares the table for palette at bits per channel.
 func NewLookup(palette []colour.OKLab, bits int) *Lookup {
 	n := 1 << (3 * bits)
-	l := &Lookup{Bits: bits, Nearest: make([]uint8, n), Second: make([]uint8, n), Blend: make([]uint8, n)}
-	srgb := make([][3]float64, len(palette))
+	l := &Lookup{Bits: bits, nearest: make([]uint8, n), second: make([]uint8, n), blend: make([]uint8, n), done: make([]bool, n), palette: palette}
+	l.srgb = make([][3]float64, len(palette))
 	for i, p := range palette {
 		r, g, b := p.ToSRGB8()
-		srgb[i] = [3]float64{float64(r), float64(g), float64(b)}
-	}
-	for idx := 0; idx < n; idx++ {
-		r, g, b := CellCentre(idx, bits)
-		c := colour.FromSRGB8(r, g, b)
-		n1, n2 := nearest(palette, c)
-		p := [3]float64{float64(r), float64(g), float64(b)}
-		if project(srgb[n1], srgb[n2], p) > 0.5 {
-			n1 = n2
-		}
-		n2, t := mixPartner(srgb, n1, p)
-		l.Nearest[idx], l.Second[idx] = uint8(n1), uint8(n2)
-		l.Blend[idx] = uint8(math.Round((1 - t) * 255))
+		l.srgb[i] = [3]float64{float64(r), float64(g), float64(b)}
 	}
 	return l
+}
+
+// At returns the palette entry, runner-up and blend of cell idx,
+// computing them on first use.
+func (l *Lookup) At(idx int) (label, runnerUp, blend uint8) {
+	if !l.done[idx] {
+		r, g, b := CellCentre(idx, l.Bits)
+		c := colour.FromSRGB8(r, g, b)
+		n1, n2 := nearest(l.palette, c)
+		p := [3]float64{float64(r), float64(g), float64(b)}
+		if project(l.srgb[n1], l.srgb[n2], p) > 0.5 {
+			n1 = n2
+		}
+		n2, t := mixPartner(l.srgb, n1, p)
+		l.nearest[idx], l.second[idx] = uint8(n1), uint8(n2)
+		l.blend[idx] = uint8(math.Round((1 - t) * 255))
+		l.done[idx] = true
+	}
+	return l.nearest[idx], l.second[idx], l.blend[idx]
 }
 
 // mixPartner returns the entry other than n1 whose sRGB segment from n1
@@ -88,7 +102,6 @@ func project(p1, p2, c [3]float64) float64 {
 // bytes per pixel).
 func (l *Lookup) Map(rgb []uint8, labels, second, blend []uint8) {
 	for i, p := 0, 0; i+2 < len(rgb); i, p = i+3, p+1 {
-		idx := CellIndex(rgb[i], rgb[i+1], rgb[i+2], l.Bits)
-		labels[p], second[p], blend[p] = l.Nearest[idx], l.Second[idx], l.Blend[idx]
+		labels[p], second[p], blend[p] = l.At(CellIndex(rgb[i], rgb[i+1], rgb[i+2], l.Bits))
 	}
 }

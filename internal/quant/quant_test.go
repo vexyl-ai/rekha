@@ -122,28 +122,31 @@ func TestLookupNearestSecondBlend(t *testing.T) {
 	pal := []colour.OKLab{colour.FromSRGB8(0, 0, 0), colour.FromSRGB8(255, 255, 255)}
 	l := NewLookup(pal, 6)
 	i64, i32, i0 := CellIndex(64, 64, 64, 6), CellIndex(32, 32, 32, 6), CellIndex(0, 0, 0, 6)
-	if l.Nearest[i64] != 0 || l.Second[i64] != 1 {
-		t.Fatalf("grey 64: nearest %d second %d", l.Nearest[i64], l.Second[i64])
+	n64, s64, b64 := l.At(i64)
+	_, _, b32 := l.At(i32)
+	_, _, b0 := l.At(i0)
+	if n64 != 0 || s64 != 1 {
+		t.Fatalf("grey 64: nearest %d second %d", n64, s64)
 	}
-	if b := l.Blend[i64]; b <= 128 || b >= 255 {
-		t.Fatalf("grey 64 blend %d, want strictly between 128 and 255", b)
+	if b64 <= 128 || b64 >= 255 {
+		t.Fatalf("grey 64 blend %d, want strictly between 128 and 255", b64)
 	}
-	if l.Blend[i32] <= l.Blend[i64] {
-		t.Fatalf("blend not monotonic: grey32 %d, grey64 %d", l.Blend[i32], l.Blend[i64])
+	if b32 <= b64 {
+		t.Fatalf("blend not monotonic: grey32 %d, grey64 %d", b32, b64)
 	}
 	// The table sees cell centres: the black cell's centre (2,2,2) is far
 	// from black in OKLab (the cube root stretches dark tones), so only
 	// monotonicity is asserted there; the white cell (254,254,254) sits on
 	// the palette entry.
-	if l.Blend[i0] <= l.Blend[i32] {
-		t.Fatalf("blend not monotonic: grey0 %d, grey32 %d", l.Blend[i0], l.Blend[i32])
+	if b0 <= b32 {
+		t.Fatalf("blend not monotonic: grey0 %d, grey32 %d", b0, b32)
 	}
-	if b := l.Blend[CellIndex(255, 255, 255, 6)]; b < 250 {
+	if _, _, b := l.At(CellIndex(255, 255, 255, 6)); b < 250 {
 		t.Fatalf("white blend %d", b)
 	}
 	one := NewLookup(pal[:1], 6)
-	if one.Second[i64] != 0 || one.Blend[i64] != 255 {
-		t.Fatalf("single entry: second %d blend %d", one.Second[i64], one.Blend[i64])
+	if _, s, b := one.At(i64); s != 0 || b != 255 {
+		t.Fatalf("single entry: second %d blend %d", s, b)
 	}
 	labels, second, blend := make([]uint8, 2), make([]uint8, 2), make([]uint8, 2)
 	l.Map(rgbOf([3]uint8{0, 0, 0}, [3]uint8{255, 255, 255}), labels, second, blend)
@@ -195,18 +198,18 @@ func TestCellCentreEndpointsExact(t *testing.T) {
 func TestLookupSplitsAtSRGBMidpoint(t *testing.T) {
 	pal := []colour.OKLab{colour.FromSRGB8(0, 0, 0), colour.FromSRGB8(255, 255, 255)}
 	l := NewLookup(pal, 7)
-	if got := l.Nearest[CellIndex(120, 120, 120, 7)]; got != 0 {
+	if got, _, _ := l.At(CellIndex(120, 120, 120, 7)); got != 0 {
 		t.Fatalf("grey 120 labelled %d, want black", got)
 	}
-	if got := l.Nearest[CellIndex(136, 136, 136, 7)]; got != 1 {
+	if got, _, _ := l.At(CellIndex(136, 136, 136, 7)); got != 1 {
 		t.Fatalf("grey 136 labelled %d, want white", got)
 	}
 	// Blend is the share of the label's colour in the mix, 128..255: grey
 	// 136 is just over half white.
-	if b := l.Blend[CellIndex(136, 136, 136, 7)]; b < 130 || b > 145 {
+	if _, _, b := l.At(CellIndex(136, 136, 136, 7)); b < 130 || b > 145 {
 		t.Fatalf("grey 136 blend %d, want about 136", b)
 	}
-	if b := l.Blend[CellIndex(250, 250, 250, 7)]; b < 245 {
+	if _, _, b := l.At(CellIndex(250, 250, 250, 7)); b < 245 {
 		t.Fatalf("grey 250 blend %d", b)
 	}
 }
@@ -254,11 +257,36 @@ func TestLookupSecondIsMixPartner(t *testing.T) {
 	pal := []colour.OKLab{colour.FromSRGB8(navy[0], navy[1], navy[2]), colour.FromSRGB8(red[0], red[1], red[2]), colour.FromSRGB8(blue[0], blue[1], blue[2])}
 	l := NewLookup(pal, 6)
 	c := mixRGB(navy, red, 0.065)
-	i := CellIndex(c[0], c[1], c[2], 6)
-	if l.Nearest[i] != 0 || l.Second[i] != 1 {
-		t.Fatalf("navy with 6.5 %% red: nearest %d second %d, want 0 and 1", l.Nearest[i], l.Second[i])
+	n, s2, b := l.At(CellIndex(c[0], c[1], c[2], 6))
+	if n != 0 || s2 != 1 {
+		t.Fatalf("navy with 6.5 %% red: nearest %d second %d, want 0 and 1", n, s2)
 	}
-	if b := l.Blend[i]; b < 230 || b > 245 {
+	if b < 230 || b > 245 {
 		t.Fatalf("blend %d, want about 238", b)
+	}
+}
+
+// Lookup cells are computed on first use; At must agree with Map and be
+// stable across calls.
+func TestLookupAtMatchesMap(t *testing.T) {
+	pal := []colour.OKLab{colour.FromSRGB8(0, 0, 0), colour.FromSRGB8(255, 255, 255), colour.FromSRGB8(200, 30, 30)}
+	l := NewLookup(pal, 6)
+	rgb := rgbOf([3]uint8{0, 0, 0}, [3]uint8{255, 255, 255}, [3]uint8{128, 128, 128}, [3]uint8{210, 40, 40}, [3]uint8{128, 128, 128})
+	labels, second, blend := make([]uint8, 5), make([]uint8, 5), make([]uint8, 5)
+	l.Map(rgb, labels, second, blend)
+	for p := 0; p < 5; p++ {
+		n1, n2, b := l.At(CellIndex(rgb[3*p], rgb[3*p+1], rgb[3*p+2], 6))
+		if n1 != labels[p] || n2 != second[p] || b != blend[p] {
+			t.Fatalf("pixel %d: At (%d %d %d) vs Map (%d %d %d)", p, n1, n2, b, labels[p], second[p], blend[p])
+		}
+	}
+	fresh := NewLookup(pal, 6)
+	for p := 0; p < 5; p++ {
+		idx := CellIndex(rgb[3*p], rgb[3*p+1], rgb[3*p+2], 6)
+		a1, a2, ab := fresh.At(idx)
+		b1, b2, bb := l.At(idx)
+		if a1 != b1 || a2 != b2 || ab != bb {
+			t.Fatalf("cell %d differs between a fresh and a used lookup", idx)
+		}
 	}
 }
