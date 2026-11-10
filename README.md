@@ -206,7 +206,7 @@ It contains no code derived from Potrace or any other GPL-licensed tracer; Potra
 
 ## Author
 
-Rekha is written and maintained by **Anil Mathew** ([LinkedIn](https://www.linkedin.com/in/anilmathew)).
+Rekha is written and maintained by **Anil Mathew** ([LinkedIn](https://www.linkedin.com/in/anilmathewm/)).
 
 Package documentation: [pkg.go.dev/github.com/vexyl-ai/rekha](https://pkg.go.dev/github.com/vexyl-ai/rekha).
 
