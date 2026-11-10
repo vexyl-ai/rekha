@@ -11,7 +11,7 @@
 | Nodes | Number of path segments across all `d` attributes, counting implicit repeats (`l1 1 2 2` is two segments, `M0 0 1 1` is a move plus one line) and `Z` as one each. Comparable across tools regardless of how compactly they write path data. A proxy for editability. |
 | Bytes | SVG file size. |
 | ms | Wall time of the tracer process only. Rasterisation and scoring are not included. |
-| Note | `not installed` when the tool binary is missing, otherwise the tool's error. |
+| Note | `not installed` when the tool binary is missing, `no reference` when a reference directory has no file for the image, otherwise the tool's error. |
 
 PSNR rewards fidelity to the raster, not editability or aesthetics. A tracer that emits one path per pixel scores perfectly. Read PSNR together with Paths and Nodes, and look at the output.
 
@@ -61,6 +61,18 @@ Edit `BuiltinTools` in `internal/bench/tool.go`:
 
 Rekha is not in `BuiltinTools`; it comes from `RekhaTools(bin)` so the binary path can be configured.
 
-## Vector Magic (manual, follow-up)
+A tool with `Dir` instead of `Bin` runs nothing and scores files already in that directory (next section).
 
-Vector Magic has no CLI. Planned procedure, **not implemented yet**: upload each corpus image at vectormagic.com, download the SVG, save as `bench/manual/<image-stem>/vectormagic.svg`, then run with `-tools manual` to score the saved files alongside the automated tools.
+## Reference tools without a CLI (Vector Magic, Vectorizer.AI)
+
+Vector Magic and Vectorizer.AI are web services. The harness scores their outputs from files you download by hand into `bench/reference/vectormagic/` and `bench/reference/vectorizer-ai/`; only the READMEs there are committed, the outputs are git-ignored.
+
+Procedure, once per corpus image:
+
+1. Upload `testdata/corpus/<category>/<name>.png` at [vectormagic.com](https://vectormagic.com) or [vectorizer.ai](https://vectorizer.ai) with the service's default settings. Note the settings and the date in the directory's README.
+2. Download the SVG and save it as `bench/reference/<tool>/<name>.svg` (the image's base name, no category). With only a preview available, save the preview as `<name>.png` at the input's exact size instead.
+3. `make bench` (or `./bin/rekha-bench -tools rekha-refine,vectormagic,vectorizer-ai`).
+
+An SVG is rasterised and scored like any tool's output: PSNR, Paths, Nodes, Bytes, with `ms` 0 because nothing ran. A PNG gives PSNR only, and a PNG of the wrong size is a row error. An image with neither file gets the note `no reference`, so a partial download still produces a table.
+
+Downloads are for measurement only. Do not commit them, and do not trace them: the outputs are the services' work, not the corpus.

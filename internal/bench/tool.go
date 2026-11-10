@@ -10,13 +10,28 @@ type Tool struct {
 	Bin   string   // looked up with exec.LookPath
 	Args  []string // tokens; "{in}" and "{out}" are substituted
 	Input string   // "png" or "bmp"; bmp inputs are converted from the PNG
+	// Dir, when set, names a directory of hand-downloaded outputs instead
+	// of a binary: for corpus image <name>.png the harness scores
+	// <Dir>/<name>.svg (PSNR, paths, nodes, bytes; no time) or else
+	// <Dir>/<name>.png (PSNR only). Neither present gives the row the
+	// note "no reference". Bin, Args and Input are ignored.
+	Dir string
 }
+
+// Reference directories of the web tools (see docs/benchmark.md). Their
+// contents are git-ignored except the README.
+const (
+	VectorMagicDir  = "bench/reference/vectormagic"
+	VectorizerAIDir = "bench/reference/vectorizer-ai"
+)
 
 // BuiltinTools returns the reference tracers the harness knows about.
 func BuiltinTools() []Tool {
 	return []Tool{
 		{Name: "potrace", Bin: "potrace", Args: []string{"--svg", "-o", "{out}", "{in}"}, Input: "bmp"},
 		{Name: "vtracer", Bin: "vtracer", Args: []string{"--input", "{in}", "--output", "{out}"}, Input: "png"},
+		{Name: "vectormagic", Dir: VectorMagicDir},
+		{Name: "vectorizer-ai", Dir: VectorizerAIDir},
 	}
 }
 

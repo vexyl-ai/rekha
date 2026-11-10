@@ -22,3 +22,25 @@ func TestRekhaToolsRefine(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinToolsIncludeReferences(t *testing.T) {
+	want := map[string]string{
+		"vectormagic":   "bench/reference/vectormagic",
+		"vectorizer-ai": "bench/reference/vectorizer-ai",
+	}
+	for _, tool := range BuiltinTools() {
+		if dir, ok := want[tool.Name]; ok {
+			if tool.Dir != dir || tool.Bin != "" {
+				t.Fatalf("%s: dir %q bin %q", tool.Name, tool.Dir, tool.Bin)
+			}
+			delete(want, tool.Name)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing reference tools %v", want)
+	}
+	tools, unknown := ByName([]string{"vectormagic", "vectorizer-ai"})
+	if len(tools) != 2 || len(unknown) != 0 {
+		t.Fatalf("ByName: %v unknown %v", tools, unknown)
+	}
+}

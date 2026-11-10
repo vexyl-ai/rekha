@@ -31,7 +31,7 @@ type Result struct {
 	PSNR    float64 // NaN when Err != "" or Skipped != ""
 	Stats   metrics.SVGStats
 	Millis  int64
-	Skipped string // non-empty: "not installed"
+	Skipped string // non-empty: "not installed" or "no reference"
 	Err     string // non-empty on failure
 }
 
@@ -79,6 +79,10 @@ func (r *Runner) Run(ctx context.Context, corpusDir string, tools []Tool) ([]Res
 	}
 	installed := map[string]bool{}
 	for _, t := range tools {
+		if t.Dir != "" {
+			installed[t.Name] = true
+			continue
+		}
 		_, lookErr := exec.LookPath(t.Bin)
 		installed[t.Name] = lookErr == nil
 	}
@@ -118,6 +122,11 @@ func (r *Runner) runOne(ctx context.Context, raster func(context.Context, string
 	// Errors must not leak the scratch directory: it changes every run and
 	// would make recorded baselines non-reproducible.
 	fail := func(err error) { res.Err = strings.ReplaceAll(err.Error(), dir+string(filepath.Separator), "") }
+
+	if t.Dir != "" {
+		r.scoreReference(ctx, raster, src, imgPath, t.Dir, res)
+		return
+	}
 
 	in, err := prepareInput(dir, src, t.Input)
 	if err != nil {
@@ -163,6 +172,45 @@ func (r *Runner) runOne(ctx context.Context, raster func(context.Context, string
 		return
 	}
 	res.PSNR = psnr
+}
+
+// scoreReference scores a hand-downloaded output for imgPath found in
+// refDir: <name>.svg is rasterised and measured like a tool's output (no
+// time), <name>.png is compared directly, and neither marks the row
+// "no reference".
+func (r *Runner) scoreReference(ctx context.Context, raster func(context.Context, string, int, int) (image.Image, error), src image.Image, imgPath, refDir string, res *Result) {
+	name := strings.TrimSuffix(filepath.Base(imgPath), filepath.Ext(imgPath))
+	w, h := src.Bounds().Dx(), src.Bounds().Dy()
+	svgPath := filepath.Join(refDir, name+".svg")
+	if svg, err := os.ReadFile(svgPath); err == nil {
+		res.Stats = metrics.Stats(svg)
+		rendered, err := raster(ctx, svgPath, w, h)
+		if err != nil {
+			res.Err = err.Error()
+			return
+		}
+		res.PSNR, err = metrics.PSNR(src, rendered)
+		if err != nil {
+			res.PSNR = math.NaN()
+			res.Err = err.Error()
+		}
+		return
+	}
+	pngPath := filepath.Join(refDir, name+".png")
+	ref, err := readPNG(pngPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			res.Skipped = "no reference"
+		} else {
+			res.Err = err.Error()
+		}
+		return
+	}
+	res.PSNR, err = metrics.PSNR(src, ref)
+	if err != nil {
+		res.PSNR = math.NaN()
+		res.Err = err.Error()
+	}
 }
 
 func listPNGs(root string) ([]string, error) {

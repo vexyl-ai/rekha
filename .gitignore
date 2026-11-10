@@ -3,3 +3,5 @@
 *.wasm
 .DS_Store
 /.superpowers/
+/bench/reference/*/*
+!/bench/reference/*/README.md

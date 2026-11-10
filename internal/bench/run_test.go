@@ -250,3 +250,76 @@ func TestByNameKnowsRekhaPoster(t *testing.T) {
 		t.Fatalf("tools %v unknown %v", tools, unknown)
 	}
 }
+
+// refTool is a reference tool whose outputs live in dir (no binary).
+func refTool(dir string) Tool { return Tool{Name: "ref", Dir: dir} }
+
+func TestReferenceToolSVG(t *testing.T) {
+	corpus, ref := t.TempDir(), t.TempDir()
+	writePNG(t, filepath.Join(corpus, "a.png"), blackImage(256, 256))
+	svg, err := os.ReadFile("testdata/fixture.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(ref, "a.svg"), svg, 0o644)
+	r := newRunner(t, stubRaster(256, 256))
+	rs, err := r.Run(context.Background(), corpus, []Tool{refTool(ref)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rs[0]
+	if got.Skipped != "" || got.Err != "" || !math.IsInf(got.PSNR, 1) {
+		t.Fatalf("got %+v", got)
+	}
+	if got.Stats.Paths != 1 || got.Stats.Nodes != 5 || got.Millis != 0 {
+		t.Fatalf("stats %+v millis %d", got.Stats, got.Millis)
+	}
+}
+
+func TestReferenceToolPNG(t *testing.T) {
+	corpus, ref := t.TempDir(), t.TempDir()
+	writePNG(t, filepath.Join(corpus, "a.png"), blackImage(16, 16))
+	writePNG(t, filepath.Join(ref, "a.png"), blackImage(16, 16))
+	r := newRunner(t, func(context.Context, string, int, int) (image.Image, error) {
+		t.Fatal("rasteriser called for a PNG reference")
+		return nil, nil
+	})
+	rs, err := r.Run(context.Background(), corpus, []Tool{refTool(ref)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rs[0]
+	if got.Skipped != "" || got.Err != "" || !math.IsInf(got.PSNR, 1) {
+		t.Fatalf("got %+v", got)
+	}
+	if got.Stats.Paths != 0 || got.Stats.Nodes != 0 || got.Stats.Bytes != 0 || got.Millis != 0 {
+		t.Fatalf("stats %+v millis %d", got.Stats, got.Millis)
+	}
+}
+
+func TestReferenceToolMissing(t *testing.T) {
+	corpus := t.TempDir()
+	writePNG(t, filepath.Join(corpus, "a.png"), blackImage(8, 8))
+	r := newRunner(t, stubRaster(8, 8))
+	rs, err := r.Run(context.Background(), corpus, []Tool{refTool(t.TempDir())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs) != 1 || rs[0].Skipped != "no reference" || rs[0].Err != "" || !math.IsNaN(rs[0].PSNR) {
+		t.Fatalf("got %+v", rs)
+	}
+}
+
+func TestReferenceToolSizeMismatch(t *testing.T) {
+	corpus, ref := t.TempDir(), t.TempDir()
+	writePNG(t, filepath.Join(corpus, "a.png"), blackImage(16, 16))
+	writePNG(t, filepath.Join(ref, "a.png"), blackImage(8, 8))
+	r := newRunner(t, stubRaster(16, 16))
+	rs, err := r.Run(context.Background(), corpus, []Tool{refTool(ref)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rs[0].Err == "" || !math.IsNaN(rs[0].PSNR) {
+		t.Fatalf("got %+v", rs[0])
+	}
+}
