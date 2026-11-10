@@ -125,7 +125,6 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 	// with, so the whole pass costs at most mergeRise.
 	before := dataEnergy(b, m, img, l0)
 	budget := float64(before * (1 + mergeRise))
-	crossings := CrossingCount(b) // of b; it changes only when a merge is kept
 	for j := 0; j < b.N() && b.N() > 2; {
 		if o.fixed(j) || o.frozen(j) || o.frozen((j+b.N()-1)%b.N()) || AnglePrior(b, j) >= mergeAngle {
 			j++
@@ -140,8 +139,9 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 		}
 		refinePiece(cand, k-1, m, img, l0, co, sc)
 		refinePiece(cand, k, m, img, l0, co, sc)
-		candCrossings := CrossingCount(cand)
-		if candCrossings > crossings {
+		// Only segments j-2..j+1 of b (k-1..k+1 of cand) changed, so the
+		// loop's crossing count moves by the crossings those have.
+		if rangeCrossings(cand, k-1, k+1) > rangeCrossings(b, j-2, j+1) {
 			j++
 			continue // the merged cubic crosses the outline
 		}
@@ -156,7 +156,7 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 		// √splitFloor px over the merged segment.
 		localBudget := float64(localBefore*(1+mergeRise)) + float64(DataScale*DataScale*splitFloor)*math.Max(LengthPrior(cand, k), 1)/l0
 		if after <= budget && localAfter <= localBudget {
-			b, before, o, crossings = cand, after, co, candCrossings
+			b, before, o = cand, after, co
 			// Joint j is gone; the joint now at index k is the merged
 			// segment's start, which the next iteration examines.
 			if j > 0 {

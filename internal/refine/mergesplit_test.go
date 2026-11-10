@@ -164,3 +164,21 @@ func TestMergeDeviation(t *testing.T) {
 		t.Fatalf("S-curve merged cubic deviates only %v", d)
 	}
 }
+
+// TestRangeCrossingsCountsOnlyTheRange: the merge pass judges a candidate
+// by the crossings of the segments it changed, not the whole loop (which
+// made the pass quadratic in the outline length). The figure eight's
+// only crossing is between segments 0 and 2.
+func TestRangeCrossingsCountsOnlyTheRange(t *testing.T) {
+	b := figureEight()
+	for _, c := range []struct{ from, to, want int }{
+		{0, 0, 1}, {2, 2, 1}, {1, 1, 0}, {3, 3, 0}, {0, 3, 1}, {-1, 1, 1}, {1, 2, 1},
+	} {
+		if got := rangeCrossings(b, c.from, c.to); got != c.want {
+			t.Errorf("rangeCrossings(%d, %d) = %d, want %d", c.from, c.to, got, c.want)
+		}
+	}
+	if got := rangeCrossings(circle(32, 32, 20), 0, 3); got != 0 {
+		t.Errorf("circle: %d crossings", got)
+	}
+}

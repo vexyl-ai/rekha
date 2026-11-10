@@ -267,6 +267,16 @@ func CrossingCount(b Bezigon) int {
 	return countCrossings(pts, 0, len(pts), nil)
 }
 
+// rangeCrossings is the number of crossings of the flattened outline
+// that involve segments from..to (inclusive, wrapping; a pair inside the
+// range counts once). When only those segments differ between two
+// bezigons, their CrossingCounts differ by their rangeCrossings, at a
+// cost linear in the outline rather than quadratic.
+func rangeCrossings(b Bezigon, from, to int) int {
+	pts := b.Polyline()
+	return countCrossings(pts, Flatten*from, Flatten*(to+1), nil)
+}
+
 // countCrossings counts the crossings selfIntersection would sum.
 func countCrossings(pts []geom.Vec2, lo, hi int, cand []int) int {
 	c := 0
