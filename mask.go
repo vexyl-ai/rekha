@@ -34,11 +34,13 @@ func (m *coverageMask) At(x, y int) (cov, weight float32) {
 
 // mask builds the coverage mask for a contour of colour c (its polygon
 // poly, a hole when hole is set). Inside the polygon the coverage is 1,
-// outside 0; on boundary pixels (inside with a 4-neighbour outside, or the
-// reverse) it is the share of c the segmentation measured in that pixel
-// (Blend when c is the pixel's label, its complement when c is the
-// second colour, complemented for a hole, whose curve encloses the other
-// side; else the hard value, which already sees the hole from its side). Pixels for which band reports true (the
+// outside 0; on boundary pixels (inside with an 8-neighbour outside, or
+// the reverse: a curve leaves a little of its colour in pixels that touch
+// the other side only diagonally) it is the share of c the segmentation
+// measured in that pixel (Blend when c is the pixel's label, its
+// complement when c is the second colour, complemented for a hole, whose
+// curve encloses the other side; else the hard value, which already sees
+// the hole from its side). Pixels for which band reports true (the
 // stacked extension band) are hard 1, so the refined outline keeps
 // running along the dilated band.
 func (s *Segmentation) mask(c uint8, poly []geom.Point, hole bool, band func(p int) bool) *coverageMask {
@@ -76,7 +78,15 @@ func (s *Segmentation) mask(c uint8, poly []geom.Point, hole bool, band func(p i
 				m.cov[i] = 1
 				continue
 			}
-			boundary := at(x-1, y) != in || at(x+1, y) != in || at(x, y-1) != in || at(x, y+1) != in
+			boundary := false
+			for dy := -1; dy <= 1 && !boundary; dy++ {
+				for dx := -1; dx <= 1; dx++ {
+					if at(x+dx, y+dy) != in {
+						boundary = true
+						break
+					}
+				}
+			}
 			if !boundary {
 				m.cov[i] = hard
 				continue
@@ -84,9 +94,12 @@ func (s *Segmentation) mask(c uint8, poly []geom.Point, hole bool, band func(p i
 			// The hard value already sees the hole from its own side;
 			// only a measured share of c needs complementing. A pixel
 			// with no measure of c (fully another colour, its second
-			// colour meaningless) keeps the hard value.
+			// colour meaningless) keeps the hard value, as does a pixel
+			// of colour c on the far side of the curve: it belongs to
+			// another contour of c that touches this one diagonally.
 			share := hard
 			switch {
+			case s.Labels[p] == c && in == hole:
 			case s.Labels[p] == c:
 				share = float32(s.Blend[p]) / 255
 				if hole {

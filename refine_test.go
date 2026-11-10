@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/vexyl-ai/rekha/internal/corpus"
 	"github.com/vexyl-ai/rekha/internal/fit"
 	"github.com/vexyl-ai/rekha/internal/geom"
 	"github.com/vexyl-ai/rekha/internal/metrics"
@@ -238,5 +239,112 @@ func TestRefineThinLineStaysInBox(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// bwRefined traces a synthetic under bw with --refine and returns its
+// single path's segments.
+func bwRefined(t *testing.T, name string) []fit.Segment {
+	t.Helper()
+	_, _, _, refined, _ := tracePair(t, name, PresetBW)
+	if len(refined.Paths) != 1 || len(refined.Paths[0].Subpaths) != 1 {
+		t.Fatalf("%s: %d paths", name, len(refined.Paths))
+	}
+	return refined.Paths[0].Subpaths[0].Segs
+}
+
+// TestRoundedRectIsLinesAndArcs: the spec's primitive goal — four lines
+// and four quarter-circle cubics of one radius.
+func TestRoundedRectIsLinesAndArcs(t *testing.T) {
+	segs := bwRefined(t, "rounded-rect")
+	if len(segs) != 8 {
+		t.Fatalf("%d segments, want 8", len(segs))
+	}
+	lines, arcs := 0, 0
+	for _, sg := range segs {
+		if sg.Line {
+			lines++
+			continue
+		}
+		arcs++
+		chord := sg.P[3].Sub(sg.P[0]).Len()
+		r := chord / math.Sqrt2 // a quarter arc's chord is r·√2
+		if math.Abs(r-24) > 0.2 {
+			t.Errorf("arc radius %.3f, want 24 ± 0.2", r)
+		}
+		for _, h := range []float64{sg.P[1].Sub(sg.P[0]).Len(), sg.P[2].Sub(sg.P[3]).Len()} {
+			if ratio := h / r; math.Abs(ratio-0.5523) > 0.002 {
+				t.Errorf("handle ratio %.4f, want 0.5523 ± 0.002", ratio)
+			}
+		}
+	}
+	if lines != 4 || arcs != 4 {
+		t.Fatalf("%d lines, %d arcs, want 4 and 4", lines, arcs)
+	}
+}
+
+// TestRectRotFourNodes: the rotated rectangle comes out as its four true
+// corners.
+func TestRectRotFourNodes(t *testing.T) {
+	segs := bwRefined(t, "rect-rot")
+	if len(segs) != 4 {
+		t.Fatalf("%d segments, want 4", len(segs))
+	}
+	want := corpus.RectRotCorners()
+	for _, sg := range segs {
+		best := math.Inf(1)
+		for _, c := range want {
+			best = math.Min(best, sg.P[0].Sub(c).Len())
+		}
+		if best > 0.1 {
+			t.Errorf("node %v is %.3f px from any true corner", sg.P[0], best)
+		}
+	}
+}
+
+// TestPrimitivesNeverLoseOnGoalImages: the primitive pass costs no goal
+// image more than 0.2 dB and does not raise the node count overall.
+func TestPrimitivesNeverLoseOnGoalImages(t *testing.T) {
+	cases := []struct {
+		name   string
+		preset Preset
+	}{
+		{"circle-aa", PresetBW}, {"rounded-rect", PresetBW}, {"star-5", PresetBW},
+		{"poster-discs", PresetPoster}, {"aa-abut", PresetPoster}, {"logo-holes", PresetPoster}, {"three-layer-stack", PresetPoster},
+	}
+	nodesOn, nodesOff := 0, 0
+	for _, c := range cases {
+		img := synth(t, c.name)
+		o := PresetOptions(c.preset)
+		o.Refine.Enabled = true
+		s, err := Segment(img, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		on, err := s.Finish(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.Refine.Primitives = false
+		off, err := s.Finish(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pOn, pOff := superPSNR(t, img, s, on), superPSNR(t, img, s, off)
+		nOn, nOff := 0, 0
+		for i := range on.Paths {
+			nOn += nodeCount(on.Paths[i])
+		}
+		for i := range off.Paths {
+			nOff += nodeCount(off.Paths[i])
+		}
+		t.Logf("%s: primitives off %.2f dB %d nodes, on %.2f dB %d nodes", c.name, pOff, nOff, pOn, nOn)
+		if pOn < pOff-0.2 {
+			t.Errorf("%s: primitives lose %.2f dB", c.name, pOff-pOn)
+		}
+		nodesOn, nodesOff = nodesOn+nOn, nodesOff+nOff
+	}
+	if nodesOn > nodesOff {
+		t.Errorf("primitives raise the node count: %d → %d", nodesOff, nodesOn)
 	}
 }

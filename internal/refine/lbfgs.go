@@ -3,13 +3,13 @@ package refine
 import "math"
 
 // Optimiser constants: finite-difference step in pixels (a forward
-// difference biases the minimum by half a step, 0.005 px, which no
-// rendering shows; a smaller step amplifies last-bit noise in the energy
-// into different merge decisions on amd64 and arm64), L-BFGS memory,
-// Armijo constant and the two stopping tolerances (relative energy
-// decrease and largest coordinate move in pixels).
+// difference biases the minimum by half a step, 0.001 px here; at 0.01 px
+// the bias showed as 0.2 dB on star-5 and 0.5 dB on logo-holes in a
+// 1:1 rendering, and central differences cost 1.6× the time), L-BFGS
+// memory, Armijo constant and the two stopping tolerances (relative
+// energy decrease and largest coordinate move in pixels).
 const (
-	fdStep      = 0.01
+	fdStep      = 0.002
 	lbfgsMemory = 5
 	armijoC     = 1e-4
 	maxHalvings = 20

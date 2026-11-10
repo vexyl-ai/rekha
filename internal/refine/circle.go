@@ -35,6 +35,41 @@ func FitCircle(b Bezigon, tol float64) (centre geom.Vec2, r float64, ok bool) {
 			pts = append(pts, c.At(float64(i)/circleSamples))
 		}
 	}
+	centre, r, ok = kasa(pts)
+	if !ok {
+		return geom.Vec2{}, 0, false
+	}
+	tol = math.Min(tol, circleRelTol*r)
+	for _, p := range pts {
+		if math.Abs(p.Sub(centre).Len()-r) > tol {
+			return geom.Vec2{}, 0, false
+		}
+	}
+	return centre, r, true
+}
+
+// SnapCircle replaces b by the four-cubic circle FitCircle finds, from
+// b's first anchor and in its direction, unless the rendered data energy
+// rises beyond the primitive guard (primRise); ok reports whether it
+// did. FitCircle measures the refined outline, so its radius is
+// corrected by chordFactor to the circle the mask shows.
+func SnapCircle(b Bezigon, m Mask, img Window, tol float64) (Bezigon, bool) {
+	c, r, ok := FitCircle(b, tol)
+	if !ok {
+		return b, false
+	}
+	cand := Circle(c, r*chordFactor(2*math.Pi/(4*Flatten)), b.Pts[0], polygonArea2(b) > 0)
+	if !withinRise(b, cand, m, img, 0, b.N()-1, 0, 3) {
+		return b, false
+	}
+	return cand, true
+}
+
+// kasa is Kåsa's algebraic least-squares circle through pts.
+func kasa(pts []geom.Vec2) (centre geom.Vec2, r float64, ok bool) {
+	if len(pts) < 3 {
+		return geom.Vec2{}, 0, false
+	}
 	// Centre the data on its mean for conditioning, then solve the
 	// normal equations of x² + y² + D·x + E·y + F = 0.
 	var mean geom.Vec2
@@ -67,15 +102,7 @@ func FitCircle(b Bezigon, tol float64) (centre geom.Vec2, r float64, ok bool) {
 	if !(r2 > 0) || !finite(r2) {
 		return geom.Vec2{}, 0, false
 	}
-	r = math.Sqrt(r2)
-	centre = geom.Vec2{X: cx + mean.X, Y: cy + mean.Y}
-	tol = math.Min(tol, circleRelTol*r)
-	for _, p := range pts {
-		if math.Abs(p.Sub(centre).Len()-r) > tol {
-			return geom.Vec2{}, 0, false
-		}
-	}
-	return centre, r, true
+	return geom.Vec2{X: cx + mean.X, Y: cy + mean.Y}, math.Sqrt(r2), true
 }
 
 // Circle is the four-cubic circle of the given centre and radius, its

@@ -9,12 +9,15 @@ import (
 // Lookup maps every cell at Bits per channel to a palette entry, to the
 // runner-up and to Blend, the share of the entry's colour in the cell
 // when the colour is projected onto the sRGB segment between the two:
-// 255 means entirely the entry's colour, 128 means halfway. The two
-// candidates are the nearest entries in OKLab; between them the cell goes
-// to whichever side of the sRGB midpoint it falls, because anti-aliasing
-// mixes colours in sRGB and the OKLab midpoint of black and white is grey
-// 100, which would thin every dark shape on a light ground. Blend is the
-// soft coverage mask later phases refine boundaries with.
+// 255 means entirely the entry's colour, 128 means halfway. The entry is
+// chosen between the two nearest in OKLab by the side of their sRGB
+// midpoint the cell falls on, because anti-aliasing mixes colours in sRGB
+// and the OKLab midpoint of black and white is grey 100, which would thin
+// every dark shape on a light ground. The runner-up is then the entry
+// whose sRGB segment from the chosen one passes nearest the cell: the
+// colour the cell is mixed with, which for a navy pixel holding a little
+// red is red, though blue lies nearer navy. Blend is the soft coverage
+// mask later phases refine boundaries with.
 type Lookup struct {
 	Bits                   int
 	Nearest, Second, Blend []uint8
@@ -33,14 +36,37 @@ func NewLookup(palette []colour.OKLab, bits int) *Lookup {
 		r, g, b := CellCentre(idx, bits)
 		c := colour.FromSRGB8(r, g, b)
 		n1, n2 := nearest(palette, c)
-		t := project(srgb[n1], srgb[n2], [3]float64{float64(r), float64(g), float64(b)})
-		if t > 0.5 {
-			n1, n2, t = n2, n1, 1-t
+		p := [3]float64{float64(r), float64(g), float64(b)}
+		if project(srgb[n1], srgb[n2], p) > 0.5 {
+			n1 = n2
 		}
+		n2, t := mixPartner(srgb, n1, p)
 		l.Nearest[idx], l.Second[idx] = uint8(n1), uint8(n2)
 		l.Blend[idx] = uint8(math.Round((1 - t) * 255))
 	}
 	return l
+}
+
+// mixPartner returns the entry other than n1 whose sRGB segment from n1
+// passes nearest c, and where c falls along it (0 at n1); n1 itself with
+// 0 when there is no other entry.
+func mixPartner(srgb [][3]float64, n1 int, c [3]float64) (int, float64) {
+	best, bestT, bestD := n1, 0.0, math.Inf(1)
+	for n2 := range srgb {
+		if n2 == n1 {
+			continue
+		}
+		t := project(srgb[n1], srgb[n2], c)
+		d := 0.0
+		for i := range c {
+			r := c[i] - (srgb[n1][i] + float64(t*(srgb[n2][i]-srgb[n1][i])))
+			d += float64(r * r)
+		}
+		if d < bestD {
+			best, bestT, bestD = n2, t, d
+		}
+	}
+	return best, bestT
 }
 
 // project returns where c falls along the segment p1→p2, 0 at p1 and 1 at

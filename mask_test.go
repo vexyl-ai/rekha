@@ -198,3 +198,32 @@ func TestMaskHoleEqualsEnclosedOuter(t *testing.T) {
 		}
 	}
 }
+
+// TestMaskSoftOnDiagonalBoundary: a pixel that holds a little of the
+// contour's colour but touches the other label only diagonally gets its
+// measured share, not the hard value. On logo-holes the red ring's
+// top-left corner covers 0.065 of pixel (54,65), whose 4-neighbours are
+// all navy; a hard 0 there biases a fitted arc inward.
+func TestMaskSoftOnDiagonalBoundary(t *testing.T) {
+	img := synth(t, "logo-holes")
+	o := PresetOptions(PresetPoster)
+	s, err := Segment(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	red := paletteIndex(t, s, 220, 30, 30)
+	var outer *contour.Contour
+	for _, l := range s.buildLayers(o) {
+		if l.colour == int(red) && len(l.shape.Holes) == 1 {
+			outer = &l.shape.Outer
+		}
+	}
+	if outer == nil {
+		t.Fatal("no red shape with one hole")
+	}
+	m := s.mask(red, outer.Pts, false, nil)
+	want := float64(img.NRGBAAt(54, 65).R-20) / (219 - 20)
+	if cov, _ := m.At(54, 65); math.Abs(float64(cov)-want) > 0.02 {
+		t.Fatalf("mask at (54,65) = %v, want the measured share %.3f", cov, want)
+	}
+}

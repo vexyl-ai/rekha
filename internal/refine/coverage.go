@@ -20,6 +20,38 @@ func Coverage(b Bezigon, win Window, out []float32) {
 	Resolve(out, win, out)
 }
 
+// The flattening of a cubic for judging a primitive: fineChordsPerPx
+// chords per pixel of control polygon, at least Flatten and at most
+// fineChordsMax, so a 90° arc of any radius lies within 0.002 px of its
+// polygon.
+const (
+	fineChordsPerPx = 2
+	fineChordsMax   = 2048
+)
+
+// CoverageFine is Coverage with each cubic cut into chords by its length
+// (see fineChordsPerPx), for judging a candidate curve by what it renders
+// rather than by the polygon the optimiser moves; the chord count steps
+// with the control polygon, so it is not continuous in the control
+// points.
+func CoverageFine(b Bezigon, win Window, out []float32) {
+	for i := range out[:win.W*win.H] {
+		out[i] = 0
+	}
+	n := b.N()
+	pts := make([]geom.Vec2, 0, n*Flatten)
+	for j := 0; j < n; j++ {
+		c := b.Segment(j)
+		l := c[1].Sub(c[0]).Len() + c[2].Sub(c[1]).Len() + c[3].Sub(c[2]).Len()
+		k := max(Flatten, min(fineChordsMax, int(math.Ceil(fineChordsPerPx*l))))
+		for i := 0; i < k; i++ {
+			pts = append(pts, c.At(float64(i)/float64(k)))
+		}
+	}
+	AccumulateEdges(pts, true, win, out)
+	Resolve(out, win, out)
+}
+
 // AccumulateEdges adds the signed area and cover of a polyline's edges to
 // acc (len W*H). After Resolve, pixel (x, y) holds the signed area of the
 // polygon to the left of x+1 within that row, which for a simple closed

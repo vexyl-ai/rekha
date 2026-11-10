@@ -83,9 +83,19 @@ func refineConstrained(segs []fit.Segment, fixed, frozen []bool, m refine.Mask, 
 	if o.Refine.MergeSplit {
 		b, ro = refine.MergeSplitTracked(b, m, img, ro)
 	}
-	if o.Refine.Primitives && !anyTrue(fixed) && !anyTrue(frozen) {
-		if c, r, ok := refine.FitCircle(b, 0.5*o.FitTolerance); ok {
-			b = refine.Circle(c, r, b.Pts[0], signedArea2(b.Polyline()) > 0)
+	if o.Refine.Primitives {
+		// Primitives judge what is emitted: a straight edge leaves the
+		// refinement as a cubic bowing within lineTol of its chord.
+		b = b.Straightened(lineTol)
+		tol := 0.5 * o.FitTolerance
+		free := !anyTrue(ro.Fixed) && !anyTrue(ro.Frozen)
+		if free {
+			b, _ = refine.SnapCircle(b, m, img, tol)
+		}
+		b, ro = refine.FitArcs(b, m, img, tol, ro)
+		b, ro = refine.CommonRadius(b, m, img, tol, ro)
+		if free {
+			b, _ = refine.FitRectangle(b, m, img, tol)
 		}
 	}
 	return b.Segments(lineTol), ro.Fixed
@@ -98,16 +108,6 @@ func anyTrue(v []bool) bool {
 		}
 	}
 	return false
-}
-
-// signedArea2 is twice the shoelace area of a closed polygon: positive
-// for a counter-clockwise loop in y-down coordinates.
-func signedArea2(pts []geom.Vec2) float64 {
-	a := 0.0
-	for i := range pts {
-		a += geom.Cross(pts[i], pts[(i+1)%len(pts)])
-	}
-	return a
 }
 
 func toVec(pts []geom.Point) []geom.Vec2 {

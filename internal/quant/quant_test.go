@@ -244,3 +244,21 @@ func TestWuIgnoresNoiseTail(t *testing.T) {
 		t.Fatalf("got %d entries %v, want black, white and at most an edge band", len(pal), pal)
 	}
 }
+
+// TestLookupSecondIsMixPartner: the runner-up is the entry the cell is
+// mixed with, not the second nearest. A pixel that is navy with a little
+// red (an anti-aliased red edge on navy) lies on the navy–red segment;
+// blue is nearer to navy than red is, but explains none of the pixel.
+func TestLookupSecondIsMixPartner(t *testing.T) {
+	navy, red, blue := [3]uint8{20, 30, 60}, [3]uint8{219, 30, 30}, [3]uint8{30, 60, 220}
+	pal := []colour.OKLab{colour.FromSRGB8(navy[0], navy[1], navy[2]), colour.FromSRGB8(red[0], red[1], red[2]), colour.FromSRGB8(blue[0], blue[1], blue[2])}
+	l := NewLookup(pal, 6)
+	c := mixRGB(navy, red, 0.065)
+	i := CellIndex(c[0], c[1], c[2], 6)
+	if l.Nearest[i] != 0 || l.Second[i] != 1 {
+		t.Fatalf("navy with 6.5 %% red: nearest %d second %d, want 0 and 1", l.Nearest[i], l.Second[i])
+	}
+	if b := l.Blend[i]; b < 230 || b > 245 {
+		t.Fatalf("blend %d, want about 238", b)
+	}
+}

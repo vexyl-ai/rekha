@@ -1,7 +1,7 @@
 // Package rasttest is a test-only nonzero-winding scanline filler, the
 // rule SVG applies by default. It samples pixel centres, which is exact
 // for the pixel-mode output whose vertices all lie on the lattice; cubics
-// are flattened into flatten chords.
+// are flattened into chords about a pixel long.
 package rasttest
 
 import (
@@ -82,18 +82,27 @@ func scan(w, h int, p svg.Path, set func(x, y int)) {
 	}
 }
 
-const flatten = 16
+// A cubic is flattened into at least minFlatten chords and about one
+// per pixel of its control polygon, up to maxFlatten: sixteen chords on
+// a quarter arc of radius 96 px (a 24-px corner rendered at 4×) sit
+// 0.1 px inside it, which the PSNRs the refined goldens reach can see.
+const (
+	minFlatten = 16
+	maxFlatten = 1024
+)
 
-// chords returns the segment as straight pieces: one for a line, flatten
-// for a cubic.
+// chords returns the segment as straight pieces: one for a line, the
+// flattening above for a cubic.
 func chords(s fit.Segment) [][2]geom.Vec2 {
 	if s.Line {
 		return [][2]geom.Vec2{{s.P[0], s.P[3]}}
 	}
-	out := make([][2]geom.Vec2, 0, flatten)
+	l := s.P[1].Sub(s.P[0]).Len() + s.P[2].Sub(s.P[1]).Len() + s.P[3].Sub(s.P[2]).Len()
+	n := max(minFlatten, min(maxFlatten, int(l)+1))
+	out := make([][2]geom.Vec2, 0, n)
 	prev := s.P.At(0)
-	for i := 1; i <= flatten; i++ {
-		next := s.P.At(float64(i) / flatten)
+	for i := 1; i <= n; i++ {
+		next := s.P.At(float64(i) / float64(n))
 		out = append(out, [2]geom.Vec2{prev, next})
 		prev = next
 	}

@@ -78,3 +78,25 @@ func TestPaintOrderAndHoles(t *testing.T) {
 		t.Fatalf("got\n%v\nwant\n%v", got, want)
 	}
 }
+
+// TestFillLargeCircleArea: a big four-cubic circle fills within 0.05 % of
+// its area (pixel-centre sampling is good to about 0.03 %). Sixteen
+// chords per cubic would lose 0.13 % to the sagittas, which at the PSNRs
+// the refined goldens reach is half a decibel.
+func TestFillLargeCircleArea(t *testing.T) {
+	const r, k = 400.0, 0.5523
+	c := geom.Vec2{X: 512, Y: 512}
+	v := func(x, y float64) geom.Vec2 { return geom.Vec2{X: c.X + x, Y: c.Y + y} }
+	cubic := func(a, b, cc, d geom.Vec2) fit.Segment { return fit.Segment{P: fit.Cubic{a, b, cc, d}} }
+	sp := svg.Subpath{Segs: []fit.Segment{
+		cubic(v(r, 0), v(r, k*r), v(k*r, r), v(0, r)),
+		cubic(v(0, r), v(-k*r, r), v(-r, k*r), v(-r, 0)),
+		cubic(v(-r, 0), v(-r, -k*r), v(-k*r, -r), v(0, -r)),
+		cubic(v(0, -r), v(k*r, -r), v(r, -k*r), v(r, 0)),
+	}}
+	b := Fill(1024, 1024, []svg.Path{{Subpaths: []svg.Subpath{sp}}})
+	want := 3.141592653589793 * r * r
+	if got := float64(b.Count()); got < want*(1-5e-4) || got > want*(1+5e-4) {
+		t.Fatalf("area %.0f, want %.0f within 0.05 %%", got, want)
+	}
+}

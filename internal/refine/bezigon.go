@@ -61,6 +61,22 @@ func (b Bezigon) Segments(lineTol float64) []fit.Segment {
 	return out
 }
 
+// Straightened is b with every segment Segments(lineTol) would emit as
+// a line replaced by its chord (handles at the thirds), so that what is
+// judged is what is emitted: the refinement leaves a straight edge as a
+// cubic that bows within lineTol of its chord.
+func (b Bezigon) Straightened(lineTol float64) Bezigon {
+	out := Bezigon{Pts: append([]geom.Vec2(nil), b.Pts...)}
+	for j := 0; j < b.N(); j++ {
+		if c := b.Segment(j); straightCubic(c, lineTol) {
+			d := c[3].Sub(c[0])
+			out.Pts[3*j+1] = c[0].Add(d.Scale(1.0 / 3))
+			out.Pts[3*j+2] = c[0].Add(d.Scale(2.0 / 3))
+		}
+	}
+	return out
+}
+
 func straightCubic(c fit.Cubic, tol float64) bool {
 	chord := c[3].Sub(c[0])
 	l2 := chord.LenSq()
