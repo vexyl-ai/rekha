@@ -55,6 +55,12 @@ function readOptions() {
 function setStatus(text, kind) {
   status.textContent = text;
   status.className = kind || '';
+  // While working, the same text sits in an overlay in the middle of the
+  // page: on a big image the bottom bar is off screen or overlooked.
+  const busy = $('busy');
+  busy.hidden = kind !== 'working';
+  if (!busy.hidden) $('busyText').textContent = text;
+  document.body.setAttribute('aria-busy', busy.hidden ? 'false' : 'true');
 }
 
 function startWorker() {
@@ -207,7 +213,9 @@ $('preset').addEventListener('change', () => { applyPreset($('preset').value); r
 for (const id of ['mode', 'hierarchical', 'maxColors', 'colorTolerance', 'threshold', 'thresholdAuto', 'filterSpeckle', 'gradients', 'gradientTolerance', 'refine', 'refinePasses', 'cutoutStroke', 'pathPrecision']) {
   $(id).addEventListener('change', () => run());
 }
-$('cancel').addEventListener('click', () => { startWorker(); setStatus('Cancelled. Change a setting to trace again.'); });
+function cancel() { startWorker(); setStatus('Cancelled. Change a setting to trace again.'); }
+$('cancel').addEventListener('click', cancel);
+$('busyCancel').addEventListener('click', cancel);
 $('download').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = svgURL; a.download = 'rekha.svg'; a.click();

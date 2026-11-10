@@ -68,6 +68,14 @@
 
 <footer class="status"><span id="status">Loading the tracer…</span></footer>
 
+<div class="busy" id="busy" hidden role="alert" aria-live="assertive">
+  <div class="card">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="busyText">Working…</p>
+    <button id="busyCancel" class="quiet">Cancel</button>
+  </div>
+</div>
+
 <script src="protocol.js"></script>
 <script type="module" src="app.js"></script>
 </body>
