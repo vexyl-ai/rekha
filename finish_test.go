@@ -342,6 +342,33 @@ func TestWhiteContentAtEdgeKept(t *testing.T) {
 	}
 }
 
+// A transparent background is the page however little of the canvas it
+// covers: content that fills most of the frame and reaches an edge leaves
+// the white a minority at depth 0, and it is still dropped.
+func TestTransparentPageDroppedWhenMinority(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	navy := color.NRGBA{20, 30, 60, 255}
+	for y := 4; y < 60; y++ {
+		for x := 0; x < 52; x++ { // 56×52 of 64×64: 71 %, touching the left edge
+			img.SetNRGBA(x, y, navy)
+		}
+	}
+	for _, h := range []Hierarchical{HierarchicalStacked, HierarchicalCutout} {
+		o := PresetOptions(PresetPoster)
+		o.Hierarchical = h
+		o.Mode = ModePixel
+		r, err := Trace(img, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range r.Paths {
+			if p.Fill == "#ffffff" {
+				t.Errorf("%s: transparent background emitted as a white path (%d paths)", h, len(r.Paths))
+			}
+		}
+	}
+}
+
 // Colour paths carry a stroke in their own colour so abutting shapes
 // overlap by half its width, in cutout and stacked output alike; the bw
 // preset never does.

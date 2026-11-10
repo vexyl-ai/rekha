@@ -369,8 +369,9 @@ func (s *Segmentation) buildLayersMap(o Options) ([]layer, *planar.Map) {
 	// Drop the white page: depth-0 shapes sit straight on the background,
 	// which renders white, so leaving out the white ones changes nothing
 	// and keeps a transparent input transparent. The page is the near-white
-	// colour holding at least half the depth-0 area; white that is a
-	// minority at depth 0 is content on a darker page.
+	// colour holding at least half the depth-0 area, or one that was
+	// mostly transparent in the input however little it holds; white that
+	// is an opaque minority at depth 0 is content on a darker page.
 	area0 := make([]int64, len(s.Palette))
 	var total0 int64
 	for _, l := range layers {
@@ -381,7 +382,7 @@ func (s *Segmentation) buildLayersMap(o Options) ([]layer, *planar.Map) {
 	}
 	omit := make([]bool, len(layers))
 	for i, l := range layers {
-		omit[i] = l.depth == 0 && s.nearWhite(l.colour) && 2*area0[l.colour] >= total0 && !s.hasRamp(l.colour)
+		omit[i] = l.depth == 0 && s.nearWhite(l.colour) && (2*area0[l.colour] >= total0 || s.mostlyClear(l.colour)) && !s.hasRamp(l.colour)
 		layers[i].omit = omit[i]
 	}
 	if stacked {

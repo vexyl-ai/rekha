@@ -28,6 +28,10 @@ type Segmentation struct {
 	// palette index: the linear ramp that fills it, or nil for a flat
 	// colour. Nil altogether when no option asked for ramps.
 	Ramps []*gradient.Ramp
+	// pixels and clear count, per palette index, the pixels of that
+	// colour and how many of them were fully transparent in the input;
+	// nil when the input had no transparent pixel.
+	pixels, clear []int64
 }
 
 // hasRamp reports whether palette index c is filled by a gradient.
@@ -47,7 +51,31 @@ func Segment(img image.Image, o Options) (*Segmentation, error) {
 		o.report("label")
 		return segmentBW(img, o), nil
 	}
-	return segmentColour(img, o), nil
+	s := segmentColour(img, o)
+	s.countClear(bitmap.Transparent(img))
+	return s, nil
+}
+
+// countClear tallies, per palette index, the pixels and how many of them
+// clear marks as transparent; a nil clear leaves both nil.
+func (s *Segmentation) countClear(clear []bool) {
+	if clear == nil {
+		return
+	}
+	s.pixels, s.clear = make([]int64, len(s.Palette)), make([]int64, len(s.Palette))
+	for p, l := range s.Labels {
+		s.pixels[l]++
+		if clear[p] {
+			s.clear[l]++
+		}
+	}
+}
+
+// mostlyClear reports whether at least half the pixels of palette index
+// c were transparent in the input: the page, whatever its share of the
+// canvas.
+func (s *Segmentation) mostlyClear(c int) bool {
+	return s.clear != nil && 2*s.clear[c] >= s.pixels[c]
 }
 
 func segmentBW(img image.Image, o Options) *Segmentation {
