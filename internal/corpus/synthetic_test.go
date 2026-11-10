@@ -27,8 +27,8 @@ func TestAllNamesUnique(t *testing.T) {
 		}
 		seen[s.Name] = true
 	}
-	if len(seen) != 16 {
-		t.Fatalf("got %d synthetics, want 16", len(seen))
+	if len(seen) != 17 {
+		t.Fatalf("got %d synthetics, want 17", len(seen))
 	}
 }
 
@@ -133,5 +133,23 @@ func TestRectRotCorners(t *testing.T) {
 	}
 	if d := cs[0].Sub(cs[1]).Len(); math.Abs(d-120) > 1e-9 && math.Abs(d-80) > 1e-9 {
 		t.Errorf("side %v, want 120 or 80", d)
+	}
+}
+
+func TestGradientShapesPixels(t *testing.T) {
+	img := Render(find(t, "gradient-shapes"))
+	// The disc ramps from blue at its top to yellow at its bottom.
+	top, bottom := img.NRGBAAt(72, 76), img.NRGBAAt(72, 180)
+	if top.B < 180 || bottom.R < 200 {
+		t.Errorf("disc ramp: top %v bottom %v", top, bottom)
+	}
+	if c := img.NRGBAAt(192, 186); c != red {
+		t.Errorf("flat red: %v", c)
+	}
+	if c := img.NRGBAAt(150, 134); c.R > 80 {
+		t.Errorf("grey strip left should be dark: %v", c)
+	}
+	if c := img.NRGBAAt(236, 134); c.R < 180 {
+		t.Errorf("grey strip right should be light: %v", c)
 	}
 }

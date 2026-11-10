@@ -68,6 +68,16 @@ func All() []Synthetic {
 				}
 			}
 		}},
+		{Name: "gradient-shapes", Draw: func(img *image.NRGBA) {
+			// Linear ramps (sRGB per channel) inside anti-aliased shapes,
+			// and a flat rectangle abutting a ramp strip: the gradient
+			// option must merge the bands of each ramp and keep the
+			// hard edge.
+			ramp(img, disc(72, 128, 56), 72, 72, 72, 184, blue, yellow)
+			ramp(img, roundedRect(144, 24, 240, 120, 12), 144, 24, 240, 120, red, white)
+			ramp(img, rect(144, 128, 240, 140), 144, 134, 240, 134, color.NRGBA{40, 40, 40, 255}, color.NRGBA{200, 200, 200, 255})
+			fill(img, rect(144, 140, 240, 232), red, 4)
+		}},
 		{Name: "poster-discs", Draw: func(img *image.NRGBA) {
 			// Five overlapping anti-aliased discs in five flat colours.
 			cols := []color.NRGBA{red, blue, green, yellow, purple}
@@ -247,6 +257,48 @@ func fillBox(img *image.NRGBA, inside func(x, y float64) bool, c color.NRGBA, sa
 				continue
 			}
 			cov := float64(hit) / total
+			o := img.PixOffset(px, py)
+			img.Pix[o] = mix(img.Pix[o], c.R, cov)
+			img.Pix[o+1] = mix(img.Pix[o+1], c.G, cov)
+			img.Pix[o+2] = mix(img.Pix[o+2], c.B, cov)
+		}
+	}
+}
+
+// ramp paints inside with the colour interpolated per sRGB channel from
+// c0 at (x0,y0) to c1 at (x1,y1) along that axis (clamped at the ends),
+// anti-aliased with four samples per pixel side like fill.
+func ramp(img *image.NRGBA, inside func(x, y float64) bool, x0, y0, x1, y1 float64, c0, c1 color.NRGBA) {
+	dx, dy := x1-x0, y1-y0
+	l2 := dx*dx + dy*dy
+	at := func(x, y float64) color.NRGBA {
+		t := ((x-x0)*dx + (y-y0)*dy) / l2
+		t = math.Max(0, math.Min(1, t))
+		return color.NRGBA{
+			R: clamp(int(math.Round(float64(c0.R)*(1-t) + float64(c1.R)*t))),
+			G: clamp(int(math.Round(float64(c0.G)*(1-t) + float64(c1.G)*t))),
+			B: clamp(int(math.Round(float64(c0.B)*(1-t) + float64(c1.B)*t))),
+			A: 255,
+		}
+	}
+	const samples = 4
+	step := 1 / float64(samples)
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	for py := 0; py < h; py++ {
+		for px := 0; px < w; px++ {
+			hit := 0
+			for sy := 0; sy < samples; sy++ {
+				for sx := 0; sx < samples; sx++ {
+					if inside(float64(px)+(float64(sx)+0.5)*step, float64(py)+(float64(sy)+0.5)*step) {
+						hit++
+					}
+				}
+			}
+			if hit == 0 {
+				continue
+			}
+			cov := float64(hit) / (samples * samples)
+			c := at(float64(px)+0.5, float64(py)+0.5)
 			o := img.PixOffset(px, py)
 			img.Pix[o] = mix(img.Pix[o], c.R, cov)
 			img.Pix[o+1] = mix(img.Pix[o+1], c.G, cov)
