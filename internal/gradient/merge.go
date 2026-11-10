@@ -76,8 +76,14 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		}
 		if interior(labels, w, h, p) {
 			c.m.add(float64(p%w)+0.5, float64(p/w)+0.5, colourOf(rgb, p))
+			// The tensor sees gentle changes only: a step of tol or more
+			// per pixel is an edge (an outline's anti-aliasing, a band
+			// boundary's ringing), not a ramp's direction.
 			if x, y := p%w, p/w; x > 0 && x < w-1 && y > 0 && y < h-1 {
-				c.m.addGrad(half(colourOf(rgb, p+1), colourOf(rgb, p-1)), half(colourOf(rgb, p+w), colourOf(rgb, p-w)))
+				gx, gy := half(colourOf(rgb, p+1), colourOf(rgb, p-1)), half(colourOf(rgb, p+w), colourOf(rgb, p-w))
+				if float64(dist(gx, [3]float64{})*dist(gx, [3]float64{}))+float64(dist(gy, [3]float64{})*dist(gy, [3]float64{})) <= float64(tol*tol) {
+					c.m.addGrad(gx, gy)
+				}
 			}
 		}
 	}

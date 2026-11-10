@@ -393,3 +393,31 @@ func TestMergeLonePocketStaysFlat(t *testing.T) {
 		t.Errorf("N %d ramps %+v", r.N, r.Ramps)
 	}
 }
+
+func TestMergeDirectionIgnoresOutline(t *testing.T) {
+	// A narrow vertical ramp (two bands along y) on a white page: the
+	// pixels beside its outline see a huge horizontal step, which must
+	// not turn the ramp's direction sideways and stop the bands joining.
+	const w, h = 64, 256
+	rgb := make([]uint8, 3*w*h)
+	labels := make([]uint8, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			p := y*w + x
+			v := uint8(255)
+			labels[p] = 2
+			if x >= 24 && x < 40 {
+				v = uint8(40 + y*60/(h-1))
+				labels[p] = uint8(y * 2 / h)
+				if x == 24 || x == 39 {
+					v = uint8((int(v) + 255) / 2) // anti-aliased outline column
+				}
+			}
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = v, v, v
+		}
+	}
+	r := Merge(rgb, labels, w, h, 3, 0.03)
+	if r.N != 2 || r.Ramps[1] == nil {
+		t.Errorf("N %d ramps %v", r.N, r.Ramps)
+	}
+}
