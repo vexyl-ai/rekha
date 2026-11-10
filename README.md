@@ -1,10 +1,20 @@
+<p align="center"><img src="BrandLogo/Rekha-logo.svg" width="260" alt="Rekha: fast vector engine, raster to SVG"></p>
+
 # Rekha
 
 **Raster to clean SVG. Pure Go. Your image never leaves your machine.**
 
 Rekha traces raster images (PNG, JPEG, GIF) into SVG: a library, a CLI and a WebAssembly build from one codebase, with no cgo and no dependencies beyond `golang.org/x/image`. Clean-room, Apache-2.0.
 
-**Status:** Phase 4 (open half): the tracer runs in the browser as WebAssembly behind a worker-backed demo page (`make serve`, `docs/wasm.md`) and behind a capped HTTP API (`cmd/rekha-serve`, `docs/server.md`). Tracing itself is at Phase 3b: bilevel and colour (`bw`, `poster`, `photo` presets) with optional curve refinement (`--refine`) that recognises circles, arcs, shared corner radii and rectangles and shares every boundary between cutout shapes. Accounts, billing and the polished GUI are the private half; see `design/roadmap.md`. Baselines: `bench/results/2026-11-10-phase3b.md` (quality), `bench/results/2026-11-10-phase4-wasm.md` (wasm latency).
+**Status:** Phase 4 (open half): the tracer runs in the browser as WebAssembly behind a worker-backed demo page (`make serve`, `docs/wasm.md`) and behind a capped HTTP API (`cmd/rekha-serve`, `docs/server.md`). Tracing itself is at Phase 3b plus gradient fills: bilevel and colour (`bw`, `poster`, `photo` presets), optional curve refinement (`--refine`) that recognises circles, arcs, shared corner radii and rectangles and shares every boundary between cutout shapes, and `--gradients`, which turns smooth shading into multi-stop `<linearGradient>` fills. Accounts, billing and the polished GUI are the private half; see `design/roadmap.md`. Baselines: `bench/results/2026-11-10-phase3b.md` (quality), `bench/results/2026-11-10-gradients.md` (gradient fills), `bench/results/2026-11-10-slivers.md` (anti-aliasing cleanup), `bench/results/2026-11-10-phase4-wasm.md` (wasm latency).
+
+## New in November 2026
+
+- **Gradient fills.** `--gradients` merges adjacent colour bands whose pixels follow one ramp into a single region filled by a `<linearGradient>` with as many stops as the colour needs (bends included), joins ramps across curved feathers, and lets specks inside a ramp take the ramp's colour. A 16-megapixel illustration goes from 155 flat paths at 36.7 dB to 82 paths at 39.8 dB, 60 % fewer bytes. Flat art is byte-identical with the option on.
+- **Clean edges between colours.** Anti-aliased pixels between two colours used to quantise to whatever third colour was nearest and survive as dashed slivers along every edge; the cleanup now judges a thin component by its own pixels against the mixture of its neighbours. A fifth to a third fewer paths on busy posters at the same PSNR.
+- **Seams sealed in every layer mode.** `--stroke px` strokes each shape in its own fill, in stacked output too (it was cutout-only as `--cutout-stroke`, still accepted).
+- **Progress you can watch.** `Options.Progress` reports each stage (quantise, label, ramps, outlines, nest, edges, refine, curves) with a count where there is one; the wasm API takes a callback and the demo shows a bar.
+- **A demo you can inspect with.** The page keeps to the viewport, and the canvas zooms and pans (ctrl/⌘ + wheel or pinch, drag, double-click, a toolbar and the keys `+` `-` `0` `1`), rasterising the SVG at the zoom shown so detail is real. Source and SVG are compared with a wipe; the trace runs in a worker with a cancel button and never leaves the machine.
 
 ## Why Rekha
 
@@ -31,6 +41,7 @@ bin/rekha --preset photo --color-tolerance 0.03 photo.jpg
 bin/rekha --preset poster --palette "#000000,#ff0000,#ffffff" logo.png
 bin/rekha --refine logo.png                # optimise the curves against the anti-aliasing
 bin/rekha --preset photo --gradients art.png   # smooth shading as <linearGradient> fills instead of bands
+bin/rekha --preset poster --stroke 0.5 logo.png # seal hairline seams between shapes when viewed enlarged
 make serve                                 # build the wasm and open the browser demo on :8080
 go run ./cmd/rekha-serve                   # HTTP API only; curl -F image=@logo.png -F preset=poster localhost:8080/v1/trace
 ```
@@ -52,6 +63,9 @@ It contains no code derived from Potrace or any other GPL-licensed tracer. Potra
 - `design/roadmap.md`: phases 0 to 6, open-core product split, legal checklist.
 - `design/refine-bezigon-optimisation.md`: design notes for the refinement stage.
 - `docs/benchmark.md`: how output quality is measured against reference tools (`make bench`).
+- `docs/wasm.md`: the WebAssembly API, the worker protocol, progress callbacks and the demo page.
+- `docs/server.md`: the HTTP API and its caps.
+- `docs/superpowers/specs/2026-11-10-gradients-design.md`: how gradient fills are found, joined and cleaned.
 - `bench/results/`: recorded baselines.
 
 ## Licence
