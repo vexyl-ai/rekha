@@ -95,12 +95,56 @@ func writeNums(b *strings.Builder, prec int, nums ...float64) {
 	}
 }
 
-// Write emits a complete SVG document.
+// Stop is one colour of a gradient at an offset in 0..1.
+type Stop struct {
+	Offset float64
+	Colour string // "#rrggbb"
+}
+
+// LinearGradient is a <linearGradient> in user space (pixel coordinates)
+// from (X1,Y1) to (X2,Y2); paths reference it as "url(#ID)".
+type LinearGradient struct {
+	ID             string
+	X1, Y1, X2, Y2 float64
+	Stops          []Stop
+}
+
+// Document is a complete SVG: its size, the gradients its paths use and
+// the paths in paint order.
+type Document struct {
+	Width, Height int
+	Gradients     []LinearGradient
+	Paths         []Path
+}
+
+// Write emits a complete SVG document with no gradients.
 func Write(w io.Writer, width, height int, paths []Path, prec int) error {
-	if _, err := fmt.Fprintf(w, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\">\n", width, height, width, height); err != nil {
+	return WriteDocument(w, Document{Width: width, Height: height, Paths: paths}, prec)
+}
+
+// WriteDocument emits d: the gradients, when any, as one <defs> line
+// before the paths. Offsets are printed with three decimals.
+func WriteDocument(w io.Writer, d Document, prec int) error {
+	if _, err := fmt.Fprintf(w, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\">\n", d.Width, d.Height, d.Width, d.Height); err != nil {
 		return err
 	}
-	for _, p := range paths {
+	if len(d.Gradients) > 0 {
+		var b strings.Builder
+		b.WriteString("<defs>")
+		for _, g := range d.Gradients {
+			fmt.Fprintf(&b, "<linearGradient id=\"%s\" gradientUnits=\"userSpaceOnUse\" x1=\"%s\" y1=\"%s\" x2=\"%s\" y2=\"%s\">",
+				g.ID, FormatNum(g.X1, prec), FormatNum(g.Y1, prec), FormatNum(g.X2, prec), FormatNum(g.Y2, prec))
+			for _, s := range g.Stops {
+				fmt.Fprintf(&b, "<stop offset=\"%s\" stop-color=\"%s\"/>", FormatNum(s.Offset, 3), s.Colour)
+			}
+			b.WriteString("</linearGradient>")
+		}
+		b.WriteString("</defs>\n")
+		if _, err := io.WriteString(w, b.String()); err != nil {
+			return err
+		}
+	}
+	for _, p := range d.Paths {
 		d := PathData(p, prec)
 		if d == "" {
 			continue

@@ -96,3 +96,36 @@ func TestWriteStrokeAttributes(t *testing.T) {
 		t.Fatalf("got:\n%s\nwant:\n%s", buf.String(), want)
 	}
 }
+
+func square4() []fit.Segment {
+	return []fit.Segment{
+		ln(geom.Vec2{X: 0, Y: 0}, geom.Vec2{X: 4, Y: 0}),
+		ln(geom.Vec2{X: 4, Y: 0}, geom.Vec2{X: 4, Y: 4}),
+		ln(geom.Vec2{X: 4, Y: 4}, geom.Vec2{X: 0, Y: 4}),
+		ln(geom.Vec2{X: 0, Y: 4}, geom.Vec2{X: 0, Y: 0}),
+	}
+}
+
+func TestWriteDocumentDefs(t *testing.T) {
+	d := Document{Width: 4, Height: 4,
+		Gradients: []LinearGradient{{ID: "g0", X1: 0.5, Y1: 1, X2: 3.5, Y2: 1, Stops: []Stop{{Offset: 0, Colour: "#000000"}, {Offset: 1, Colour: "#ffffff"}}}},
+		Paths:     []Path{{Fill: "url(#g0)", Subpaths: []Subpath{{Segs: square4()}}}}}
+	var b bytes.Buffer
+	if err := WriteDocument(&b, d, 2); err != nil {
+		t.Fatal(err)
+	}
+	want := "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\" viewBox=\"0 0 4 4\">\n<defs><linearGradient id=\"g0\" gradientUnits=\"userSpaceOnUse\" x1=\"0.5\" y1=\"1\" x2=\"3.5\" y2=\"1\"><stop offset=\"0\" stop-color=\"#000000\"/><stop offset=\"1\" stop-color=\"#ffffff\"/></linearGradient></defs>\n<path fill=\"url(#g0)\" d=\"M0 0H4V4H0Z\"/>\n</svg>\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+}
+
+func TestWriteDocumentNoDefsMatchesWrite(t *testing.T) {
+	paths := []Path{{Fill: "#000000", Subpaths: []Subpath{{Segs: square4()}}}}
+	var a, b bytes.Buffer
+	_ = Write(&a, 4, 4, paths, 2)
+	_ = WriteDocument(&b, Document{Width: 4, Height: 4, Paths: paths}, 2)
+	if a.String() != b.String() {
+		t.Errorf("WriteDocument without gradients differs from Write")
+	}
+}
