@@ -8,15 +8,19 @@ import (
 	"image/color"
 	"math"
 	"math/rand/v2"
+
+	"github.com/vexyl-ai/rekha/internal/geom"
 )
 
-// Size is the side length of every synthetic image.
+// Size is the default side length of a synthetic image.
 const Size = 256
 
-// Synthetic is one generated test image.
+// Synthetic is one generated test image. Size is its side length; 0
+// means the default.
 type Synthetic struct {
 	Name string
 	Draw func(*image.NRGBA)
+	Size int
 }
 
 var (
@@ -33,30 +37,30 @@ var (
 // All returns the fixed list of synthetics, in a fixed order.
 func All() []Synthetic {
 	return []Synthetic{
-		{"circle-aa", func(img *image.NRGBA) { fill(img, disc(128, 128, 96), black, 4) }},
-		{"circle-hard", func(img *image.NRGBA) { fill(img, disc(128, 128, 96), black, 1) }},
-		{"rounded-rect", func(img *image.NRGBA) { fill(img, roundedRect(48, 48, 208, 208, 24), black, 4) }},
-		{"star-5", func(img *image.NRGBA) { fill(img, polygon(star(128, 128, 100, 40, 5)), black, 4) }},
-		{"two-colour-abut", func(img *image.NRGBA) {
+		{Name: "circle-aa", Draw: func(img *image.NRGBA) { fill(img, disc(128, 128, 96), black, 4) }},
+		{Name: "circle-hard", Draw: func(img *image.NRGBA) { fill(img, disc(128, 128, 96), black, 1) }},
+		{Name: "rounded-rect", Draw: func(img *image.NRGBA) { fill(img, roundedRect(48, 48, 208, 208, 24), black, 4) }},
+		{Name: "star-5", Draw: func(img *image.NRGBA) { fill(img, polygon(star(128, 128, 100, 40, 5)), black, 4) }},
+		{Name: "two-colour-abut", Draw: func(img *image.NRGBA) {
 			fill(img, func(x, _ float64) bool { return x < 128 }, red, 1)
 			fill(img, func(x, _ float64) bool { return x >= 128 }, blue, 1)
 		}},
-		{"three-layer-stack", func(img *image.NRGBA) {
+		{Name: "three-layer-stack", Draw: func(img *image.NRGBA) {
 			fill(img, rect(32, 32, 224, 224), blue, 1)
 			fill(img, disc(128, 128, 72), red, 4)
 			fill(img, rect(104, 104, 152, 152), white, 1)
 		}},
-		{"checkerboard-2px", func(img *image.NRGBA) {
+		{Name: "checkerboard-2px", Draw: func(img *image.NRGBA) {
 			fill(img, func(x, y float64) bool { return (int(x)/2+int(y)/2)%2 == 0 }, black, 1)
 		}},
-		{"thin-lines", func(img *image.NRGBA) {
+		{Name: "thin-lines", Draw: func(img *image.NRGBA) {
 			for i := 0; i < Size; i++ {
 				img.SetNRGBA(i, 64, black)
 				img.SetNRGBA(64, i, black)
 				img.SetNRGBA(i, i, black)
 			}
 		}},
-		{"gradient-h", func(img *image.NRGBA) {
+		{Name: "gradient-h", Draw: func(img *image.NRGBA) {
 			for y := 0; y < Size; y++ {
 				for x := 0; x < Size; x++ {
 					v := uint8(x)
@@ -64,7 +68,7 @@ func All() []Synthetic {
 				}
 			}
 		}},
-		{"poster-discs", func(img *image.NRGBA) {
+		{Name: "poster-discs", Draw: func(img *image.NRGBA) {
 			// Five overlapping anti-aliased discs in five flat colours.
 			cols := []color.NRGBA{red, blue, green, yellow, purple}
 			for i, c := range cols {
@@ -72,12 +76,12 @@ func All() []Synthetic {
 				fill(img, disc(128+56*math.Cos(a), 128+56*math.Sin(a), 60), c, 4)
 			}
 		}},
-		{"aa-abut", func(img *image.NRGBA) {
+		{Name: "aa-abut", Draw: func(img *image.NRGBA) {
 			// Red and blue meeting along an anti-aliased diagonal.
 			fill(img, func(_, _ float64) bool { return true }, red, 1)
 			fill(img, func(x, y float64) bool { return x+y >= Size }, blue, 4)
 		}},
-		{"logo-holes", func(img *image.NRGBA) {
+		{Name: "logo-holes", Draw: func(img *image.NRGBA) {
 			// Two letter-like shapes with holes, in two colours, on a third
 			// background colour: an O-like ring and a B-like block.
 			fill(img, func(_, _ float64) bool { return true }, navy, 1)
@@ -87,7 +91,16 @@ func All() []Synthetic {
 			fill(img, rect(164, 84, 204, 120), navy, 4)
 			fill(img, rect(164, 136, 204, 172), navy, 4)
 		}},
-		{"noisy-disc", func(img *image.NRGBA) {
+		{Name: "small-glyphs", Draw: smallGlyphs},
+		{Name: "rect-rot", Draw: func(img *image.NRGBA) {
+			var p []pt
+			for _, c := range RectRotCorners() {
+				p = append(p, pt{c.X, c.Y})
+			}
+			fill(img, polygon(p), black, 4)
+		}},
+		{Name: "big-poster", Size: 2048, Draw: bigPoster},
+		{Name: "noisy-disc", Draw: func(img *image.NRGBA) {
 			fill(img, disc(128, 128, 96), black, 4)
 			rng := rand.New(rand.NewPCG(1, 1))
 			for i := 0; i < len(img.Pix); i += 4 {
@@ -100,9 +113,104 @@ func All() []Synthetic {
 	}
 }
 
-// Render draws s onto a fresh Size×Size white canvas.
+// Small-glyph rows: glyph heights and the baseline y of each row.
+var smallGlyphRows = [3]struct{ h, y float64 }{{24, 40}, {32, 112}, {40, 196}}
+
+// SmallGlyphRingCentres returns the centre of each row's ring: the middle
+// of its 5-px white counter.
+func SmallGlyphRingCentres() [3]geom.Vec2 {
+	var out [3]geom.Vec2
+	for i, r := range smallGlyphRows {
+		out[i] = geom.Vec2{X: 40, Y: r.y}
+	}
+	return out
+}
+
+// smallGlyphs draws, in three rows at heights 24, 32 and 40 px, a ring
+// (elliptical outer, ratio 0.8, 5-px disc counter), a stem a quarter as
+// wide as it is tall with a diagonal flag from its top-left, and a rounded
+// rectangle 1.5 h wide with corner radius h/5; all anti-aliased, black.
+func smallGlyphs(img *image.NRGBA) {
+	for _, r := range smallGlyphRows {
+		h, cy := r.h, r.y
+		// Ring at x = 40.
+		ring := func(x, y float64) bool {
+			dx, dy := (x-40)/(0.4*h), (y-cy)/(0.5*h)
+			if dx*dx+dy*dy > 1 {
+				return false
+			}
+			ex, ey := x-40, y-cy
+			return ex*ex+ey*ey > 25
+		}
+		fill(img, ring, black, 4)
+		// Stem at x = 90..90+h/4, flag running up-left from the stem top.
+		w := h / 4
+		x0, top := 90.0, cy-h/2
+		stem := polygon([]pt{{x0, top}, {x0 + w, top}, {x0 + w, cy + h/2}, {x0, cy + h/2}, {x0, top + h/2}, {x0 - w, top + h/3}})
+		fill(img, stem, black, 4)
+		// Rounded rectangle at x = 140.
+		fill(img, roundedRect(140, cy-h/2, 140+1.5*h, cy+h/2, h/5), black, 4)
+	}
+}
+
+// RectRotCorners returns the corners of rect-rot: 120×80, rotated 20°
+// about (128, 128), in order around the rectangle.
+func RectRotCorners() [4]geom.Vec2 {
+	a := 20 * math.Pi / 180
+	c, s := math.Cos(a), math.Sin(a)
+	var out [4]geom.Vec2
+	for i, d := range [4][2]float64{{-60, -40}, {60, -40}, {60, 40}, {-60, 40}} {
+		out[i] = geom.Vec2{X: 128 + d[0]*c - d[1]*s, Y: 128 + d[0]*s + d[1]*c}
+	}
+	return out
+}
+
+// bigPoster scatters about 300 discs, 100 rings and 100 rounded rectangles
+// in six flat colours over a 2048-px canvas, deterministically.
+func bigPoster(img *image.NRGBA) {
+	rng := rand.New(rand.NewPCG(3, 3))
+	cols := []color.NRGBA{red, blue, green, yellow, purple, navy}
+	n := float64(img.Bounds().Dx())
+	for i := 0; i < 500; i++ {
+		c := cols[rng.IntN(len(cols))]
+		x, y := 60+rng.Float64()*(n-120), 60+rng.Float64()*(n-120)
+		box := func(inside func(px, py float64) bool, hw, hh float64) {
+			fillBox(img, inside, c, 4, int(x-hw)-1, int(y-hh)-1, int(x+hw)+2, int(y+hh)+2)
+		}
+		switch {
+		case i < 300:
+			r := 20 + rng.Float64()*40
+			box(disc(x, y, r), r, r)
+		case i < 400:
+			r := 20 + rng.Float64()*40
+			outer, inner := disc(x, y, r), disc(x, y, r*0.5)
+			box(func(px, py float64) bool { return outer(px, py) && !inner(px, py) }, r, r)
+		default:
+			w, h := 40+rng.Float64()*80, 40+rng.Float64()*80
+			box(roundedRect(x-w/2, y-h/2, x+w/2, y+h/2, math.Min(w, h)/5), w/2, h/2)
+		}
+	}
+}
+
+// Small returns the synthetics at the default size: the golden and
+// per-image tests run over these; larger ones are benchmark fixtures.
+func Small() []Synthetic {
+	var out []Synthetic
+	for _, s := range All() {
+		if s.Size == 0 || s.Size == Size {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// Render draws s onto a fresh white canvas of its size.
 func Render(s Synthetic) *image.NRGBA {
-	img := image.NewNRGBA(image.Rect(0, 0, Size, Size))
+	size := s.Size
+	if size == 0 {
+		size = Size
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	for i := 0; i < len(img.Pix); i += 4 {
 		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = 255, 255, 255, 255
 	}
@@ -113,10 +221,18 @@ func Render(s Synthetic) *image.NRGBA {
 // fill paints c wherever inside is true, supersampling each pixel with
 // samples×samples points and blending by coverage. samples=1 gives hard edges.
 func fill(img *image.NRGBA, inside func(x, y float64) bool, c color.NRGBA, samples int) {
+	fillBox(img, inside, c, samples, 0, 0, img.Bounds().Dx(), img.Bounds().Dy())
+}
+
+// fillBox is fill restricted to the pixel box [x0,x1)×[y0,y1), clipped to
+// the image, for shapes much smaller than the canvas.
+func fillBox(img *image.NRGBA, inside func(x, y float64) bool, c color.NRGBA, samples, x0, y0, x1, y1 int) {
 	step := 1 / float64(samples)
 	total := float64(samples * samples)
-	for py := 0; py < Size; py++ {
-		for px := 0; px < Size; px++ {
+	x0, y0 = max(x0, 0), max(y0, 0)
+	x1, y1 = min(x1, img.Bounds().Dx()), min(y1, img.Bounds().Dy())
+	for py := y0; py < y1; py++ {
+		for px := x0; px < x1; px++ {
 			hit := 0
 			for sy := 0; sy < samples; sy++ {
 				for sx := 0; sx < samples; sx++ {

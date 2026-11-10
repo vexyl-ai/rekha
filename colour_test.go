@@ -21,7 +21,7 @@ import (
 )
 
 func TestCorpusHasColourSynthetics(t *testing.T) {
-	for _, name := range []string{"poster-discs", "aa-abut", "logo-holes"} {
+	for _, name := range []string{"poster-discs", "aa-abut", "logo-holes", "small-glyphs", "rect-rot", "big-poster"} {
 		synth(t, name)
 	}
 	s, err := Segment(synth(t, "logo-holes"), PresetOptions(PresetPoster))
@@ -40,7 +40,7 @@ func TestTraceGoldenColour(t *testing.T) {
 		mode   Mode
 	}
 	var cases []tc
-	for _, s := range corpus.All() {
+	for _, s := range corpus.Small() {
 		for _, mode := range []Mode{ModePixel, ModePolygon, ModeSpline} {
 			cases = append(cases, tc{s.Name, PresetPoster, mode})
 		}

@@ -59,7 +59,7 @@ func TestTracePixelModeRoundTrip(t *testing.T) {
 	o := DefaultOptions()
 	o.Mode = ModePixel
 	o.FilterSpeckle = 0
-	for _, s := range corpus.All() {
+	for _, s := range corpus.Small() {
 		img := corpus.Render(s)
 		r, err := Trace(img, o)
 		if err != nil {
@@ -79,7 +79,7 @@ func TestTracePixelModeRoundTrip(t *testing.T) {
 }
 
 func TestTraceGolden(t *testing.T) {
-	for _, s := range corpus.All() {
+	for _, s := range corpus.Small() {
 		for _, mode := range []Mode{ModePixel, ModePolygon, ModeSpline} {
 			o := DefaultOptions()
 			o.Mode = mode
@@ -154,7 +154,7 @@ func TestTraceDeterministic(t *testing.T) {
 }
 
 func TestTraceSplineClosesEveryPath(t *testing.T) {
-	for _, s := range corpus.All() {
+	for _, s := range corpus.Small() {
 		r, err := Trace(corpus.Render(s), DefaultOptions())
 		if err != nil {
 			t.Fatal(err)
@@ -329,7 +329,7 @@ func TestTraceSaneShapes(t *testing.T) {
 		"diagonal": bitmapImage(diagonal),
 		"checker":  bitmapImage(checker),
 	}
-	for _, s := range corpus.All() {
+	for _, s := range corpus.Small() {
 		cases[s.Name] = corpus.Render(s)
 	}
 	for name, img := range cases {

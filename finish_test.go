@@ -45,7 +45,7 @@ func paintLabels(t *testing.T, s *Segmentation, r *Result) int {
 }
 
 func TestFinishBWEqualsPhase1(t *testing.T) {
-	for _, syn := range corpus.All() {
+	for _, syn := range corpus.Small() {
 		o := DefaultOptions()
 		s, err := Segment(corpus.Render(syn), o)
 		if err != nil {
@@ -71,7 +71,7 @@ func TestFinishBWEqualsPhase1(t *testing.T) {
 
 func testPixelModeReproducesLabels(t *testing.T, h Hierarchical) {
 	t.Helper()
-	for _, syn := range corpus.All() {
+	for _, syn := range corpus.Small() {
 		o := PresetOptions(PresetPoster)
 		o.Mode = ModePixel
 		o.Hierarchical = h
