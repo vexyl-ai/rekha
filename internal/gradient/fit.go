@@ -118,13 +118,10 @@ type fitted struct {
 	extent     float64 // pixels the fit spans along u (a uniform strip's width from the spread of t)
 }
 
-// fit chooses the direction u as the principal axis of the structure
-// tensor, which ignores the sign of the change so a colour that rises
-// then falls along one line still fits along that line; without
-// gradients (none accumulated) it takes the principal direction of the
-// per-channel least-squares planes. It then fits colour against t = u·p
-// in one dimension. ok is false when the pixels do not span a plane
-// (fewer than three, or collinear).
+// fit chooses the direction u as the principal direction of the
+// per-channel least-squares planes and fits colour against t = u·p in
+// one dimension. ok is false when the pixels do not span a plane (fewer
+// than three, or collinear).
 func (m *moments) fit() fitted {
 	if m.n < 3 {
 		return fitted{}
@@ -136,9 +133,6 @@ func (m *moments) fit() fitted {
 	det := float64(cxx*cyy) - float64(cxy*cxy)
 	if det <= 1e-9*float64(cxx*cyy) {
 		return fitted{}
-	}
-	if m.gxx+m.gyy > 0 {
-		return m.along(principal(m.gxx, m.gxy, m.gyy))
 	}
 	// Gradient of each channel's plane, and the 2×2 scatter of those.
 	var g11, g12, g22 float64
@@ -152,6 +146,24 @@ func (m *moments) fit() fitted {
 		g22 += float64(d * d)
 	}
 	return m.along(principal(g11, g12, g22))
+}
+
+// fitWithin is fit, except that when the planes' direction leaves a
+// residual above tol (the colour bends, or rises then falls) and
+// gradients were accumulated, the direction is the principal axis of
+// the structure tensor instead, which ignores the sign of the change.
+// The planes keep precedence while they fit because on a steep grainy
+// ramp the tensor sees only the pixels whose grain cancels the slope
+// and tilts.
+func (m *moments) fitWithin(tol float64) fitted {
+	f := m.fit()
+	if f.ok && f.rms <= tol || m.gxx+m.gyy == 0 {
+		return f
+	}
+	if t := m.along(principal(m.gxx, m.gxy, m.gyy)); t.ok {
+		return t
+	}
+	return f
 }
 
 // along fits colour against t = u·p in one dimension for a given unit

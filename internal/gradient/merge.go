@@ -158,6 +158,10 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	}
 	// passes runs merge passes until none merges; admit judges a pair
 	// from the union's fit.
+	// release says whether joining two merged groups gives a label back:
+	// in the join pass it does not, because the join may still dissolve
+	// into both groups, which then need their labels again.
+	release := true
 	passes := func(admit func(ga, gb *group, e *edge, f fitted) bool) {
 		for {
 			// Candidate pairs of live groups, closest mean colours first.
@@ -200,14 +204,14 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 				}
 				m := ga.m
 				m.merge(&gb.m)
-				f := m.fit()
+				f := m.fitWithin(tol)
 				if !f.ok || e.step/float64(e.pairs) > math.Max(3*f.slope, tol) || !admit(ga, gb, e, f) {
 					continue
 				}
 				// Merge b into a: sums, flags, and b's neighbours become a's.
 				if !ga.merged && !gb.merged {
 					mergedGroups++
-				} else if ga.merged && gb.merged {
+				} else if ga.merged && gb.merged && release {
 					mergedGroups--
 				}
 				parent[b] = a
@@ -245,6 +249,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		}
 		return i
 	}
+	release = false
 	passes(func(ga, gb *group, e *edge, f fitted) bool { return sidesBend(ga, gb, f, tol) })
 
 	// Every merged group, and every lone band with enough interior
@@ -429,7 +434,7 @@ func sample(rgb []uint8, comp []int32, w, h int, find func(int32) int32, groups 
 		if find(int32(i)) != int32(i) || g.m.n < minPixels {
 			continue
 		}
-		if f := g.m.fit(); f.ok && (g.merged || f.rms <= tol) {
+		if f := g.m.fitWithin(tol); f.ok && (g.merged || f.rms <= tol) {
 			ext[int32(i)] = &extent{f: f, tmin: math.Inf(1), tmax: math.Inf(-1)}
 		}
 	}

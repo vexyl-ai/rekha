@@ -421,3 +421,90 @@ func TestMergeDirectionIgnoresOutline(t *testing.T) {
 		t.Errorf("N %d ramps %v", r.N, r.Ramps)
 	}
 }
+
+// capImage is a white page with three two-band grey ramps A, B (12
+// counts above A at the same x) and C, and one speck of every other
+// label on the last row, so n = 254 leaves room for two merged groups.
+func capImage(w, h int) (rgb, labels []uint8) {
+	const bg = 253
+	rgb = make([]uint8, 3*w*h)
+	labels = make([]uint8, w*h)
+	set := func(x, y int, v uint8, l uint8) {
+		p := y*w + x
+		rgb[3*p], rgb[3*p+1], rgb[3*p+2] = v, v, v
+		labels[p] = l
+	}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			set(x, y, 255, bg)
+		}
+	}
+	for y := 0; y < 20; y++ { // A: labels 0,1
+		for x := 0; x < 30; x++ {
+			set(x, y, uint8(20+7*x), uint8(x/15))
+		}
+	}
+	for y := 20; y < 40; y++ { // B: labels 2,3
+		for x := 0; x < 30; x++ {
+			set(x, y, uint8(40+7*x), uint8(2+x/15))
+		}
+	}
+	for y := 48; y < 66; y++ { // C: labels 4,5
+		for x := 0; x < 30; x++ {
+			set(x, y, uint8(20+8*x), uint8(4+x/15))
+		}
+	}
+	for k := 0; k < bg; k++ {
+		set(2*k+1, h-1, 128, uint8(k))
+	}
+	return rgb, labels
+}
+
+func TestMergeDissolveKeepsLabelBudget(t *testing.T) {
+	// Pass 1 makes A and B and refuses C at the cap; pass 2 joins A+B
+	// (which would free a label) and then C; A+B's model misses B and
+	// dissolves. The labels must still fit in 256 and distinct regions
+	// must keep distinct labels.
+	const w, h, n = 520, 72, 254
+	rgb, labels := capImage(w, h)
+	r := Merge(rgb, labels, w, h, n, 0.03)
+	if r.N > 256 {
+		t.Errorf("N %d > 256", r.N)
+	}
+	for p, l := range r.Labels {
+		if int(l) >= r.N {
+			t.Fatalf("label %d past N %d at %d", l, r.N, p)
+		}
+	}
+	a := r.Labels[5*w+5]
+	for p, l := range r.Labels {
+		if x, y := p%w, p/w; l == a && !(y < 20 && x < 30) {
+			t.Fatalf("pixel (%d,%d) outside A carries A's label %d (N %d)", x, y, a, r.N)
+		}
+	}
+}
+
+func TestMergeSteepGrainyRampJoins(t *testing.T) {
+	// A steep ramp (6 counts per pixel) with ±4 grain: the per-pixel
+	// gradient gate lets through only pixels whose grain cancels the
+	// slope, which would tilt a tensor-only direction and stop the bands
+	// joining. v1 joined every such case.
+	const w, h = 40, 128
+	rng := rand.New(rand.NewPCG(7, 4004))
+	rgb := make([]uint8, 3*w*h)
+	labels := make([]uint8, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			p := y*w + x
+			v := float64(x) * 255 / float64(w-1)
+			for k := 0; k < 3; k++ {
+				rgb[3*p+k] = clamp8(int(math.Round(v)) + rng.IntN(9) - 4)
+			}
+			labels[p] = uint8(x * 4 / w)
+		}
+	}
+	r := Merge(rgb, labels, w, h, 4, 0.03)
+	if r.N != 1 || r.Ramps[0] == nil {
+		t.Errorf("N %d ramps %v", r.N, r.Ramps)
+	}
+}
