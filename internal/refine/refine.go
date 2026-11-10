@@ -11,6 +11,73 @@ type Options struct {
 	Sweeps  int     // passes over all pieces
 	MaxIter int     // L-BFGS iterations per piece per sweep
 	Weights Weights // prior weights
+	// Fixed marks anchors (per segment start) that never move and whose
+	// joints are never merged; Frozen marks segments whose control points
+	// never move and that are never split or merged. Either may be nil
+	// or shorter than the bezigon, in which case the rest is free.
+	Fixed  []bool
+	Frozen []bool
+}
+
+// fixed reports whether anchor a is fixed, frozen whether segment s is.
+func (o Options) fixed(a int) bool  { return a < len(o.Fixed) && o.Fixed[a] }
+func (o Options) frozen(s int) bool { return s < len(o.Frozen) && o.Frozen[s] }
+
+// freePoint reports whether point i of a bezigon with n segments may
+// move: an anchor that is not fixed and bounds no frozen segment, or a
+// handle of a segment that is not frozen.
+func (o Options) freePoint(i, n int) bool {
+	a := i / 3
+	if i%3 == 0 {
+		return !o.fixed(a) && !o.frozen(a) && !o.frozen((a+n-1)%n)
+	}
+	return !o.frozen(a)
+}
+
+// pieceFree returns the indices of the points of piece j (segments j and
+// j+1) that may move, in point order.
+func (o Options) pieceFree(b Bezigon, j int) []int {
+	n, m := b.N(), len(b.Pts)
+	idx := make([]int, 0, 5)
+	for k := 1; k <= 5; k++ {
+		if i := (3*j + k) % m; o.freePoint(i, n) {
+			idx = append(idx, i)
+		}
+	}
+	return idx
+}
+
+// withoutJoint returns the options after joint j and segment j are
+// merged away: entries j of Fixed and Frozen are removed.
+func (o Options) withoutJoint(j int) Options {
+	o.Fixed, o.Frozen = removeAt(o.Fixed, j), removeAt(o.Frozen, j)
+	return o
+}
+
+// withSplit returns the options after segment j is split in two: a free
+// joint and a free segment are inserted at j+1.
+func (o Options) withSplit(j int) Options {
+	o.Fixed, o.Frozen = insertAt(o.Fixed, j+1), insertAt(o.Frozen, j+1)
+	return o
+}
+
+func removeAt(v []bool, i int) []bool {
+	if i >= len(v) {
+		return v
+	}
+	out := make([]bool, 0, len(v)-1)
+	out = append(out, v[:i]...)
+	return append(out, v[i+1:]...)
+}
+
+func insertAt(v []bool, i int) []bool {
+	if i > len(v) {
+		return v
+	}
+	out := make([]bool, 0, len(v)+1)
+	out = append(out, v[:i]...)
+	out = append(out, false)
+	return append(out, v[i:]...)
 }
 
 // DefaultOptions are the paper's: three sweeps, thirty iterations.
@@ -50,7 +117,7 @@ func Refine(b Bezigon, m Mask, img Window, o Options) Bezigon {
 		return b
 	}
 	out := Bezigon{Pts: append([]geom.Vec2(nil), b.Pts...)}
-	clampAll(out, img)
+	clampFree(out, img, o)
 	l0 := math.Max(out.Length(), 1)
 	sc := &scratch{}
 	for sweep := 0; sweep < o.Sweeps; sweep++ {
@@ -70,18 +137,8 @@ func Refine(b Bezigon, m Mask, img Window, o Options) Bezigon {
 	return out
 }
 
-// pieceIndices returns the five free point indices of piece j.
-func pieceIndices(b Bezigon, j int) [5]int {
-	m := len(b.Pts)
-	var idx [5]int
-	for k := range idx {
-		idx[k] = (3*j + 1 + k) % m
-	}
-	return idx
-}
-
-// refinePiece optimises piece j (segments j and j+1, five free points)
-// and returns how far any point moved. Each point may move moveLimit from
+// refinePiece optimises piece j (segments j and j+1, up to five free
+// points: the ones o leaves free) and returns how far any point moved. Each point may move moveLimit from
 // where it starts, so the curve moves at most that far; the energy is
 // therefore evaluated only over the pixels within reach of the starting
 // curve (one span per row), where all the change is. Pixels outside the
@@ -101,7 +158,10 @@ func refinePiece(b Bezigon, j int, m Mask, img Window, l0 float64, o Options, sc
 	}
 	n := b.N()
 	j = ((j % n) + n) % n
-	idx := pieceIndices(b, j)
+	idx := o.pieceFree(b, j)
+	if len(idx) == 0 {
+		return 0
+	}
 	r := reach(b, 3*j, 3*j+7, img)
 	lo, hi := clampPoint(r.lo, img), clampPoint(r.hi, img)
 	win := windowOf(lo, hi)
@@ -269,9 +329,13 @@ func newSpans(pts []geom.Vec2, win Window) spans {
 	return sp
 }
 
-func clampAll(b Bezigon, img Window) {
+// clampFree moves the free points of b to within clampPad of the image.
+func clampFree(b Bezigon, img Window, o Options) {
+	n := b.N()
 	for i := range b.Pts {
-		b.Pts[i] = clampPoint(b.Pts[i], img)
+		if o.freePoint(i, n) {
+			b.Pts[i] = clampPoint(b.Pts[i], img)
+		}
 	}
 }
 

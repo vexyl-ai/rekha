@@ -757,3 +757,22 @@ func TestFitLoopEqualsSpline(t *testing.T) {
 		t.Fatal("segments differs from fitLoop in spline mode")
 	}
 }
+
+// TestFitArcNoZeroLengthSegments: a junction placed on the arc's first
+// corner leaves no zero-length segment behind.
+func TestFitArcNoZeroLengthSegments(t *testing.T) {
+	// East one pixel, then south: the corner is at index 1.
+	pts := []geom.Point{{X: 10, Y: 0}, {X: 11, Y: 0}}
+	for y := 1; y <= 30; y++ {
+		pts = append(pts, geom.Point{X: 11, Y: y})
+	}
+	segs := prepareArc(pts, DefaultOptions()).fit(geom.Vec2{X: 11, Y: 0}, geom.Vec2{X: 11, Y: 30}, DefaultOptions())
+	for _, s := range segs {
+		if s.P[0] == s.P[3] {
+			t.Fatalf("zero-length segment at %v in %d segments", s.P[0], len(segs))
+		}
+	}
+	if len(segs) != 1 {
+		t.Errorf("%d segments, want one line", len(segs))
+	}
+}

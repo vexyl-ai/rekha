@@ -135,7 +135,7 @@ func TestMergePassWithinBudget(t *testing.T) {
 		o := Options{Sweeps: 1, MaxIter: 30, Weights: DefaultWeights}
 		l0 := math.Max(b.Length(), 1)
 		before := dataOf(b, m, img, l0)
-		out := mergePass(b, m, img, l0, o, &scratch{})
+		out, _ := mergePass(b, m, img, l0, o, &scratch{})
 		after := dataOf(out, m, img, l0)
 		t.Logf("seed %d: %d → %d segments, energy %.4g → %.4g", seed, b.N(), out.N(), before, after)
 		if after > before*(1+mergeRise)+1e-9 {

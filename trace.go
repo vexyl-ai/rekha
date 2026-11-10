@@ -64,21 +64,40 @@ const lineTol = 0.25
 // optimise against the mask, merge and split segments, recognise a circle,
 // and write straight cubics back as lines.
 func refineSegments(segs []fit.Segment, m refine.Mask, img refine.Window, o Options) []fit.Segment {
+	out, _ := refineConstrained(segs, nil, nil, m, img, o)
+	return out
+}
+
+// refineConstrained is refineSegments with fixed anchors and frozen
+// segments (see refine.Options): a loop assembled from shared arcs keeps
+// its junctions in place and the arcs other loops own untouched. It
+// returns the fixed flags renumbered for the result, so the caller can
+// find the junctions again. Circle recognition needs the whole loop free.
+func refineConstrained(segs []fit.Segment, fixed, frozen []bool, m refine.Mask, img refine.Window, o Options) ([]fit.Segment, []bool) {
 	if len(segs) < 2 {
-		return segs
+		return segs, fixed
 	}
-	ro := refine.Options{Sweeps: o.Refine.Sweeps, MaxIter: o.Refine.MaxIter, Weights: o.Refine.Weights}
+	ro := refine.Options{Sweeps: o.Refine.Sweeps, MaxIter: o.Refine.MaxIter, Weights: o.Refine.Weights, Fixed: fixed, Frozen: frozen}
 	b := refine.FromSegments(segs)
 	b = refine.Refine(b, m, img, ro)
 	if o.Refine.MergeSplit {
-		b = refine.MergeSplit(b, m, img, ro)
+		b, ro = refine.MergeSplitTracked(b, m, img, ro)
 	}
-	if o.Refine.Primitives {
+	if o.Refine.Primitives && !anyTrue(fixed) && !anyTrue(frozen) {
 		if c, r, ok := refine.FitCircle(b, 0.5*o.FitTolerance); ok {
 			b = refine.Circle(c, r, b.Pts[0], signedArea2(b.Polyline()) > 0)
 		}
 	}
-	return b.Segments(lineTol)
+	return b.Segments(lineTol), ro.Fixed
+}
+
+func anyTrue(v []bool) bool {
+	for _, x := range v {
+		if x {
+			return true
+		}
+	}
+	return false
 }
 
 // signedArea2 is twice the shoelace area of a closed polygon: positive
@@ -210,33 +229,65 @@ func fitLoop(pts []geom.Point, o Options) []fit.Segment {
 	return fitRuns(dense, verts, fitTol, false)
 }
 
-// fitArc fits an open crack polyline: a planar arc whose ends are
-// junctions shared with other arcs. The first and last segment points are
-// exactly pts[0] and pts[n-1], and the pipeline is symmetric, so fitting
-// the polyline backwards gives the same curve reversed and both regions
-// along the arc can share one boundary.
+// fitArc fits an open crack polyline whose ends are junctions shared with
+// other arcs, ending exactly on its crack ends. The planar path prepares
+// every arc first, places each junction from the flank lines of the arcs
+// meeting there and fits with those ends (arcPrep.fit).
 func fitArc(pts []geom.Point, o Options) []fit.Segment {
 	n := len(pts)
 	if n < 2 {
 		return nil
 	}
-	fitTol := o.FitTolerance + quantisation
-	dense := toVec(pts)
+	return prepareArc(pts, o).fit(pts[0].Vec(), pts[n-1].Vec(), o)
+}
+
+// arcPrep is an open arc analysed for fitting: its dense points, the
+// staircase-free polyline, the interior corner vertices, and at each end
+// the flank line that gives the end tangent and places the junction.
+type arcPrep struct {
+	pts    []geom.Point
+	dense  []geom.Vec2
+	dssIdx []int
+	verts  []vertex
+	short  bool     // fewer than four points, or collinear: one line
+	flank  [2]flank // at pts[0] and at pts[n-1]
+}
+
+// flank is the least-squares line through the straight stretch of dense
+// points next to an arc end: a point on it, its unit direction oriented
+// forward along the arc, and the steps it spans.
+type flank struct {
+	p, d geom.Vec2
+	span int
+}
+
+// flankDev is how far the points of a flank window may lie from their
+// least-squares line for the window to count as straight: the deviation
+// of a digital line's crack vertices (geom's staircase rule).
+const flankDev = 0.75
+
+// prepareArc analyses an open arc of at least two points for fit.
+func prepareArc(pts []geom.Point, o Options) arcPrep {
+	n := len(pts)
+	a := arcPrep{pts: pts, dense: toVec(pts)}
 	mergeIdx := geom.MergeCollinearOpenIndices(pts)
 	if n < 4 || len(mergeIdx) < 3 {
-		return []fit.Segment{{Line: true, P: fit.Cubic{dense[0], dense[0], dense[n-1], dense[n-1]}}}
+		a.short = true
+		a.flank[0] = endFlank(a.dense, 0, +1, n-1)
+		a.flank[1] = endFlank(a.dense, n-1, -1, n-1)
+		return a
 	}
 	merged := make([]geom.Point, len(mergeIdx))
 	for k, i := range mergeIdx {
 		merged[k] = pts[i]
 	}
-	dssIdx := geom.RemoveStaircasesOpenIndices(merged)
-	for k, i := range dssIdx {
-		dssIdx[k] = mergeIdx[i]
+	a.dssIdx = geom.RemoveStaircasesOpenIndices(merged)
+	for k, i := range a.dssIdx {
+		a.dssIdx[k] = mergeIdx[i]
 	}
-	dss := make([]geom.Vec2, len(dssIdx))
-	for k, i := range dssIdx {
-		dss[k] = dense[i]
+	dss := make([]geom.Vec2, len(a.dssIdx))
+	for k, i := range a.dssIdx {
+		dss[k] = a.dense[i]
 	}
 	simpIdx := geom.RDPIndices(dss, o.SimplifyTolerance)
 	simp := make([]geom.Vec2, len(simpIdx))
@@ -250,30 +301,67 @@ func fitArc(pts []geom.Point, o Options) []fit.Segment {
 	for ci := 1; ci+1 < len(simp); ci++ {
 		turn := geom.TurnOpen(simp, ci)
 		if turn > o.CornerThreshold && geom.TurnOpen(dss, simpIdx[ci]) > o.CornerThreshold {
-			corners = append(corners, dssIdx[simpIdx[ci]])
+			corners = append(corners, a.dssIdx[simpIdx[ci]])
 		}
 		if turn > flankBend {
-			bends = append(bends, dssIdx[simpIdx[ci]])
+			bends = append(bends, a.dssIdx[simpIdx[ci]])
 		}
 	}
 	bends = append(bends, n-1)
-	verts := refineCorners(dense, clusterCorners(corners, n), bends)
-	// The end vertices sit exactly on the junctions; their tangents come
-	// from a flank that stops at the first bend or corner.
+	a.verts = refineCorners(a.dense, clusterCorners(corners, n), bends)
+	// The end flanks stop at the first vertex.
 	first, last := n-1, 0
-	for _, v := range verts {
+	for _, v := range a.verts {
 		first, last = min(first, v.in), max(last, v.out)
 	}
-	endSpan := func(run int) int {
-		return max(1, min(flankWindow(n), run))
+	a.flank[0] = endFlank(a.dense, 0, +1, min(flankWindow(n), first))
+	a.flank[1] = endFlank(a.dense, n-1, -1, min(flankWindow(n), n-1-last))
+	return a
+}
+
+// endFlank fits the line through dense[i] and up to count points beyond
+// it in direction step, halving the window until the points lie within
+// flankDev of the line (a curved flank gives a short window, a straight
+// staircase the whole one). The direction is oriented forward along the
+// arc.
+func endFlank(dense []geom.Vec2, i, step, count int) flank {
+	for count = max(count, 1); ; count /= 2 {
+		w := append([]geom.Vec2{dense[i]}, window(dense, i, step, 0, count)...)
+		p, d := fit.FitLine(w)
+		straight := true
+		for _, q := range w {
+			if geom.PerpDist(q, p, p.Add(d)) > flankDev {
+				straight = false
+				break
+			}
+		}
+		if straight || count <= 2 {
+			if step < 0 {
+				d = d.Scale(-1)
+			}
+			return flank{p: p, d: d, span: count}
+		}
 	}
-	v0 := vertex{pos: dense[0], span: endSpan(first)}
-	_, v0.tOut = fit.FitLine(append([]geom.Vec2{dense[0]}, window(dense, 0, +1, 0, v0.span)...))
-	vn := vertex{pos: dense[n-1], in: n - 1, out: n - 1, span: endSpan(n - 1 - last)}
-	_, vn.tIn = fit.FitLine(append(window(dense, n-1, -1, 0, vn.span), dense[n-1]))
-	verts = append(verts, v0, vn)
-	verts = append(verts, straightEdgeVertices(dense, dssIdx, verts, true)...)
-	return fitRuns(dense, verts, fitTol, true)
+}
+
+// fit fits the prepared arc from p0 to p1, the placed positions of its
+// two junctions: the end vertices sit exactly there with the flank lines
+// as tangents, so both sides of the arc get the same ends.
+func (a arcPrep) fit(p0, p1 geom.Vec2, o Options) []fit.Segment {
+	n := len(a.pts)
+	if n < 2 {
+		return nil
+	}
+	if a.short {
+		return []fit.Segment{{Line: true, P: fit.Cubic{p0, p0, p1, p1}}}
+	}
+	fitTol := o.FitTolerance + quantisation
+	verts := append([]vertex(nil), a.verts...)
+	verts = append(verts,
+		vertex{pos: p0, span: a.flank[0].span, tOut: a.flank[0].d},
+		vertex{pos: p1, in: n - 1, out: n - 1, span: a.flank[1].span, tIn: a.flank[1].d})
+	verts = append(verts, straightEdgeVertices(a.dense, a.dssIdx, verts, true)...)
+	return fitRuns(a.dense, verts, fitTol, true)
 }
 
 // reverseSegs returns the path segs walked backwards: the same numbers,
@@ -318,7 +406,14 @@ func fitRuns(dense []geom.Vec2, verts []vertex, fitTol float64, open bool) []fit
 		}
 		segs = append(segs, fit.FitOpen(run, v.tOut, next.tIn.Scale(-1), fitTol)...)
 	}
-	return segs
+	// A placed end that lands on the first vertex leaves an empty run.
+	kept := segs[:0]
+	for _, sg := range segs {
+		if !sg.Line || sg.P[0] != sg.P[3] {
+			kept = append(kept, sg)
+		}
+	}
+	return kept
 }
 
 // clusterCorners groups sorted dense corner indices that lie within

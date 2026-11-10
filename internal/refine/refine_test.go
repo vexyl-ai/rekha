@@ -319,3 +319,97 @@ func BenchmarkRefineLong(b *testing.B) {
 		})
 	}
 }
+
+// TestRefineFixedAnchorStays: a fixed anchor keeps its exact position
+// while the rest of the bezigon still moves towards the mask.
+func TestRefineFixedAnchorStays(t *testing.T) {
+	ideal := smoothBezigon(1, 6)
+	m := maskOf(ideal, img64)
+	b := perturb(ideal, 2, 1.5)
+	o := DefaultOptions
+	o.Fixed = make([]bool, b.N())
+	o.Fixed[0] = true
+	got := Refine(b, m, img64, o)
+	if got.Pts[0] != b.Pts[0] {
+		t.Fatalf("fixed anchor moved %v → %v", b.Pts[0], got.Pts[0])
+	}
+	moved := 0
+	for i := range b.Pts {
+		if got.Pts[i].Sub(b.Pts[i]).Len() > 1e-6 {
+			moved++
+		}
+	}
+	if moved == 0 {
+		t.Fatal("nothing moved")
+	}
+}
+
+// TestRefineFrozenSegmentUnchanged: a frozen segment's four points are
+// untouched; the piece it shares with the next segment still moves that
+// segment's handles.
+func TestRefineFrozenSegmentUnchanged(t *testing.T) {
+	ideal := smoothBezigon(3, 6)
+	m := maskOf(ideal, img64)
+	b := perturb(ideal, 4, 1.5)
+	o := DefaultOptions
+	o.Frozen = make([]bool, b.N())
+	o.Frozen[2] = true
+	got := Refine(b, m, img64, o)
+	for i := 6; i <= 9; i++ {
+		if got.Pts[i] != b.Pts[i] {
+			t.Fatalf("frozen point %d moved %v → %v", i, b.Pts[i], got.Pts[i])
+		}
+	}
+	if got.Pts[10] == b.Pts[10] && got.Pts[11] == b.Pts[11] {
+		t.Fatal("handles of the segment after the frozen one did not move")
+	}
+}
+
+// TestMergeSplitRespectsFixed: a merge that would remove a fixed joint
+// is not taken, and a frozen segment is neither split nor moved however
+// badly it fits.
+func TestMergeSplitRespectsFixed(t *testing.T) {
+	ideal := circle(32, 32, 20)
+	m := maskOf(ideal, img64)
+	eight := ideal
+	for j := 7; j >= 0; j -= 2 {
+		eight = splitSegment(eight, j/2)
+	}
+	o := DefaultOptions
+	o.Fixed, o.Frozen = make([]bool, 8), make([]bool, 8)
+	o.Fixed[3] = true
+	got, oo := MergeSplitTracked(eight, m, img64, o)
+	if got.N() >= 8 {
+		t.Fatalf("N = %d, nothing merged", got.N())
+	}
+	found := false
+	for j := 0; j < got.N(); j++ {
+		if got.Pts[3*j] == eight.Pts[9] {
+			found = true
+			if !oo.fixed(j) || len(oo.Fixed) != got.N() {
+				t.Fatalf("fixed flag not carried to joint %d: %v", j, oo.Fixed)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("fixed joint %v merged away (N %d → %d)", eight.Pts[9], eight.N(), got.N())
+	}
+	// A frozen segment with handles pulled 6 px off the circle.
+	bad := Bezigon{Pts: append([]geom.Vec2(nil), eight.Pts...)}
+	bad.Pts[4] = bad.Pts[4].Add(v(6, 6))
+	bad.Pts[5] = bad.Pts[5].Add(v(6, -6))
+	o = DefaultOptions
+	o.Fixed, o.Frozen = make([]bool, 8), make([]bool, 8)
+	o.Frozen[1] = true
+	got = MergeSplit(bad, m, img64, o)
+	want := bad.Segment(1)
+	found = false
+	for j := 0; j < got.N(); j++ {
+		if got.Segment(j) == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("frozen segment %v changed or split", want)
+	}
+}

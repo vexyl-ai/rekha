@@ -27,24 +27,35 @@ const (
 // one more sweep. The paper keeps N fixed; the Phase 1 fitter chose N
 // before the raster was consulted and over-segments anti-aliased edges.
 func MergeSplit(b Bezigon, m Mask, img Window, o Options) Bezigon {
+	out, _ := MergeSplitTracked(b, m, img, o)
+	return out
+}
+
+// MergeSplitTracked is MergeSplit that also returns the options with
+// Fixed and Frozen renumbered for the segments of the result, so a
+// caller can find the joints it marked.
+func MergeSplitTracked(b Bezigon, m Mask, img Window, o Options) (Bezigon, Options) {
 	if b.N() < 2 {
-		return b
+		return b, o
 	}
+	oIn := o
 	out := Bezigon{Pts: append([]geom.Vec2(nil), b.Pts...)}
-	clampAll(out, img)
+	clampFree(out, img, o)
 	l0 := math.Max(out.Length(), 1)
 	sc := &scratch{}
-	out = mergePass(out, m, img, l0, o, sc)
-	out = splitPass(out, m, img, l0, o, sc)
+	// The passes change the segment count, so they carry the options'
+	// Fixed and Frozen along with their renumbering.
+	out, o = mergePass(out, m, img, l0, o, sc)
+	out, o = splitPass(out, m, img, l0, o, sc)
 	for j := 0; j < out.N(); j++ {
 		refinePiece(out, j, m, img, l0, o, sc)
 	}
 	for _, p := range out.Pts {
 		if !finite(p.X) || !finite(p.Y) {
-			return b
+			return b, oIn
 		}
 	}
-	return out
+	return out, o
 }
 
 // dataEnergy is the data term of b over the whole image at l0.
@@ -98,21 +109,23 @@ func windowAround(img Window, boxes ...bounds) Window {
 // segments become one cubic fitted to their flattened points, the pieces
 // around it are re-optimised, and the result stands if the data energy
 // stays within mergeRise of where the pass started, globally and over
-// the merge's own window. Never below two segments.
-func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch) Bezigon {
+// the merge's own window. Never below two segments. A fixed joint, or
+// one beside a frozen segment, is never merged.
+func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch) (Bezigon, Options) {
 	// Every accepted merge is judged against the energy the pass started
 	// with, so the whole pass costs at most mergeRise.
 	before := dataEnergy(b, m, img, l0)
 	budget := float64(before * (1 + mergeRise))
 	for j := 0; j < b.N() && b.N() > 2; {
-		if AnglePrior(b, j) >= mergeAngle {
+		if o.fixed(j) || o.frozen(j) || o.frozen((j+b.N()-1)%b.N()) || AnglePrior(b, j) >= mergeAngle {
 			j++
 			continue
 		}
 		cand := mergeJoint(b, j)
+		co := o.withoutJoint(j)
 		k := ((j-1)%cand.N() + cand.N()) % cand.N() // the merged segment
-		refinePiece(cand, k-1, m, img, l0, o, sc)
-		refinePiece(cand, k, m, img, l0, o, sc)
+		refinePiece(cand, k-1, m, img, l0, co, sc)
+		refinePiece(cand, k, m, img, l0, co, sc)
 		// Only segments j-2..j+1 of b (k-1..k+1 of cand) changed: the
 		// energy moves by the local difference.
 		wl := windowAround(img, segmentsBox(b, j-2, j+1), segmentsBox(cand, k-1, k+1))
@@ -124,7 +137,7 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 		// √splitFloor px over the merged segment.
 		localBudget := float64(localBefore*(1+mergeRise)) + float64(DataScale*DataScale*splitFloor)*math.Max(LengthPrior(cand, k), 1)/l0
 		if after <= budget && localAfter <= localBudget {
-			b, before = cand, after
+			b, before, o = cand, after, co
 			// Joint j is gone; the joint now at index k is the merged
 			// segment's start, which the next iteration examines.
 			if j > 0 {
@@ -134,7 +147,7 @@ func mergePass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 		}
 		j++
 	}
-	return b
+	return b, o
 }
 
 // mergeJoint replaces the segments either side of joint j by one cubic
@@ -178,8 +191,9 @@ func tangentOr(v, alt geom.Vec2) geom.Vec2 {
 // splitFloor), then re-optimises the pieces around each new joint.
 // Residuals are measured once, before any split. The mean leaves the
 // segment itself out: with few segments one bad fit dominates the whole
-// bezigon's mean and could never exceed a multiple of it.
-func splitPass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch) Bezigon {
+// bezigon's mean and could never exceed a multiple of it. A frozen
+// segment is never split.
+func splitPass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch) (Bezigon, Options) {
 	n := b.N()
 	cov := make([]float32, img.W*img.H)
 	Coverage(b, img, cov)
@@ -194,7 +208,7 @@ func splitPass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 	// Split from the last segment down so earlier indices stay valid.
 	for j := n - 1; j >= 0; j-- {
 		per := resid[j] / length[j]
-		if per < splitFloor {
+		if o.frozen(j) || per < splitFloor {
 			continue
 		}
 		others := 0.0
@@ -204,12 +218,12 @@ func splitPass(b Bezigon, m Mask, img Window, l0 float64, o Options, sc *scratch
 		if per <= splitFactor*others {
 			continue
 		}
-		b = splitSegment(b, j)
+		b, o = splitSegment(b, j), o.withSplit(j)
 		for _, p := range []int{j - 1, j, j + 1} {
 			refinePiece(b, p, m, img, l0, o, sc)
 		}
 	}
-	return b
+	return b, o
 }
 
 // segmentResidual sums the squared coverage error (0..1 scale) over the

@@ -38,6 +38,10 @@ type layer struct {
 	loops    []int   // planar loop of each contour, when traced through the map
 }
 
+// sharedRounds is how many Jacobi rounds refineShared runs. A second
+// round was measured on the seam synthetics and gained nothing.
+const sharedRounds = 1
+
 // arcFit is the fitted curve of one planar arc, shared by the two shapes
 // along it: one gets it forwards, the other reversed.
 type arcFit struct{ segs []fit.Segment }
@@ -45,10 +49,9 @@ type arcFit struct{ segs []fit.Segment }
 // usePlanar reports whether the shapes are traced through the shared-
 // boundary map: colour cutout in spline mode. Stacked output overlaps its
 // shapes instead, pixel and polygon modes are exact already, and the bw
-// preset has one colour. Refinement still fits each contour alone until
-// shared refinement lands.
+// preset has one colour.
 func usePlanar(o Options) bool {
-	return o.Hierarchical == HierarchicalCutout && o.Preset != PresetBW && o.Mode == ModeSpline && !o.Refine.Enabled
+	return o.Hierarchical == HierarchicalCutout && o.Preset != PresetBW && o.Mode == ModeSpline
 }
 
 // inBand reports whether pixel index p lies in the layer's extension band.
@@ -80,14 +83,23 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	// With the planar map every arc is fitted once, closed island loops
 	// as loops, and the shapes assemble their outlines from the fits.
 	var fits []arcFit
+	var jpos map[geom.Point]geom.Vec2
 	if pm != nil {
+		preps := make([]arcPrep, len(pm.Arcs))
+		parallel(len(pm.Arcs), func(i int) {
+			if a := pm.Arcs[i]; !a.Closed {
+				preps[i] = prepareArc(a.Pts, o)
+			}
+		})
+		s.shiftFlanks(pm, preps)
+		jpos = junctionPositions(pm, preps)
 		fits = make([]arcFit, len(pm.Arcs))
 		parallel(len(pm.Arcs), func(i int) {
 			a := pm.Arcs[i]
 			if a.Closed {
 				fits[i].segs = fitLoop(a.Pts, o)
 			} else {
-				fits[i].segs = fitArc(a.Pts, o)
+				fits[i].segs = preps[i].fit(jpos[a.Pts[0]], jpos[a.Pts[len(a.Pts)-1]], o)
 			}
 		})
 	}
@@ -103,6 +115,11 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	}
 	refining := o.Refine.Enabled && o.Mode == ModeSpline
 	img := refine.Window{X0: 0, Y0: 0, W: s.Width, H: s.Height}
+	if pm != nil && refining {
+		for round := 0; round < sharedRounds; round++ {
+			s.refineShared(pm, fits, layers, img, o)
+		}
+	}
 	parallel(len(jobs), func(j int) {
 		i, k := jobs[j][0], jobs[j][1]
 		c := layers[i].contours[k]
@@ -112,7 +129,7 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 		} else {
 			segs = segments(c.Pts, o)
 		}
-		if refining {
+		if refining && pm == nil {
 			var band func(p int) bool
 			if layers[i].band != nil {
 				band = layers[i].inBand
@@ -167,6 +184,120 @@ func assembleSegs(l planar.Loop, fits []arcFit) []fit.Segment {
 		out = append(out, segs...)
 	}
 	return out
+}
+
+// arcOwner returns, per arc, the loop that refines it: an emitted loop
+// before an omitted one, then the lower colour, then loop order; -1 for
+// an arc between two omitted loops, which nothing refines.
+func arcOwner(pm *planar.Map, emitted []bool) []int {
+	owner := make([]int, len(pm.Arcs))
+	for i := range owner {
+		owner[i] = -1
+	}
+	better := func(a, b int) bool {
+		if emitted[a] != emitted[b] {
+			return emitted[a]
+		}
+		if ca, cb := pm.Loops[a].Colour, pm.Loops[b].Colour; ca != cb {
+			return ca < cb
+		}
+		return a < b
+	}
+	for li, l := range pm.Loops {
+		for _, r := range l.Refs {
+			if cur := owner[r.Arc]; cur < 0 || better(li, cur) {
+				owner[r.Arc] = li
+			}
+		}
+	}
+	for i, li := range owner {
+		if li >= 0 && !emitted[li] {
+			owner[i] = -1
+		}
+	}
+	return owner
+}
+
+// refineShared runs one round of refinement over the emitted loops in
+// parallel: each loop's bezigon is assembled from its arcs with every
+// junction fixed and the arcs other loops own frozen, is refined against
+// its own colour's coverage mask, and its owned arcs are written back
+// into fits once every loop is done, so the order of work never shows.
+func (s *Segmentation) refineShared(pm *planar.Map, fits []arcFit, layers []layer, img refine.Window, o Options) {
+	emitted := make([]bool, len(pm.Loops))
+	for _, l := range layers {
+		for _, li := range l.loops {
+			emitted[li] = true
+		}
+	}
+	owner := arcOwner(pm, emitted)
+	type job struct{ layer, k int }
+	var jobs []job
+	for i, l := range layers {
+		for k := range l.loops {
+			jobs = append(jobs, job{i, k})
+		}
+	}
+	type result struct {
+		segs   []fit.Segment
+		bounds []int // index of the first segment of each ref, then len(segs)
+	}
+	results := make([]result, len(jobs))
+	parallel(len(jobs), func(j int) {
+		l := layers[jobs[j].layer]
+		li := l.loops[jobs[j].k]
+		var segs []fit.Segment
+		var fixed, frozen []bool
+		owned := false
+		for _, r := range pm.Loops[li].Refs {
+			a := fits[r.Arc].segs
+			if r.Reverse {
+				a = reverseSegs(a)
+			}
+			for i := range a {
+				fixed = append(fixed, i == 0 && !pm.Arcs[r.Arc].Closed)
+				frozen = append(frozen, owner[r.Arc] != li)
+			}
+			segs = append(segs, a...)
+			owned = owned || owner[r.Arc] == li
+		}
+		if !owned || len(segs) < 2 {
+			return
+		}
+		c := l.contours[jobs[j].k]
+		m := s.mask(uint8(l.colour), c.Pts, c.Area2 < 0, nil)
+		out, f := refineConstrained(segs, fixed, frozen, m, img, o)
+		var bounds []int
+		for i, b := range f {
+			if b {
+				bounds = append(bounds, i)
+			}
+		}
+		if len(bounds) == 0 {
+			bounds = []int{0} // a closed island loop: one arc
+		}
+		results[j] = result{segs: out, bounds: append(bounds, len(out))}
+	})
+	for j, res := range results {
+		if res.segs == nil {
+			continue
+		}
+		li := layers[jobs[j].layer].loops[jobs[j].k]
+		refs := pm.Loops[li].Refs
+		if len(res.bounds)-1 != len(refs) {
+			continue // a junction joint went missing: this loop keeps its plain arcs
+		}
+		for k, r := range refs {
+			if owner[r.Arc] != li {
+				continue
+			}
+			out := append([]fit.Segment(nil), res.segs[res.bounds[k]:res.bounds[k+1]]...)
+			if r.Reverse {
+				out = reverseSegs(out)
+			}
+			fits[r.Arc].segs = out
+		}
+	}
 }
 
 // buildLayers traces the colours, nests the shapes, drops the white page,
