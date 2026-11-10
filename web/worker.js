@@ -21,6 +21,12 @@ const ready = (async () => {
   self.postMessage({ op: 'ready', version: self.rekha.version() });
 })();
 
+// progress returns the callback the wasm calls as a stage advances; each
+// call becomes a message the page matches to request id.
+function progress(id) {
+  return (stage, done, total) => self.postMessage({ id, op: 'progress', stage, done, total });
+}
+
 self.onmessage = async (ev) => {
   const msg = ev.data;
   try {
@@ -28,10 +34,10 @@ self.onmessage = async (ev) => {
     let r;
     switch (msg.op) {
       case 'segment':
-        r = self.rekha.segment({ width: msg.width, height: msg.height, data: new Uint8ClampedArray(msg.data) }, msg.options);
+        r = self.rekha.segment({ width: msg.width, height: msg.height, data: new Uint8ClampedArray(msg.data) }, msg.options, progress(msg.id));
         break;
       case 'finish':
-        r = self.rekha.finish(msg.handle, msg.options);
+        r = self.rekha.finish(msg.handle, msg.options, progress(msg.id));
         break;
       case 'free':
         self.rekha.free(msg.handle);

@@ -17,12 +17,14 @@ make serve           # rekha-serve -static web → http://localhost:8080
 | Method | Arguments | Returns |
 |---|---|---|
 | `version()` | – | string |
-| `segment(image, options)` | `image = {width, height, data}` with `data` a `Uint8ClampedArray` of straight-alpha RGBA (what `ImageData` gives); `options` an object or JSON string | `{ok, handle, width, height, palette: ["#rrggbb", …], millis}` |
-| `finish(handle, options)` | a handle from `segment`; the full option set (it is validated whole) | `{ok, svg, paths, bytes, millis}` |
-| `trace(image, options)` | segment + finish without keeping a handle | `{ok, svg, paths, bytes, width, height, palette, millis}` |
+| `segment(image, options, onProgress?)` | `image = {width, height, data}` with `data` a `Uint8ClampedArray` of straight-alpha RGBA (what `ImageData` gives); `options` an object or JSON string | `{ok, handle, width, height, palette: ["#rrggbb", …], millis}` |
+| `finish(handle, options, onProgress?)` | a handle from `segment`; the full option set (it is validated whole) | `{ok, svg, paths, bytes, millis}` |
+| `trace(image, options, onProgress?)` | segment + finish without keeping a handle | `{ok, svg, paths, bytes, width, height, palette, millis}` |
 | `free(handle)` | – | undefined |
 
 Options use the CLI flag names in camelCase: `preset` (`bw`, `poster`, `photo`; seeds every other default exactly as the CLI), `mode`, `hierarchical`, `maxColors`, `colorTolerance`, `colorPrecision`, `threshold` (number or `"auto"`), `turnPolicy`, `filterSpeckle`, `simplify`, `cornerThreshold`, `fitTolerance`, `palette` (`"#rrggbb,#rrggbb"` or an array), `refine`, `refinePasses`, `stroke` (`cutoutStroke` still accepted), `gradients`, `gradientTolerance`, `pathPrecision`. Unknown keys and out-of-range values are errors with the field named. The authoritative list is `internal/apiopts.Params`.
+
+`onProgress(stage, done, total)`, when given, is called as the work advances, synchronously from inside the call: stages `quantise`, `label`, `ramps` (segment, no count: `total` 0) and `outlines`, `nest`, `edges`, `refine`, `curves` (finish; `outlines`, `edges`, `refine` and `curves` count `done` of `total`, at most one call per whole percent; `nest` has no count). Counts may arrive out of order; keep the maximum.
 
 `segment` is the expensive, option-light half (quantisation); `finish` is the fit. Keep the handle and call `finish` again when the user moves a control that is not one of `preset`, `threshold`, `colorPrecision`, `colorTolerance`, `maxColors`, `palette`, `filterSpeckle`; re-segment when one of those changes. Handles hold about 3 bytes per pixel until freed.
 
@@ -33,6 +35,7 @@ page → worker  {id, op: "segment", width, height, data: ArrayBuffer (transferr
 page → worker  {id, op: "finish", handle, options}
 page → worker  {id, op: "free", handle}
 worker → page  {op: "ready", version}             once, after instantiation
+worker → page  {id, op: "progress", stage, done, total}   while a segment or finish runs
 worker → page  {id, ok: true, result}             result as the wasm method returned it, minus ok
 worker → page  {id, ok: false, error}
 ```

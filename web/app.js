@@ -2,7 +2,7 @@
 // rekha.wasm in a worker, re-segments only when a segmentation option
 // changed, drops stale replies, frees replaced handles, and cancels by
 // terminating the worker. The result is shown as a wipe over the source.
-const { needsResegment, Requests, Handles, imageFileFromItems } = self.RekhaProtocol;
+const { needsResegment, Requests, Handles, imageFileFromItems, progressText } = self.RekhaProtocol;
 
 const $ = (id) => document.getElementById(id);
 const status = $('status');
@@ -60,7 +60,39 @@ function setStatus(text, kind) {
   const busy = $('busy');
   busy.hidden = kind !== 'working';
   if (!busy.hidden) $('busyText').textContent = text;
+  setProgress(null, 0, 0);
   document.body.setAttribute('aria-busy', busy.hidden ? 'false' : 'true');
+}
+
+// setProgress shows the tracer's stage under the overlay text and fills
+// the bar when the stage has a count; a stage without one keeps the bar
+// sweeping. Null clears it for the next request.
+let progressMax = 0;
+function setProgress(stage, done, total) {
+  const bar = $('busyBar');
+  const fill = $('busyFill');
+  if (stage === null) {
+    progressMax = 0;
+    $('busyStage').textContent = '';
+    bar.classList.add('sweep');
+    bar.removeAttribute('aria-valuenow');
+    fill.style.width = '0%';
+    return;
+  }
+  // Parallel work reports out of order: never step backwards.
+  if (done < progressMax) done = progressMax;
+  progressMax = done;
+  $('busyStage').textContent = progressText(stage, done, total);
+  if (total > 0) {
+    const pct = Math.round(100 * done / total);
+    bar.classList.remove('sweep');
+    bar.setAttribute('aria-valuenow', String(pct));
+    fill.style.width = pct + '%';
+  } else {
+    bar.classList.add('sweep');
+    bar.removeAttribute('aria-valuenow');
+    fill.style.width = '0%';
+  }
 }
 
 function startWorker() {
@@ -73,6 +105,7 @@ function startWorker() {
   worker.onmessage = (ev) => {
     const m = ev.data;
     if (m.op === 'ready') { if (!image) setStatus('Ready. Drop an image, paste one, or choose a file.'); return; }
+    if (m.op === 'progress') { if (requests.accept(m.id)) setProgress(m.stage, m.done, m.total); return; }
     const p = pending.get(m.id);
     if (!p) return;
     pending.delete(m.id);

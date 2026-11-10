@@ -97,6 +97,7 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 		s.shiftFlanks(pm, preps)
 		jpos = junctionPositions(pm, preps)
 		fits = make([]arcFit, len(pm.Arcs))
+		tick := o.counter("edges", len(pm.Arcs))
 		parallel(len(pm.Arcs), func(i int) {
 			a := pm.Arcs[i]
 			if a.Closed {
@@ -104,6 +105,7 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 			} else {
 				fits[i].segs = preps[i].fit(jpos[a.Pts[0]], jpos[a.Pts[len(a.Pts)-1]], o)
 			}
+			tick()
 		})
 	}
 
@@ -124,10 +126,13 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	refining := o.Refine.Enabled && o.Mode == ModeSpline
 	img := refine.Window{X0: 0, Y0: 0, W: s.Width, H: s.Height}
 	if pm != nil && refining {
+		tick := o.counter("refine", sharedRounds)
 		for round := 0; round < sharedRounds; round++ {
 			s.refineShared(pm, fits, layers, img, o)
+			tick()
 		}
 	}
+	tick := o.counter("curves", len(jobs))
 	parallel(len(jobs), func(j int) {
 		i, k := jobs[j][0], jobs[j][1]
 		c := layers[i].contours[k]
@@ -146,6 +151,7 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 			segs = refineSegments(segs, m, img, o)
 		}
 		subpaths[i][k] = svg.Subpath{Segs: segs}
+		tick()
 	})
 
 	// Shapes of different colours meet along fitted edges that drift
@@ -341,10 +347,12 @@ func (s *Segmentation) buildLayersMap(o Options) ([]layer, *planar.Map) {
 	var layers []layer
 	var pm *planar.Map
 	if usePlanar(o) {
+		o.report("outlines")
 		layers, pm = s.planarLayers()
 	} else {
 		layers = s.layers(o)
 	}
+	o.report("nest")
 	stacked := o.Hierarchical == HierarchicalStacked && o.Preset != PresetBW
 	shapes := make([]contour.Shape, len(layers))
 	for i, l := range layers {
@@ -443,7 +451,9 @@ func (s *Segmentation) layers(o Options) []layer {
 		counts[l]++
 	}
 	var bufs sync.Pool
+	tick := o.counter("outlines", len(colours))
 	parallel(len(colours), func(i int) {
+		defer tick()
 		bm, _ := bufs.Get().(*bitmap.Bitmap)
 		if bm == nil {
 			bm = bitmap.New(s.Width, s.Height)

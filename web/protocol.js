@@ -47,7 +47,29 @@
     return null;
   }
 
-  const api = { SEGMENT_KEYS, needsResegment, Requests, Handles, imageFileFromItems };
+  // Stage names the tracer reports (rekha.Options.Progress) and what
+  // the page says for each.
+  const STAGES = {
+    quantise: 'Quantising colours…',
+    label: 'Labelling pixels…',
+    ramps: 'Merging ramps…',
+    outlines: 'Tracing outlines…',
+    nest: 'Nesting shapes…',
+    edges: 'Fitting edges…',
+    refine: 'Refining…',
+    curves: 'Fitting curves…',
+  };
+
+  // progressText is the line shown for a progress report: the stage,
+  // then "done of total" when the stage has a count.
+  function progressText(stage, done, total) {
+    const text = STAGES[stage] || 'Working…';
+    if (!total) return text;
+    const fmt = (n) => n.toLocaleString('en-US');
+    return `${text} ${fmt(done)} of ${fmt(total)}`;
+  }
+
+  const api = { SEGMENT_KEYS, needsResegment, Requests, Handles, imageFileFromItems, progressText };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.RekhaProtocol = api;
 })(typeof self !== 'undefined' ? self : globalThis);

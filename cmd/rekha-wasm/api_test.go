@@ -161,3 +161,35 @@ func TestWasmVersion(t *testing.T) {
 		t.Fatalf("version %v", v)
 	}
 }
+
+// A third argument to segment, finish and trace is a progress callback
+// (stage, done, total); it is optional.
+func TestProgressCallback(t *testing.T) {
+	var calls []string
+	cb := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		calls = append(calls, args[0].String())
+		if args[1].Int() > args[2].Int() {
+			t.Errorf("done %d > total %d", args[1].Int(), args[2].Int())
+		}
+		return nil
+	})
+	defer cb.Release()
+	r := api().Call("segment", jsImage(disc(false)), `{"preset":"poster"}`, cb)
+	if !r.Get("ok").Bool() {
+		t.Fatalf("segment: %s", r.Get("error").String())
+	}
+	if len(calls) == 0 || calls[0] != "quantise" {
+		t.Fatalf("segment progress calls %v, want quantise first", calls)
+	}
+	n := len(calls)
+	r = api().Call("finish", r.Get("handle"), `{"preset":"poster"}`, cb)
+	if !r.Get("ok").Bool() {
+		t.Fatalf("finish: %s", r.Get("error").String())
+	}
+	if len(calls) == n || calls[len(calls)-1] != "curves" {
+		t.Fatalf("finish progress calls %v, want curves last", calls[n:])
+	}
+	if r = api().Call("trace", jsImage(disc(false)), `{"preset":"poster"}`); !r.Get("ok").Bool() {
+		t.Fatalf("trace without a callback: %s", r.Get("error").String())
+	}
+}

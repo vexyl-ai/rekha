@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { SEGMENT_KEYS, needsResegment, Requests } = require('./protocol.js');
+const { SEGMENT_KEYS, needsResegment, Requests, progressText } = require('./protocol.js');
 
 test('segment keys', () => {
   assert.deepEqual(SEGMENT_KEYS, ['preset', 'threshold', 'colorPrecision', 'colorTolerance', 'maxColors', 'palette', 'filterSpeckle', 'gradients', 'gradientTolerance']);
@@ -71,4 +71,11 @@ test('paste without an image gives null', () => {
 test('gradient keys re-segment', () => {
   assert.ok(SEGMENT_KEYS.includes('gradients') && SEGMENT_KEYS.includes('gradientTolerance'));
   assert.equal(needsResegment({ gradients: false }, { gradients: true }), true);
+});
+
+test('progress text names the stage and the count', () => {
+  assert.equal(progressText('quantise', 0, 0), 'Quantising colours…');
+  assert.equal(progressText('curves', 312, 1204), 'Fitting curves… 312 of 1,204');
+  assert.equal(progressText('curves', 1204, 1204), 'Fitting curves… 1,204 of 1,204');
+  assert.equal(progressText('nonsense', 0, 0), 'Working…');
 });

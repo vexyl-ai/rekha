@@ -37,6 +37,7 @@ func install() {
 			if err != nil {
 				return js.Null(), err
 			}
+			o.Progress = progressOf(args, 2)
 			return segment(img, o)
 		})
 	}))
@@ -49,6 +50,7 @@ func install() {
 			if err != nil {
 				return js.Null(), err
 			}
+			o.Progress = progressOf(args, 2)
 			return finish(args[0], o)
 		})
 	}))
@@ -58,6 +60,7 @@ func install() {
 			if err != nil {
 				return js.Null(), err
 			}
+			o.Progress = progressOf(args, 2)
 			start := time.Now()
 			s, err := rekha.Segment(img, o)
 			if err != nil {
@@ -87,6 +90,16 @@ func install() {
 		return js.Undefined()
 	}))
 	js.Global().Set("rekha", obj)
+}
+
+// progressOf wraps args[i], when it is a function, as a Progress that
+// calls it with (stage, done, total); otherwise nil.
+func progressOf(args []js.Value, i int) rekha.Progress {
+	if len(args) <= i || args[i].Type() != js.TypeFunction {
+		return nil
+	}
+	cb := args[i]
+	return func(stage string, done, total int) { cb.Invoke(stage, done, total) }
 }
 
 // guard runs fn and shapes its outcome as {ok, …} or {ok: false, error},

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"sync/atomic"
 
 	"github.com/vexyl-ai/rekha/internal/contour"
 	"github.com/vexyl-ai/rekha/internal/refine"
@@ -82,6 +83,14 @@ type Options struct {
 
 	Gradients         bool    // colour presets: merge adjacent bands that form one linear ramp into a gradient fill
 	GradientTolerance float64 // 0..1, default 0.03; RMS sRGB distance (channels 0..1) a ramp may leave
+
+	// Progress, when set, is told how far Segment and Finish have got:
+	// stage names quantise, label, ramps (Segment; no count) and
+	// outlines, nest, edges, refine, curves (Finish; done of total, total
+	// 0 when a stage has no count). Under parallel work it may be called from several
+	// goroutines at once and counts may arrive out of order. It must be
+	// quick: a stage reports at most once per whole percent.
+	Progress Progress
 }
 
 // RefineOptions controls the Phase 3 refinement of spline output: each
@@ -147,6 +156,33 @@ func (e *ValidationError) Error() string { return e.Field + ": " + e.Msg }
 
 // Validate checks every field in struct order and returns the first failure
 // as a *ValidationError, or nil.
+// Progress receives Options.Progress reports.
+type Progress func(stage string, done, total int)
+
+// report sends a stage with no count.
+func (o Options) report(stage string) {
+	if o.Progress != nil {
+		o.Progress(stage, 0, 0)
+	}
+}
+
+// counter returns a function to call after each of total items of
+// stage; it reports every whole percent and the end, and nothing when
+// no Progress is set.
+func (o Options) counter(stage string, total int) func() {
+	if o.Progress == nil || total == 0 {
+		return func() {}
+	}
+	var done atomic.Int64
+	o.Progress(stage, 0, total)
+	return func() {
+		d := done.Add(1)
+		if d == int64(total) || d*100/int64(total) != (d-1)*100/int64(total) {
+			o.Progress(stage, int(d), total)
+		}
+	}
+}
+
 func (o Options) Validate() error {
 	switch o.Preset {
 	case PresetBW, PresetPoster, PresetPhoto:

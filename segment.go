@@ -44,6 +44,7 @@ func Segment(img image.Image, o Options) (*Segmentation, error) {
 		return nil, err
 	}
 	if o.Preset == PresetBW {
+		o.report("label")
 		return segmentBW(img, o), nil
 	}
 	return segmentColour(img, o), nil
@@ -83,6 +84,7 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 	if w*h == 0 {
 		return s
 	}
+	o.report("quantise")
 	cells := quant.Cells(rgb, o.ColorPrecision)
 
 	var pal []colour.OKLab
@@ -95,6 +97,7 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 		pal = quant.KMeans(cells, quant.Wu(cells, o.MaxColors, o.ColorTolerance), kmeansIters)
 	}
 
+	o.report("label")
 	scratch := make([]uint8, w*h)
 	quant.NewLookup(pal, o.ColorPrecision).Map(rgb, s.Labels, s.Second, s.Blend)
 	final := region.Cleanup(s.Labels, w, h, pal, o.FilterSpeckle, o.ColorTolerance)
@@ -109,6 +112,7 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 	}
 
 	if o.Gradients {
+		o.report("ramps")
 		s.mergeRamps(rgb, final, pal, o)
 		return s
 	}
