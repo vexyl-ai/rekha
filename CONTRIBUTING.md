@@ -25,7 +25,7 @@ Do not prompt an AI assistant with GPL tracer source either. Review generated co
 ## Development
 
 ```
-make lint test wasm-check
+make lint test wasm-check wasm wasm-test web-test
 ```
 
-All three must pass. `CGO_ENABLED=0` always; no cgo dependencies are accepted.
+All of them must pass (the last three need Node 20 for the wasm and worker tests). `CGO_ENABLED=0` always; no cgo dependencies are accepted.

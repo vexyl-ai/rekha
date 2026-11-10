@@ -76,3 +76,7 @@ Procedure, once per corpus image:
 An SVG is rasterised and scored like any tool's output: PSNR, Paths, Nodes, Bytes, with `ms` 0 because nothing ran. A PNG gives PSNR only, and a PNG of the wrong size is a row error. An image with neither file gets the note `no reference`, so a partial download still produces a table.
 
 Downloads are for measurement only. Do not commit them, and do not trace them: the outputs are the services' work, not the corpus.
+
+## Latency in the browser
+
+Speed of the WebAssembly build against native, per preset and image, is a separate table: `REKHA_LATENCY=1 go test -run TestReport -v ./internal/latency` natively and `REKHA_LATENCY=1 make wasm-test ARGS="-run TestWasmLatency -v"` under Node, recorded in `bench/results/2026-11-10-phase4-wasm.md`.

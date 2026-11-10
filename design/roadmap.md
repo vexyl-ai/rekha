@@ -1,6 +1,6 @@
 # Rekha roadmap and product split
 
-Status: draft, 2026-11-10. Phases 0–3 are delivered (Phase 3b baseline: `bench/results/2026-11-10-phase3b.md`). Phases 0–5 summarise `Go SVG image tracing tool.md`; Phase 3 refinement is detailed in `refine-bezigon-optimisation.md`; Phase 6 is new.
+Status: draft, 2026-11-10. Phases 0–3 are delivered (Phase 3b baseline: `bench/results/2026-11-10-phase3b.md`); the open half of Phase 4 (wasm, worker demo, capped HTTP API) is delivered 2026-11-10 (`bench/results/2026-11-10-phase4-wasm.md`). Phases 0–5 summarise `Go SVG image tracing tool.md`; Phase 3 refinement is detailed in `refine-bezigon-optimisation.md`; Phase 6 is new.
 
 ## Product split: open core
 
@@ -29,7 +29,7 @@ Rules that keep the split clean:
 | 1. Bilevel MVP | Library + CLI, black and white | Fixed and adaptive threshold; pixel-edge contour tracing with holes and turn policy; despeckle; staircase removal and polygon simplification; corner detection plus Schneider fitting; compact SVG writer; `pixel`/`polygon`/`spline` modes; golden tests, fuzzing | Logos and scans trace cleanly; PSNR within a set margin of Potrace on bilevel corpus | Open |
 | 2. Colour | Colour tracing with presets | OKLab; Wu + k-means quantisation; fixed palette and max-colours; small-region merging; soft per-region coverage masks from anti-aliasing (needed by Phase 3); stacked layers; `bw`/`poster`/`photo` presets; per-layer parallelism, deterministic ordering | Fidelity and size comparable to VTracer on corpus | Open |
 | 3. Refinement and quality | Vector Magic grade on flat art | Direct bezigon optimisation (`internal/refine`, see design notes); segment merge/split; primitive detection (lines, arcs, circles, rectangles); post-fit simplification; output optimisation levels; cutout mode (stroke stopgap, then shared-boundary planar map) | Measured PSNR gain over unrefined output at equal or lower node count; side-by-side with Vector Magic on corpus (hand-downloaded outputs scored by `make bench`, see `docs/benchmark.md`) | Open (delivered 2026-11-10) |
-| 4. Online | Browser and API | WASM build in Web Worker, browser-side decoding, before/after preview, cached segment step with cheap re-finish on slider moves; then HTTP API with dimension caps, timeouts, concurrency limits, scale-to-zero host; accounts and billing scaffold | WASM latency measured; API survives fuzzed uploads | WASM open, API and GUI private |
+| 4. Online | Browser and API | WASM build in Web Worker, browser-side decoding, before/after preview, cached segment step with cheap re-finish on slider moves; then HTTP API with dimension caps, timeouts, concurrency limits, scale-to-zero host; accounts and billing scaffold | WASM latency measured; API survives fuzzed uploads | WASM, demo page and capped API open (delivered 2026-11-10); accounts, billing and GUI private |
 | 5. Optional extensions | By demand | Clean-room Potrace-style optimal-polygon fitter from the paper (after legal sign-off); centerline tracing; PDF/EPS/DXF export; build-tagged SIMD | Each justified by benchmark or user demand | Open |
 | 6. AI layer | Final stage, paid tier | See below | Measured improvement on photo and noisy-input corpus categories over classical pipeline alone | Private |
 
