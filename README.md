@@ -1,8 +1,23 @@
 # Rekha
 
-Rekha traces raster images (PNG, JPEG, GIF) into SVG. Pure Go, no cgo, one static binary, same library behind a CLI, an HTTP server and a WebAssembly build.
+**Raster to clean SVG. Pure Go. Your image never leaves your machine.**
 
-**Status:** Phase 3b: bilevel and colour tracing (`bw`, `poster`, `photo` presets) with optional curve refinement (`--refine`), which now also recognises circles, arcs, shared corner radii and rectangles, shares every boundary between cutout shapes, and runs about 3× faster than Phase 3. Server and WASM builds follow; see `design/roadmap.md`. Baseline: `bench/results/2026-11-10-phase3b.md`.
+Rekha traces raster images (PNG, JPEG, GIF) into SVG: a library, a CLI and a WebAssembly build from one codebase, with no cgo and no dependencies beyond `golang.org/x/image`. Clean-room, Apache-2.0.
+
+**Status:** Phase 3b: bilevel and colour tracing (`bw`, `poster`, `photo` presets) with optional curve refinement (`--refine`), which recognises circles, arcs, shared corner radii and rectangles, shares every boundary between cutout shapes, and runs about 3× faster than Phase 3. The library already compiles to WebAssembly; the browser worker, demo page and HTTP API are Phase 4, see `design/roadmap.md`. Baseline: `bench/results/2026-11-10-phase3b.md`.
+
+## Why Rekha
+
+- **Curves, not polygon soup.** `--refine` optimises every Bézier against the image's anti-aliasing, so edges land where the artist drew them, to a fraction of a pixel. On the anti-aliased synthetics that is 5–20 dB PSNR over the plain fit at about the same node count.
+- **Primitives stay primitives.** A circle comes out as four exact arcs, a rounded rectangle as four lines and four arcs with one shared radius, a rotated rectangle as four nodes. Editable in Illustrator, Figma or Inkscape without untangling hundreds of handles.
+- **Small text survives.** On the small-glyphs fixture Rekha renders at 32.26 dB with 86 nodes against Potrace's 32.22 dB with 107.
+- **Few paths.** A 3.4-megapixel colour logo traces to 14 paths with `--preset poster`; VTracer matches the PSNR (28.95 vs 28.98 dB) but tints the white counters grey.
+- **Fast enough to sit behind a slider.** 0.1–0.25 s per 256×256 image with `--refine`, 1.1 s plain or 4.6 s refined for that 3.4-megapixel logo, on a laptop.
+- **Deterministic.** The same input gives the same SVG on one core or eight, arm64 or amd64, so a diff in CI is a real change.
+- **One static binary, anywhere Go runs.** No Python, no libpotrace, no native libraries. The same code runs in the browser as WebAssembly, so a logo can be traced without uploading it.
+- **Safe to embed.** Written from the published papers, never from Potrace or any GPL tracer (see below). Apache-2.0 with DCO sign-offs from the first commit.
+
+Where it is not there yet: photographs posterise into colour bands (an AI pre-pass is the planned answer, roadmap Phase 6); cutout mode shares boundaries correctly but most viewers still bleed the page faintly through shared edges at 1:1, so stacked layers stay the default; and side-by-side numbers against Vector Magic and Vectorizer.AI are only produced once their outputs are placed under `bench/reference/`, see `docs/benchmark.md`. All quality claims above are measured by `make test` and `make bench`; the commands and fixtures are in the repo.
 
 ## Usage
 
