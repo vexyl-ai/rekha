@@ -34,7 +34,20 @@
     release() { const prev = this.current; this.current = null; return prev; }
   }
 
-  const api = { SEGMENT_KEYS, needsResegment, Requests, Handles };
+  // imageFileFromItems returns the first image file among clipboard or
+  // drag items (DataTransferItemList-like), or null.
+  function imageFileFromItems(items) {
+    if (!items) return null;
+    for (const it of items) {
+      if (it.kind === 'file' && /^image\//.test(it.type)) {
+        const f = it.getAsFile();
+        if (f) return f;
+      }
+    }
+    return null;
+  }
+
+  const api = { SEGMENT_KEYS, needsResegment, Requests, Handles, imageFileFromItems };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.RekhaProtocol = api;
 })(typeof self !== 'undefined' ? self : globalThis);

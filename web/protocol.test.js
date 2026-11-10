@@ -50,3 +50,20 @@ test('release returns the current handle once', () => {
   assert.equal(h.release(), null);
   assert.equal(h.current, null);
 });
+
+const { imageFileFromItems } = require('./protocol.js');
+
+test('paste picks the first image item', () => {
+  const png = { kind: 'file', type: 'image/png', getAsFile: () => ({ name: 'a.png' }) };
+  const items = [
+    { kind: 'string', type: 'text/plain', getAsFile: () => null },
+    png,
+    { kind: 'file', type: 'image/jpeg', getAsFile: () => ({ name: 'b.jpg' }) },
+  ];
+  assert.deepEqual(imageFileFromItems(items), { name: 'a.png' });
+});
+
+test('paste without an image gives null', () => {
+  assert.equal(imageFileFromItems([{ kind: 'string', type: 'text/plain', getAsFile: () => null }]), null);
+  assert.equal(imageFileFromItems(null), null);
+});

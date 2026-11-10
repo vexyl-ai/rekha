@@ -8,7 +8,7 @@ make wasm-test       # go test under Node through go_js_wasm_exec
 make serve           # rekha-serve -static web → http://localhost:8080
 ```
 
-`web/` is a bare demo page: drop an image, see source and SVG side by side, move the controls, download. It needs no build step beyond `make wasm` and any static file server. CI builds and tests the wasm on every push.
+`web/` is the demo page: drop, paste or choose an image, wipe between source and SVG with a draggable divider, move the controls, download. It needs no build step beyond `make wasm` and any static file server. CI builds and tests the wasm on every push.
 
 ## JS API
 
