@@ -229,6 +229,7 @@ func TestRekhaToolsPresets(t *testing.T) {
 	want := map[string]string{
 		"rekha": "--preset bw", "rekha-poster": "--preset poster", "rekha-photo": "--preset photo",
 		"rekha-refine": "--preset bw --refine", "rekha-poster-refine": "--preset poster --refine",
+		"rekha-photo-gradients": "--preset photo --gradients",
 	}
 	if len(tools) != len(want) {
 		t.Fatalf("got %d tools", len(tools))

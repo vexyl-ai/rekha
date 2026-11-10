@@ -50,6 +50,7 @@ func RekhaTools(bin string) []Tool {
 		rekhaTool(bin, "rekha-photo", "photo"),
 		rekhaTool(bin, "rekha-refine", "bw", "--refine"),
 		rekhaTool(bin, "rekha-poster-refine", "poster", "--refine"),
+		rekhaTool(bin, "rekha-photo-gradients", "photo", "--gradients"),
 	}
 }
 

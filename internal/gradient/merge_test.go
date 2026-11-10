@@ -118,22 +118,23 @@ func TestMergeTinyComponentIgnored(t *testing.T) {
 }
 
 func TestMergeLabelCap(t *testing.T) {
-	// 256 labels, one per column of a 256×20 image: a ramp over columns
-	// 0..127 (grey = x) and, after a 60-grey jump, another over 128..255.
-	// Each ramp wants a fresh label while all 256 are in use, so the
-	// merges must stop at the cap rather than wrap a uint8.
-	const w, h = 256, 20
+	// 256 labels, one per 4-px column band of a 1024×20 image: a ramp
+	// over bands 0..127 (grey = band) and, after a 60-grey jump, another
+	// over 128..255. Each ramp wants a fresh label while all 256 are in
+	// use, so the merges must stop at the cap rather than wrap a uint8.
+	const w, h = 1024, 20
 	rgb := make([]uint8, 3*w*h)
 	labels := make([]uint8, w*h)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			p := y*w + x
-			v := uint8(x)
-			if x >= 128 {
-				v = uint8(x - 60)
+			band := x / 4
+			v := uint8(band)
+			if band >= 128 {
+				v = uint8(band - 60)
 			}
 			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = v, v, v
-			labels[p] = uint8(x)
+			labels[p] = uint8(band)
 		}
 	}
 	r := Merge(rgb, labels, w, h, 256, 0.03)
@@ -167,6 +168,31 @@ func TestMergeOldToNew(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		if r.OldToNew[i] != -1 {
 			t.Errorf("band %d should be absorbed, OldToNew %v", i, r.OldToNew)
+		}
+	}
+}
+
+func TestMergeShortRampStaysFlat(t *testing.T) {
+	// A 10×10 pocket of label 1 inside flat label 0, with a steep ramp
+	// across its 10 px: too short to show as a gradient, so it stays flat.
+	const w, h = 32, 32
+	rgb := make([]uint8, 3*w*h)
+	labels := make([]uint8, w*h)
+	for p := range labels {
+		rgb[3*p], rgb[3*p+1], rgb[3*p+2] = 120, 120, 120
+	}
+	for y := 11; y < 21; y++ {
+		for x := 11; x < 21; x++ {
+			p := y*w + x
+			labels[p] = 1
+			v := uint8(200 + (x-11)*5)
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = v, v, v
+		}
+	}
+	r := Merge(rgb, labels, w, h, 2, 0.03)
+	for _, rp := range r.Ramps {
+		if rp != nil {
+			t.Errorf("short pocket produced a ramp %+v", rp)
 		}
 	}
 }

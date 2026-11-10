@@ -2,13 +2,21 @@ package rekha
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"image"
 	"image/color"
+	_ "image/jpeg"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/vexyl-ai/rekha/internal/bench"
 	"github.com/vexyl-ai/rekha/internal/corpus"
+	"github.com/vexyl-ai/rekha/internal/metrics"
 )
 
 func photoGradients() Options {
@@ -75,6 +83,18 @@ func TestGradientsFlatArtUnchanged(t *testing.T) {
 	}
 }
 
+func TestGradientsBigPosterUnchanged(t *testing.T) {
+	// 2048² flat art under the photo preset: small pockets between
+	// shapes must not become ramps.
+	off := PresetOptions(PresetPhoto)
+	on := off
+	on.Gradients = true
+	img := synth(t, "big-poster")
+	if a, b := traceImageSVG(t, img, off), traceImageSVG(t, img, on); a != b {
+		t.Error("big-poster changed with gradients on")
+	}
+}
+
 func TestGradientsDeterministic(t *testing.T) {
 	prev := runtime.GOMAXPROCS(1)
 	a := traceSVG(t, "gradient-shapes", photoGradients())
@@ -131,5 +151,75 @@ func TestGradientOptionsValidate(t *testing.T) {
 	o.GradientTolerance = 1.5
 	if o.Validate() == nil {
 		t.Error("1.5 accepted")
+	}
+}
+
+// psnrOf traces img under o, rasterises the SVG with rsvg-convert at the
+// image's size and returns the PSNR against img.
+func psnrOf(t *testing.T, img image.Image, o Options) (psnr float64, paths, bytes int) {
+	t.Helper()
+	s := traceImageSVG(t, img, o)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.svg")
+	if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := img.Bounds()
+	got, err := bench.RSVGConvert(context.Background(), path, b.Dx(), b.Dy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	psnr, err = metrics.PSNR(got, img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return psnr, strings.Count(s, "<path"), len(s)
+}
+
+func TestGradientsPSNR(t *testing.T) {
+	if err := bench.CheckRasterizer(); err != nil {
+		t.Skip(err)
+	}
+	for _, name := range []string{"gradient-h", "gradient-shapes"} {
+		img := synth(t, name)
+		flat, fp, _ := psnrOf(t, img, PresetOptions(PresetPhoto))
+		grad, gp, _ := psnrOf(t, img, photoGradients())
+		t.Logf("%s: flat %.2f dB %d paths, gradients %.2f dB %d paths", name, flat, fp, grad, gp)
+		if grad < flat-0.05 {
+			t.Errorf("%s: gradients %.2f dB below flat %.2f dB", name, grad, flat)
+		}
+	}
+}
+
+// TestBirdReport prints the photo preset with and without gradients on
+// the image REKHA_BIRD names; it asserts nothing.
+func TestBirdReport(t *testing.T) {
+	path := os.Getenv("REKHA_BIRD")
+	if path == "" {
+		t.Skip("REKHA_BIRD not set")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, _, err := image.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raster := bench.CheckRasterizer() == nil
+	for _, c := range []struct {
+		name string
+		o    Options
+	}{{"photo", PresetOptions(PresetPhoto)}, {"photo+gradients", photoGradients()}} {
+		start := time.Now()
+		svg := traceImageSVG(t, img, c.o)
+		ms := time.Since(start).Milliseconds()
+		line := fmt.Sprintf("%s: %d paths, %d bytes, %d ms", c.name, strings.Count(svg, "<path"), len(svg), ms)
+		if raster {
+			p, _, _ := psnrOf(t, img, c.o)
+			line += fmt.Sprintf(", %.2f dB", p)
+		}
+		t.Log(line)
 	}
 }

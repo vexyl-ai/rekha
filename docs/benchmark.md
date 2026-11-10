@@ -41,7 +41,7 @@ make bench                                  # all builtin tools plus bin/rekha, 
 ./bin/rekha-bench -corpus path/to/images    # another corpus
 ```
 
-Rekha itself is always included (`-rekha` names the binary, default `bin/rekha`, which `make bench` builds first) as five tools: `rekha` (`--preset bw`), `rekha-poster` and `rekha-photo`, each run as `rekha --preset <p> -o {out} {in}`, plus `rekha-refine` (`--preset bw --refine`) and `rekha-poster-refine` (`--preset poster --refine`), the same black-box treatment the reference tools get. Compare `rekha` with Potrace on bilevel images, `rekha-poster`/`rekha-photo` with VTracer on colour images, and each `-refine` tool with its plain counterpart for what the refinement stage adds.
+Rekha itself is always included (`-rekha` names the binary, default `bin/rekha`, which `make bench` builds first) as six tools: `rekha` (`--preset bw`), `rekha-poster` and `rekha-photo`, each run as `rekha --preset <p> -o {out} {in}`, plus `rekha-refine` (`--preset bw --refine`), `rekha-poster-refine` (`--preset poster --refine`) and `rekha-photo-gradients` (`--preset photo --gradients`), the same black-box treatment the reference tools get. Compare `rekha` with Potrace on bilevel images, `rekha-poster`/`rekha-photo` with VTracer on colour images, each `-refine` tool with its plain counterpart for what the refinement stage adds, and `rekha-photo-gradients` with `rekha-photo` for what gradient fills change (`gradient-h`, `gradient-shapes`).
 
 Outputs `bench/out/results.md` and `bench/out/results.csv` and prints the markdown table. Rows are sorted by image path then tool name, and error notes never contain scratch paths, so two runs differ only in the `ms` column.
 

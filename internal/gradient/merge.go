@@ -57,13 +57,18 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	for i := range comps {
 		comps[i].first = -1
 	}
+	// The fit sees interior pixels only: a pixel on a component's edge
+	// is anti-aliased against whatever lies outside and would pull a
+	// small band's residual over the tolerance.
 	for p := 0; p < np; p++ {
 		c := &comps[comp[p]]
 		if c.first < 0 {
 			c.first = int32(p)
 			c.label = labels[p]
 		}
-		c.m.add(float64(p%w)+0.5, float64(p/w)+0.5, colourOf(rgb, p))
+		if interior(labels, w, h, p) {
+			c.m.add(float64(p%w)+0.5, float64(p/w)+0.5, colourOf(rgb, p))
+		}
 	}
 	// Boundaries between components.
 	edges := map[[2]int32]*edge{}
@@ -199,40 +204,67 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		}
 	}
 
-	// Pre-compact labels: unmerged components keep theirs, merged groups
-	// take fresh ones in order of first pixel.
-	fresh := map[int32]int{}
-	pre := make([]int, ncomp)
-	for i := range comps {
-		r := find(int32(i))
-		if !groups[r].merged {
-			pre[i] = int(comps[i].label)
-			continue
-		}
-		if _, ok := fresh[r]; !ok {
-			fresh[r] = n + len(fresh)
-		}
-		pre[i] = fresh[r]
-	}
-	// Extent of each merged group along its ramp direction.
+	// Every group with enough interior pixels whose fit is within tol is
+	// a ramp candidate; its extent along u is measured over all its
+	// pixels. A candidate at least minLength long that changes colour by
+	// at least tol end to end becomes a ramp and needs a label of its
+	// own, as does a merged group; other groups keep their old label.
 	type extent struct {
 		f          fitted
 		tmin, tmax float64
 	}
 	ext := map[int32]*extent{}
-	for r := range fresh {
-		f := groups[r].m.fit()
-		ext[r] = &extent{f: f, tmin: math.Inf(1), tmax: math.Inf(-1)}
+	var roots []int32
+	for i := range groups {
+		if find(int32(i)) != int32(i) {
+			continue
+		}
+		roots = append(roots, int32(i))
+		g := &groups[i]
+		if g.m.n < minPixels {
+			continue
+		}
+		if f := g.m.fit(); f.ok && f.rms <= tol {
+			ext[int32(i)] = &extent{f: f, tmin: math.Inf(1), tmax: math.Inf(-1)}
+		}
 	}
 	for p := 0; p < np; p++ {
-		r := find(comp[p])
-		e := ext[r]
+		e := ext[find(comp[p])]
 		if e == nil {
 			continue
 		}
 		t := float64(e.f.u[0]*(float64(p%w)+0.5)) + float64(e.f.u[1]*(float64(p/w)+0.5))
 		e.tmin = math.Min(e.tmin, t)
 		e.tmax = math.Max(e.tmax, t)
+	}
+	sort.Slice(roots, func(i, j int) bool { return groups[roots[i]].first < groups[roots[j]].first })
+	fresh := map[int32]int{}
+	rampOf := map[int32]*Ramp{}
+	for _, r := range roots {
+		g := &groups[r]
+		var rp *Ramp
+		if e := ext[r]; e != nil && e.tmax-e.tmin >= minLength && float64(e.f.slope*(e.tmax-e.tmin)) >= tol {
+			rp = ramp(&g.m, e.f, e.tmin, e.tmax)
+		}
+		if rp == nil && !g.merged {
+			continue
+		}
+		if n+len(fresh) >= maxLabels {
+			if g.merged {
+				panic("gradient: merged group past the label cap")
+			}
+			continue // no label free: the lone band stays flat
+		}
+		fresh[r] = n + len(fresh)
+		rampOf[r] = rp
+	}
+	pre := make([]int, ncomp)
+	for i := range comps {
+		if l, ok := fresh[find(int32(i))]; ok {
+			pre[i] = l
+		} else {
+			pre[i] = int(comps[i].label)
+		}
 	}
 	// Compact by first appearance.
 	remap := make([]int, n+len(fresh))
@@ -245,14 +277,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		l := pre[comp[p]]
 		if remap[l] < 0 {
 			remap[l] = len(ramps)
-			var rp *Ramp
-			if r := find(comp[p]); groups[r].merged {
-				e := ext[r]
-				if e.f.ok && float64(e.f.slope*(e.tmax-e.tmin)) >= tol {
-					rp = ramp(&groups[r].m, e.f, e.tmin, e.tmax)
-				}
-			}
-			ramps = append(ramps, rp)
+			ramps = append(ramps, rampOf[find(comp[p])])
 		}
 		res.Labels[p] = uint8(remap[l])
 	}
@@ -262,6 +287,15 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	res.N = len(ramps)
 	res.Ramps = ramps
 	return res
+}
+
+// interior reports whether every in-image 4-neighbour of pixel p carries
+// its label.
+func interior(labels []uint8, w, h, p int) bool {
+	l := labels[p]
+	x, y := p%w, p/w
+	return (x == 0 || labels[p-1] == l) && (x == w-1 || labels[p+1] == l) &&
+		(y == 0 || labels[p-w] == l) && (y == h-1 || labels[p+w] == l)
 }
 
 // components labels the 4-connected components of equal labels, numbered

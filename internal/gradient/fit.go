@@ -9,6 +9,11 @@ import (
 // smaller is a speck or a sliver the cleanup already judged.
 const minPixels = 16
 
+// minLength is the shortest extent, in pixels along its direction, a ramp
+// may have: shorter than that a gradient is invisible and the region
+// stays flat.
+const minLength = 16
+
 // Stop is one colour of a ramp at an offset in 0..1.
 type Stop struct {
 	Offset float64
