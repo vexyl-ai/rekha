@@ -24,9 +24,14 @@ The other 15 corpus images (aa-abut, big-poster 2048², checkerboard-2px, circle
 | Options | Paths | Bytes | ms | PSNR dB |
 |---|---:|---:|---:|---:|
 | photo | 155 | 86 216 | 5 876 | 36.72 |
-| photo --gradients | 203 | 48 396 | 8 073 | 38.72 |
+| photo --gradients (two-stop, v1) | 203 | 48 396 | 8 073 | 38.72 |
+| photo --gradients (multi-stop, v2) | 197 | 48 934 | 10 091 | 39.38 |
 
-23 gradients. The banded feathers become smooth ramps (see the spec's intent); bytes drop by 44 % and PSNR rises 2.0 dB. The `<path>` count rises because a region with a ramp of its own carries a label of its own, so consecutive stacked shapes that used to share one `<path>` by colour are now separate elements; nodes are what the paths cost, and the byte count shows the net effect. Gradient merging adds about 2 s on 16 megapixels (components, moments and the merge passes are single-threaded).
+v1: 23 gradients. The banded feathers become smooth ramps (see the spec's intent); bytes drop by 44 % and PSNR rises 2.0 dB. The `<path>` count rises because a region with a ramp of its own carries a label of its own, so consecutive stacked shapes that used to share one `<path>` by colour are now separate elements; nodes are what the paths cost, and the byte count shows the net effect. Gradient merging adds about 2 s on 16 megapixels (components, moments and the merge passes are single-threaded).
+
+### Multi-stop ramps (v2, same day)
+
+v1 merged a curved feather (orange → pink → magenta) only in the chunks a straight line fits, and the chunks met at a seam worse than the band step. v2 keeps the linear pass, then joins its groups across bends along a shared direction (the principal axis of the colour-gradient structure tensor, with gradients of tol or more per pixel left out so outlines do not vote), samples the colour in 8-px bins along it, simplifies the samples by Douglas-Peucker at tol/2 (an exactly linear ramp keeps two stops; both gradient goldens are byte-identical), and dissolves any joined group whose samples leave an RMS error above tol back into its linear groups. On the bird: 21 gradients with 61 stops, PSNR up a further 0.66 dB at about the same bytes; the pink wing feather is one smooth ramp with no seam. The torn seam across the tail body remains: that region's colour changes in two directions at once (the body's ramp crossed by a shadow band), which no single `<linearGradient>` holds, and the join that tried it was dissolved. The 15 flat-art images are still byte-identical. Merging now costs about 4 s on 16 megapixels.
 
 ## Verdict on the photo default
 
