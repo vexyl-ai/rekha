@@ -126,11 +126,66 @@ func (m *moments) split(bx box) (box, box, bool) {
 // coherentShare of it with at least coherentMin weight marks a subject:
 // noise spreads its far mass over many cells, a small flat shape puts it
 // all in one.
+//
+// An explained cell can still be a subject: a soft grey shadow on a white
+// page lies on the black–white mixture segment, and sRGB quantisation
+// puts a flat colour's noise a long OKLab way from a dark centroid. The
+// heaviest cell of each explanation is a subject when it holds at least
+// 1/subjectShare of the whole image and stands alone: the box's other
+// cells within adjacentCells cells of it in sRGB hold under 1/haloShare
+// of its weight between them. A flat colour puts its mass in one cell
+// and only its anti-aliased rim in the cells beside it; a noise tail
+// spreads its mass over the neighbours, and a plateau at the end of a
+// ramp trails a share of its mass up the ramp (cutting that plateau out
+// would run a region boundary through the ramp, where the gradient fit
+// wants the box whole). Such a subject becomes a palette entry of its
+// own and its box is done: splitting the box by variance instead would
+// cut the edge's mixture cells into boxes of their own on the way to it.
 const (
 	coherentShare = 0.25
 	coherentMin   = 4
 	tailReach     = 2.0
+	subjectShare  = 64
+	haloShare     = 16
+	adjacentCells = 2
 )
+
+// cellStep is the sRGB width of a cell, taken as the smallest positive
+// Chebyshev distance between the centres of cells consecutive in index
+// order (neighbours along blue, in an image with any two).
+func cellStep(cells []Cell) int {
+	step := 256
+	for i := 1; i < len(cells); i++ {
+		if d := chebyshev(cells[i-1].Lab, cells[i].Lab); d > 0 && d < step {
+			step = d
+		}
+	}
+	return step
+}
+
+// chebyshev is the largest per-channel sRGB difference between a and b.
+func chebyshev(a, b colour.OKLab) int {
+	ar, ag, ab := a.ToSRGB8()
+	br, bg, bb := b.ToSRGB8()
+	d := func(x, y uint8) int { return int(max(x, y) - min(x, y)) }
+	return max(d(ar, br), d(ag, bg), d(ab, bb))
+}
+
+// pile accumulates the mass of one explanation and its heaviest cell.
+type pile struct{ mass, heaviest, cell int }
+
+func (p *pile) add(i, w int) {
+	p.mass += w
+	if w > p.heaviest {
+		p.heaviest, p.cell = w, i
+	}
+}
+
+// coherent reports whether one cell holds coherentShare of the pile with
+// at least coherentMin weight.
+func (p pile) coherent() bool {
+	return p.heaviest >= coherentMin && float64(p.heaviest) >= coherentShare*float64(p.mass)
+}
 
 // wuBox is a live histogram box with the cells it holds.
 type wuBox struct {
@@ -169,29 +224,67 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		bins[i] = [3]int{bin(c.Lab.L, 0, 1), bin(c.Lab.A, -wuAB, wuAB), bin(c.Lab.B, -wuAB, wuAB)}
 		all[i] = i
 	}
-	within := func(bx box, idx []int, others []colour.OKLab) bool {
+	total := 0
+	for _, c := range cells {
+		total += c.Weight
+	}
+	near := adjacentCells*cellStep(cells) + 1
+	// within reports whether the box is within tolerance, and, when it is
+	// but for one explained subject cell, that cell's index (else -1).
+	within := func(bx box, idx []int, others []colour.OKLab) (bool, int) {
 		w, sse, c := m.stats(bx)
 		if w == 0 {
-			return true
+			return true, -1
 		}
 		if math.Sqrt(sse/w) >= tol {
-			return false
+			return false, -1
 		}
-		far, heaviest := 0, 0
+		var far, tail pile
+		mix := make([]pile, len(others))
 	cells:
 		for _, i := range idx {
-			if colour.Dist(cells[i].Lab, c) <= tailReach*tol {
+			if colour.Dist(cells[i].Lab, c) <= tol {
 				continue
 			}
-			for _, o := range others {
+			for k, o := range others {
 				if colour.MixDist(cells[i].Lab, c, o) <= tol {
+					mix[k].add(i, cells[i].Weight)
 					continue cells
 				}
 			}
-			far += cells[i].Weight
-			heaviest = max(heaviest, cells[i].Weight)
+			if colour.Dist(cells[i].Lab, c) <= tailReach*tol {
+				tail.add(i, cells[i].Weight)
+				continue
+			}
+			far.add(i, cells[i].Weight)
 		}
-		return heaviest < coherentMin || float64(heaviest) < coherentShare*float64(far)
+		if far.coherent() {
+			return false, -1
+		}
+		// subject reports whether the pile's heaviest cell is a flat
+		// colour of its own: heavy enough, with little of the box's
+		// mass in the cells around it.
+		subject := func(p pile) bool {
+			if p.heaviest == 0 || p.heaviest*subjectShare < total {
+				return false
+			}
+			halo := 0
+			for _, j := range idx {
+				if j != p.cell && chebyshev(cells[j].Lab, cells[p.cell].Lab) <= near {
+					halo += cells[j].Weight
+				}
+			}
+			return halo*haloShare < p.heaviest
+		}
+		if subject(tail) {
+			return true, tail.cell
+		}
+		for _, p := range mix {
+			if subject(p) {
+				return true, p.cell
+			}
+		}
+		return true, -1
 	}
 	inside := func(bx box, b [3]int) bool {
 		return b[0] >= bx.l0 && b[0] < bx.l1 && b[1] >= bx.a0 && b[1] < bx.a1 && b[2] >= bx.b0 && b[2] < bx.b1
@@ -208,7 +301,8 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		}
 		return out
 	}
-	for len(boxes) < maxK {
+	var promoted []colour.OKLab
+	for len(boxes)+len(promoted) < maxK {
 		best, bestSSE := -1, -1.0
 		for i, bx := range boxes {
 			if bx.dead || bx.done {
@@ -221,8 +315,11 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		if best < 0 {
 			break
 		}
-		if within(boxes[best].box, boxes[best].cells, centroids(best)) {
+		if ok, subject := within(boxes[best].box, boxes[best].cells, centroids(best)); ok {
 			boxes[best].done = true
+			if subject >= 0 {
+				promoted = append(promoted, cells[subject].Lab)
+			}
 			continue
 		}
 		lo, hi, ok := m.split(boxes[best].box)
@@ -241,11 +338,11 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		boxes[best] = wuBox{box: lo, cells: loCells}
 		boxes = append(boxes, wuBox{box: hi, cells: hiCells})
 	}
-	pal := make([]colour.OKLab, 0, len(boxes))
+	pal := make([]colour.OKLab, 0, len(boxes)+len(promoted))
 	for _, bx := range boxes {
 		if w, _, c := m.stats(bx.box); w > 0 {
 			pal = append(pal, c)
 		}
 	}
-	return pal
+	return append(pal, promoted...)
 }

@@ -1,6 +1,7 @@
 package quant
 
 import (
+	"math"
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/bitmap"
@@ -288,5 +289,45 @@ func TestLookupAtMatchesMap(t *testing.T) {
 		if a1 != b1 || a2 != b2 || ab != bb {
 			t.Fatalf("cell %d differs between a fresh and a used lookup", idx)
 		}
+	}
+}
+
+// A light grey that happens to lie on the black–white mixture line is
+// still a colour of its own when it holds far more mass than
+// anti-aliasing spreads along that line: a soft shadow crescent on a
+// white page, 4 % of the image in one cell, beside the usual thin AA band.
+func TestWuKeepsHeavyMixtureCell(t *testing.T) {
+	white, black, grey := [3]uint8{255, 255, 255}, [3]uint8{0, 0, 0}, [3]uint8{223, 223, 223}
+	cells := []Cell{cluster(white, 28000), cluster(black, 40000), cluster(grey, 3800)}
+	for i := 1; i < 16; i++ {
+		cells = append(cells, cluster(mixRGB(black, white, float64(i)/16), 30))
+	}
+	pal := Wu(cells, 0, 0.08)
+	want := colour.FromSRGB8(grey[0], grey[1], grey[2])
+	best := math.Inf(1)
+	for _, c := range pal {
+		best = math.Min(best, colour.Dist(c, want))
+	}
+	if best > 0.02 {
+		t.Fatalf("grey crescent lost: nearest palette entry is %.3f away in %v", best, pal)
+	}
+	if len(pal) > 4 {
+		t.Fatalf("got %d entries %v, want black, white, grey and at most an edge band", len(pal), pal)
+	}
+}
+
+// A flat colour at the end of a ramp from the box's core is a step of
+// the ramp, not a subject: cutting it out would run a region boundary
+// through the ramp. The box stays whole for the gradient fit.
+func TestWuKeepsRampPlateauInItsBox(t *testing.T) {
+	cells := []Cell{cluster([3]uint8{255, 255, 255}, 400000), cluster([3]uint8{0, 158, 223}, 250000), cluster([3]uint8{0, 174, 219}, 100000)}
+	for i, g := range []uint8{162, 166, 170} {
+		cells = append(cells, cluster([3]uint8{0, g, 221}, []int{3400, 5000, 8000}[i]))
+	}
+	for k := 1; k <= 6; k++ {
+		cells = append(cells, cluster([3]uint8{0, uint8(158 - 4*k), uint8(223 - 4*k)}, 10000))
+	}
+	if pal := Wu(cells, 0, 0.04); len(pal) != 2 {
+		t.Fatalf("got %d entries %v, want white and one cyan box", len(pal), pal)
 	}
 }

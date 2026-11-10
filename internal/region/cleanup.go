@@ -31,7 +31,23 @@ const maxPasses = 4
 //   - compaction: unused palette entries are dropped and labels renumbered
 //     by first appearance in scan order.
 func Cleanup(labels, rgb []uint8, w, h int, palette []colour.OKLab, minArea int, tol float64) []colour.OKLab {
-	pass(labels, w, h, func(c *component) bool { return len(c.pixels) < minArea })
+	pass(labels, w, h, func(c *component) bool { return len(c.pixels) < minArea }, nil)
+	// A sliver's pixels go to whichever of the two neighbours each is
+	// nearer: it is the anti-aliased edge between them, and every pixel
+	// of it leans one way or the other. (Specks keep the wholesale rule:
+	// splitting them leaves orphan pixels that become specks of their
+	// own.)
+	var nearer func(c *component, p int32) uint8
+	if rgb != nil {
+		nearer = func(c *component, p int32) uint8 {
+			a, b := c.neighbours[0].label, c.neighbours[1].label
+			px := colour.FromSRGB8(rgb[3*p], rgb[3*p+1], rgb[3*p+2])
+			if colour.Dist(px, palette[b]) < colour.Dist(px, palette[a]) {
+				return b
+			}
+			return a
+		}
+	}
 	pass(labels, w, h, func(c *component) bool {
 		if len(c.neighbours) < 2 || float64(len(c.pixels))/(float64(c.perimeter)/2) >= sliverThickness {
 			return false
@@ -41,7 +57,7 @@ func Cleanup(labels, rgb []uint8, w, h int, palette []colour.OKLab, minArea int,
 			return true
 		}
 		return rgb != nil && colour.MixDist(meanColour(rgb, c.pixels), a, b) <= tol
-	})
+	}, nearer)
 	return compact(labels, palette)
 }
 
@@ -59,8 +75,10 @@ func meanColour(rgb []uint8, pixels []int32) colour.OKLab {
 }
 
 // pass relabels, for up to maxPasses rounds, every component that absorb
-// selects into its longest-border neighbour, smallest components first.
-func pass(labels []uint8, w, h int, absorb func(*component) bool) {
+// selects, smallest components first: each pixel to the label target
+// gives it, or, with a nil target, the whole component to its
+// longest-border neighbour.
+func pass(labels []uint8, w, h int, absorb func(*component) bool, target func(*component, int32) uint8) {
 	for round := 0; round < maxPasses; round++ {
 		comps := components(labels, w, h)
 		order := make([]int, len(comps))
@@ -76,6 +94,9 @@ func pass(labels []uint8, w, h int, absorb func(*component) bool) {
 			}
 			to := c.neighbours[0].label
 			for _, p := range c.pixels {
+				if target != nil {
+					to = target(c, p)
+				}
 				labels[p] = to
 			}
 			changed = true

@@ -165,3 +165,47 @@ func TestCleanupKeepsThinLineOfItsOwnColour(t *testing.T) {
 		t.Fatalf("palette %v: a teal line between cyan and navy is content", pal)
 	}
 }
+
+// leanBand is mixBand with the column's pixels leaning different ways:
+// the top two are three-quarters cyan, the bottom two three-quarters
+// navy, as an anti-aliased edge that crosses the column would leave them.
+func leanBand() (labels, rgb []uint8) {
+	labels, rgb = mixBand([3]uint8{0, 0, 0})
+	mix := func(a, b [3]uint8, t float64) [3]uint8 {
+		var out [3]uint8
+		for i := range out {
+			out[i] = uint8(float64(a[i])*(1-t) + float64(b[i])*t + 0.5)
+		}
+		return out
+	}
+	cyan, navy := [3]uint8{38, 184, 219}, [3]uint8{2, 58, 130}
+	for y := 0; y < 4; y++ {
+		c := mix(cyan, navy, 0.25)
+		if y >= 2 {
+			c = mix(cyan, navy, 0.75)
+		}
+		p := y*9 + 4
+		rgb[3*p], rgb[3*p+1], rgb[3*p+2] = c[0], c[1], c[2]
+	}
+	return labels, rgb
+}
+
+// A sliver is absorbed pixel by pixel into whichever of its two
+// neighbours each pixel is nearer, not wholesale into the one with the
+// longer border: an edge pixel that is mostly cyan stays on the cyan side.
+func TestCleanupAbsorbsSliverPixelsToNearerNeighbour(t *testing.T) {
+	labels, rgb := leanBand()
+	pal := Cleanup(labels, rgb, 9, 4, []colour.OKLab{cyanL, navyL, tealL}, 4, 0.08)
+	if len(pal) != 2 {
+		t.Fatalf("palette %v: the band must join its neighbours", pal)
+	}
+	for y := 0; y < 4; y++ {
+		want := uint8(0)
+		if y >= 2 {
+			want = 1
+		}
+		if got := labels[y*9+4]; got != want {
+			t.Errorf("row %d: band pixel went to label %d (%s), want %d", y, got, pal[got].Hex(), want)
+		}
+	}
+}
