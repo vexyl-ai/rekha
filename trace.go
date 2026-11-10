@@ -186,9 +186,15 @@ func spline(pts []geom.Point, o Options) []fit.Segment {
 
 	// Corners are found on the simplified polygon and mapped to the dense
 	// loop, then clustered and refined to sub-pixel positions.
+	// A corner of the simplified polygon must also turn on the staircase-
+	// free polyline, whose vertices are dense: on a small circle the
+	// simplified vertices sit far apart and turn sharply between
+	// themselves while the boundary turns gently.
 	var corners []int
 	for _, ci := range geom.Corners(simp, o.CornerThreshold) {
-		corners = append(corners, dssIdx[simpIdx[ci]])
+		if geom.Turn(dss, simpIdx[ci]) > o.CornerThreshold {
+			corners = append(corners, dssIdx[simpIdx[ci]])
+		}
 	}
 	var bends []int
 	for _, bi := range geom.Corners(simp, flankBend) {

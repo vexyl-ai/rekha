@@ -26,6 +26,18 @@ const (
 	// pixel from the edge while being faithful; the cap is that plus
 	// slack, the same band maxStairDev uses in geom.
 	biasTol = 0.75
+	// A run is written as a line only when it is within lineRel of the
+	// radius of the arc its end tangents and chord imply, and never below
+	// lineFloor (half the quantisation noise): an absolute tolerance is a
+	// fifth of the radius on an 8-px arc, and a 45° facet shows on a
+	// small glyph where the same error is invisible on a large curve.
+	lineRel   = 0.05
+	lineFloor = 0.25
+	// minSplitPoints is the longest run fitCubic never splits: such runs
+	// are too few points to judge, and splitting them yields pieces that
+	// pass the straight test trivially. A cubic within tolerance is kept;
+	// otherwise the run is a line.
+	minSplitPoints = 6
 )
 
 // FitOpen fits pts with the given unit end tangents: t0 points into the
@@ -169,7 +181,7 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 		*out = append(*out, line(pts[0], pts[n-1]))
 		return
 	}
-	if straight(pts, errSq) {
+	if straight(pts, lineTolSq(pts, t0, t1, errSq)) {
 		*out = append(*out, line(pts[0], pts[n-1]))
 		return
 	}
@@ -193,8 +205,14 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 			break
 		}
 	}
-	if bestSq <= errSq && bestBias <= biasTol {
+	if bestSq <= errSq && bestBias <= biasTol && (n > minSplitPoints || wellFormed(best)) {
 		*out = append(*out, Segment{P: best})
+		return
+	}
+	if n <= minSplitPoints {
+		// Too short to split: the cubic missed, or fits a few noisy
+		// points only with knotted handles, so a line is the honest fit.
+		*out = append(*out, line(pts[0], pts[n-1]))
 		return
 	}
 	// Split with a shared centre tangent. Schneider splits at the worst
@@ -215,6 +233,37 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 	right := append([]geom.Vec2{mid}, pts[split+1:]...)
 	fitCubic(left, t0, tc, errSq, out)
 	fitCubic(right, tc.Scale(-1), t1, errSq, out)
+}
+
+// wellFormed reports whether the cubic's handles project onto its chord
+// inside the chord and in order, so the curve neither loops nor doubles
+// back; a degenerate chord counts as well formed.
+func wellFormed(c Cubic) bool {
+	ab := c[3].Sub(c[0])
+	l2 := ab.Dot(ab)
+	if l2 == 0 {
+		return true
+	}
+	u1 := c[1].Sub(c[0]).Dot(ab) / l2
+	u2 := c[2].Sub(c[0]).Dot(ab) / l2
+	return u1 >= 0 && u2 <= 1 && u1 <= u2
+}
+
+// lineTolSq is the squared tolerance of the straight test for a run with
+// end tangents t0 (into the run) and t1 (into the run from the far end):
+// min(sqrt(errSq), lineRel·R) floored at lineFloor, where R is the radius
+// of the circular arc through the chord with the turn the tangents imply.
+func lineTolSq(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64) float64 {
+	tol := math.Sqrt(errSq)
+	chord := pts[len(pts)-1].Sub(pts[0]).Len()
+	// Turn between the entry direction and the exit direction (-t1).
+	turn := math.Abs(math.Atan2(geom.Cross(t0, t1.Scale(-1)), t0.Dot(t1.Scale(-1))))
+	if chord > 0 && turn > 1e-3 {
+		r := chord / (2 * math.Sin(turn/2))
+		tol = math.Min(tol, lineRel*r)
+	}
+	tol = math.Max(tol, lineFloor)
+	return tol * tol
 }
 
 // straight reports whether every point lies within sqrt(errSq) of the

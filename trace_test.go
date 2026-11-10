@@ -630,3 +630,31 @@ func TestTraceSplineThinDiagonalBandsKeepArea(t *testing.T) {
 		t.Fatalf("%d mismatched pixels of %d", mis, bm.Count())
 	}
 }
+
+// smallGlyphsFloor is the 4× rasttest PSNR of the bw plain spline trace
+// of small-glyphs when Phase 3b's small-feature fit landed (32.26 dB by
+// the benchmark's rsvg render, against Potrace's 32.22; the two renderers
+// differ, so the floor is this renderer's own value, 31.87, less a margin).
+const smallGlyphsFloor = 31.7
+
+// TestSmallGlyphsFloor guards the small-feature fit: the bw plain spline
+// trace of small-glyphs must not fall below the PSNR it reached in Phase
+// 3b. internal/bench's TestSmallGlyphsBeatsPotrace is the Potrace
+// comparison itself.
+func TestSmallGlyphsFloor(t *testing.T) {
+	img := synth(t, "small-glyphs")
+	o := DefaultOptions()
+	s, err := Segment(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.Finish(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := superPSNR(t, img, s, r)
+	t.Logf("small-glyphs bw spline: %.2f dB", got)
+	if got < smallGlyphsFloor {
+		t.Errorf("small-glyphs %.2f dB, floor %.2f", got, smallGlyphsFloor)
+	}
+}

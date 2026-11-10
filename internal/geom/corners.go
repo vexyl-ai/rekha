@@ -12,20 +12,22 @@ const cornerArm = 3.0
 // measured between the direction from the point at least cornerArm behind
 // the vertex and the direction to the point at least cornerArm ahead.
 func Corners(poly []Vec2, thresholdDeg float64) []int {
-	n := len(poly)
 	var out []int
-	for i := 0; i < n; i++ {
-		cur := poly[i]
-		a := cur.Sub(armPoint(poly, i, -1))
-		b := armPoint(poly, i, +1).Sub(cur)
-		cross := Cross(a, b)
-		dot := a.Dot(b)
-		deg := math.Abs(math.Atan2(cross, dot)) * 180 / math.Pi
-		if deg > thresholdDeg {
+	for i := range poly {
+		if Turn(poly, i) > thresholdDeg {
 			out = append(out, i)
 		}
 	}
 	return out
+}
+
+// Turn is the absolute turn, in degrees, at vertex i of a closed polygon,
+// measured over arms of at least cornerArm on each side.
+func Turn(poly []Vec2, i int) float64 {
+	cur := poly[i]
+	a := cur.Sub(armPoint(poly, i, -1))
+	b := armPoint(poly, i, +1).Sub(cur)
+	return math.Abs(math.Atan2(Cross(a, b), a.Dot(b))) * 180 / math.Pi
 }
 
 // armPoint walks from vertex i in direction step (±1) until the walked arc

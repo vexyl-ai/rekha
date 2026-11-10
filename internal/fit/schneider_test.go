@@ -225,3 +225,52 @@ func TestFitRejectsOneSidedCubic(t *testing.T) {
 		t.Fatalf("one-sided run accepted as its chord")
 	}
 }
+
+// arcPoints samples n points of the circle of radius r about c from angle
+// a0 to a1.
+func arcPoints(c geom.Vec2, r, a0, a1 float64, n int) []geom.Vec2 {
+	out := make([]geom.Vec2, n)
+	for i := range out {
+		a := a0 + (a1-a0)*float64(i)/float64(n-1)
+		out[i] = geom.Vec2{X: c.X + r*math.Cos(a), Y: c.Y + r*math.Sin(a)}
+	}
+	return out
+}
+
+// tangentAt is the counter-clockwise unit tangent of a circle at angle a.
+func tangentAt(a float64) geom.Vec2 { return geom.Vec2{X: -math.Sin(a), Y: math.Cos(a)} }
+
+// TestSmallArcIsCubic: a 45° arc of radius 8 lies within 1.5 px of its
+// chord, but with its end tangents given it must be fitted as a cubic; a
+// line there is a visible facet on a small glyph.
+func TestSmallArcIsCubic(t *testing.T) {
+	pts := arcPoints(geom.Vec2{}, 8, 0, math.Pi/4, 12)
+	segs := FitOpen(pts, tangentAt(0), tangentAt(math.Pi/4).Scale(-1), 1.5)
+	if len(segs) != 1 || segs[0].Line {
+		t.Fatalf("got %d segments, first line=%v", len(segs), len(segs) > 0 && segs[0].Line)
+	}
+}
+
+// TestSixPointRunNotSplit: a 6-point run that misses the tolerance is
+// one segment (a line, since no cubic fits it), never split into pieces
+// too short to judge.
+func TestSixPointRunNotSplit(t *testing.T) {
+	pts := []geom.Vec2{{X: 0, Y: 0}, {X: 2, Y: 1.5}, {X: 4, Y: -1}, {X: 6, Y: 1.5}, {X: 8, Y: -1}, {X: 10, Y: 0}}
+	segs := FitOpen(pts, geom.Vec2{X: 1, Y: 0}, geom.Vec2{X: -1, Y: 0}, 0.3)
+	if len(segs) != 1 || !segs[0].Line {
+		t.Fatalf("got %d segments, first line=%v", len(segs), len(segs) > 0 && segs[0].Line)
+	}
+}
+
+// TestLongStraightStillLine: a long straight run with straight tangents
+// stays one line.
+func TestLongStraightStillLine(t *testing.T) {
+	var pts []geom.Vec2
+	for i := 0; i <= 40; i++ {
+		pts = append(pts, geom.Vec2{X: float64(i), Y: 0.3 * float64(i%2)})
+	}
+	segs := FitOpen(pts, geom.Vec2{X: 1, Y: 0}, geom.Vec2{X: -1, Y: 0}, 1.5)
+	if len(segs) != 1 || !segs[0].Line {
+		t.Fatalf("got %d segments, first line=%v", len(segs), len(segs) > 0 && segs[0].Line)
+	}
+}
