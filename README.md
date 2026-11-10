@@ -26,6 +26,7 @@ Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase pr
 - [Limitations](#limitations)
 - [Provenance](#provenance)
 - [Documentation](#documentation)
+- [Author](#author)
 - [Licence](#licence)
 
 ## Features
@@ -202,6 +203,12 @@ It contains no code derived from Potrace or any other GPL-licensed tracer; Potra
 - [`docs/superpowers/specs/2026-11-10-gradients-design.md`](docs/superpowers/specs/2026-11-10-gradients-design.md): gradient fills design.
 - [`design/roadmap.md`](design/roadmap.md): phases 0–6, open-core split, legal checklist.
 - [`design/refine-bezigon-optimisation.md`](design/refine-bezigon-optimisation.md): refinement stage design notes.
+
+## Author
+
+Rekha is written and maintained by **Anil Mathew** ([LinkedIn](https://www.linkedin.com/in/anilmathew)).
+
+Package documentation: [pkg.go.dev/github.com/vexyl-ai/rekha](https://pkg.go.dev/github.com/vexyl-ai/rekha).
 
 ## Licence
 
