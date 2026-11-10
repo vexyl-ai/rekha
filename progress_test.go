@@ -33,12 +33,13 @@ func (l *progressLog) stages() []string {
 	return out
 }
 
-// last returns the last report of stage and whether there was one.
+// last returns the report of stage with the highest done (parallel work
+// reports out of order) and whether there was one.
 func (l *progressLog) last(stage string) (progressCall, bool) {
 	var c progressCall
 	ok := false
 	for _, x := range l.calls {
-		if x.stage == stage {
+		if x.stage == stage && (!ok || x.done >= c.done) {
 			c, ok = x, true
 		}
 	}
