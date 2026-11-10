@@ -17,17 +17,17 @@ Spec: `docs/superpowers/specs/2026-11-10-gradients-design.md`.
 
 ## Flat art
 
-The other 15 corpus images (aa-abut, big-poster 2048², checkerboard-2px, circle-aa, circle-hard, logo-holes, noisy-disc, poster-discs, rect-rot, rounded-rect, small-glyphs, star-5, thin-lines, three-layer-stack, two-colour-abut) give the same PSNR, paths, nodes and bytes with `--gradients` as without. `TestGradientsFlatArtUnchanged` (poster preset, every 256² synthetic) and `TestGradientsBigPosterUnchanged` (photo preset, 2048²) pin byte identity. The first build turned a 6-px near-white pocket in big-poster into a ramp; a ramp now needs an extent of at least 16 px along its direction.
+The other 15 corpus images (aa-abut, big-poster 2048², checkerboard-2px, circle-aa, circle-hard, logo-holes, noisy-disc, poster-discs, rect-rot, rounded-rect, small-glyphs, star-5, thin-lines, three-layer-stack, two-colour-abut) give the same PSNR, paths, nodes and bytes with `--gradients` as without. `TestGradientsFlatArtUnchanged` (poster preset, every 256² synthetic) and `TestGradientsBigPosterUnchanged` (photo preset, 2048²) pin byte identity. The first build turned a 6-px near-white pocket in big-poster into a ramp; a ramp now needs an extent of at least 16 px along its direction. The review found two flats a soft step apart (100 and 104 grey, or a 10/255 step across an anti-aliased slant) merging into one ramp; a merge now also needs each measurable side to carry the ramp's slope inside itself (`TestMergeNearFlatStaysFlat`, `TestMergeAAEdgeRefused`), and a hub region absorbs all its neighbours in one pass (10 404 islands on a 1020² ramp in under a second, `TestMergeHubAbsorbsIslandsInOnePass`).
 
 ## The bird
 
 | Options | Paths | Bytes | ms | PSNR dB |
 |---|---:|---:|---:|---:|
-| photo | 155 | 86 216 | 6 226 | 36.72 |
-| photo --gradients | 201 | 46 332 | 7 740 | 38.81 |
+| photo | 155 | 86 216 | 5 876 | 36.72 |
+| photo --gradients | 203 | 48 396 | 8 073 | 38.72 |
 
-21 gradients. The banded feathers become smooth ramps (see the spec's intent); bytes drop by 46 % and PSNR rises 2.1 dB. The `<path>` count rises because a region with a ramp of its own carries a label of its own, so consecutive stacked shapes that used to share one `<path>` by colour are now separate elements; nodes are what the paths cost, and the byte count shows the net effect. Gradient merging adds about 1.5 s on 16 megapixels (components, moments and the greedy rounds are single-threaded).
+23 gradients. The banded feathers become smooth ramps (see the spec's intent); bytes drop by 44 % and PSNR rises 2.0 dB. The `<path>` count rises because a region with a ramp of its own carries a label of its own, so consecutive stacked shapes that used to share one `<path>` by colour are now separate elements; nodes are what the paths cost, and the byte count shows the net effect. Gradient merging adds about 2 s on 16 megapixels (components, moments and the merge passes are single-threaded).
 
 ## Verdict on the photo default
 
-`--gradients` never lowers PSNR or raises nodes on the corpus, and flat art is byte-identical. It stays opt-in for this release because the corpus has no photographs: a JPEG with blocking noise is the case the merge rule (interior-pixel residual ≤ 0.03, boundary step ≤ max(3·slope, 0.03)) has not been measured on. Flip the `photo` preset once a photo corpus exists and shows no regression.
+`--gradients` never lowers PSNR or raises nodes on the corpus, and flat art is byte-identical. It stays opt-in for this release because the corpus has no photographs: a JPEG with blocking noise is the case the merge rule (interior-pixel residual ≤ 0.03, boundary step ≤ max(3·slope, 0.03), both sides carrying the slope) has not been measured on. Flip the `photo` preset once a photo corpus exists and shows no regression.

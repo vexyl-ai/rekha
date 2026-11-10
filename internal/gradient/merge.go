@@ -107,8 +107,19 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		}
 		return edgeKeys[i][1] < edgeKeys[j][1]
 	})
+	// Adjacency between live groups, kept up to date as groups merge so
+	// a group can absorb any number of neighbours in one pass.
+	adj := make([]map[int32]*edge, ncomp)
+	for i := range adj {
+		adj[i] = map[int32]*edge{}
+	}
+	for _, k := range edgeKeys {
+		adj[k[0]][k[1]] = edges[k]
+		adj[k[1]][k[0]] = edges[k]
+	}
 
-	// Union–find over components; the root is the lower first pixel.
+	// Union–find over components; the root is the lower index, which is
+	// the lower first pixel.
 	parent := make([]int32, ncomp)
 	groups := make([]group, ncomp)
 	for i := range parent {
@@ -126,54 +137,44 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	mergedGroups := 0
 	type cand struct {
 		a, b  int32
-		e     edge
 		dmean float64
 	}
 	for {
-		// Boundaries between current groups.
-		live := map[[2]int32]*edge{}
-		for _, k := range edgeKeys {
-			a, b := find(k[0]), find(k[1])
+		// Candidate pairs of live groups, closest mean colours first.
+		var cands []cand
+		for a := range groups {
+			if find(int32(a)) != int32(a) || groups[a].m.n < minPixels {
+				continue
+			}
+			for b := range adj[a] {
+				if b > int32(a) && groups[b].m.n >= minPixels {
+					cands = append(cands, cand{a: int32(a), b: b, dmean: dist(groups[a].m.mean(), groups[b].m.mean())})
+				}
+			}
+		}
+		sort.Slice(cands, func(i, j int) bool {
+			if cands[i].dmean != cands[j].dmean {
+				return cands[i].dmean < cands[j].dmean
+			}
+			if cands[i].a != cands[j].a {
+				return cands[i].a < cands[j].a
+			}
+			return cands[i].b < cands[j].b
+		})
+		mergedThisPass := false
+		for _, c := range cands {
+			a, b := find(c.a), find(c.b)
 			if a == b {
 				continue
 			}
 			if a > b {
 				a, b = b, a
 			}
-			gk := [2]int32{a, b}
-			e := live[gk]
-			if e == nil {
-				e = &edge{}
-				live[gk] = e
-			}
-			e.pairs += edges[k].pairs
-			e.step += edges[k].step
-		}
-		var cands []cand
-		for k, e := range live {
-			ga, gb := &groups[k[0]], &groups[k[1]]
-			if ga.m.n < minPixels || gb.m.n < minPixels {
+			e := adj[a][b]
+			ga, gb := &groups[a], &groups[b]
+			if e == nil || ga.m.n < minPixels || gb.m.n < minPixels {
 				continue
 			}
-			cands = append(cands, cand{a: k[0], b: k[1], e: *e, dmean: dist(ga.m.mean(), gb.m.mean())})
-		}
-		sort.Slice(cands, func(i, j int) bool {
-			if cands[i].dmean != cands[j].dmean {
-				return cands[i].dmean < cands[j].dmean
-			}
-			fa, fb := groups[cands[i].a].first, groups[cands[j].a].first
-			if fa != fb {
-				return fa < fb
-			}
-			return groups[cands[i].b].first < groups[cands[j].b].first
-		})
-		used := map[int32]bool{}
-		mergedThisRound := false
-		for _, c := range cands {
-			if used[c.a] || used[c.b] {
-				continue
-			}
-			ga, gb := &groups[c.a], &groups[c.b]
 			if !ga.merged && !gb.merged && mergedGroups+1+n > maxLabels {
 				continue // no label free for a new ramp
 			}
@@ -183,23 +184,39 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 			if !f.ok || f.rms > tol {
 				continue
 			}
-			if c.e.step/float64(c.e.pairs) > math.Max(3*f.slope, tol) {
+			if e.step/float64(e.pairs) > math.Max(3*f.slope, tol) {
 				continue
 			}
-			// Merge b into a (a has the lower first pixel).
+			if !sidesFollow(ga, gb, f) {
+				continue
+			}
+			// Merge b into a: sums, flags, and b's neighbours become a's.
 			if !ga.merged && !gb.merged {
 				mergedGroups++
 			} else if ga.merged && gb.merged {
 				mergedGroups--
 			}
-			parent[c.b] = c.a
+			parent[b] = a
 			ga.m = m
 			ga.comps += gb.comps
 			ga.merged = true
-			used[c.a], used[c.b] = true, true
-			mergedThisRound = true
+			for x, ex := range adj[b] {
+				delete(adj[x], b)
+				if x == a {
+					continue
+				}
+				if ea := adj[a][x]; ea != nil {
+					ea.pairs += ex.pairs
+					ea.step += ex.step
+				} else {
+					adj[a][x] = ex
+					adj[x][a] = ex
+				}
+			}
+			adj[b] = nil
+			mergedThisPass = true
 		}
-		if !mergedThisRound {
+		if !mergedThisPass {
 			break
 		}
 	}
@@ -207,8 +224,9 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	// Every group with enough interior pixels whose fit is within tol is
 	// a ramp candidate; its extent along u is measured over all its
 	// pixels. A candidate at least minLength long that changes colour by
-	// at least tol end to end becomes a ramp and needs a label of its
-	// own, as does a merged group; other groups keep their old label.
+	// at least max(tol, minSpan) end to end becomes a ramp and needs a
+	// label of its own, as does a merged group; other groups keep their
+	// old label.
 	type extent struct {
 		f          fitted
 		tmin, tmax float64
@@ -240,23 +258,29 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	sort.Slice(roots, func(i, j int) bool { return groups[roots[i]].first < groups[roots[j]].first })
 	fresh := map[int32]int{}
 	rampOf := map[int32]*Ramp{}
-	for _, r := range roots {
-		g := &groups[r]
-		var rp *Ramp
-		if e := ext[r]; e != nil && e.tmax-e.tmin >= minLength && float64(e.f.slope*(e.tmax-e.tmin)) >= tol {
-			rp = ramp(&g.m, e.f, e.tmin, e.tmax)
+	rampFor := func(r int32) *Ramp {
+		e := ext[r]
+		if e == nil || e.tmax-e.tmin < minLength || float64(e.f.slope*(e.tmax-e.tmin)) < math.Max(tol, minSpan) {
+			return nil
 		}
-		if rp == nil && !g.merged {
+		return ramp(&groups[r].m, e.f, e.tmin, e.tmax)
+	}
+	// Merged groups always need a label (the rounds reserved one each);
+	// lone ramps take what is left, in scan order.
+	for _, r := range roots {
+		if groups[r].merged {
+			fresh[r] = n + len(fresh)
+			rampOf[r] = rampFor(r)
+		}
+	}
+	for _, r := range roots {
+		if groups[r].merged || n+len(fresh) >= maxLabels {
 			continue
 		}
-		if n+len(fresh) >= maxLabels {
-			if g.merged {
-				panic("gradient: merged group past the label cap")
-			}
-			continue // no label free: the lone band stays flat
+		if rp := rampFor(r); rp != nil {
+			fresh[r] = n + len(fresh)
+			rampOf[r] = rp
 		}
-		fresh[r] = n + len(fresh)
-		rampOf[r] = rp
 	}
 	pre := make([]int, ncomp)
 	for i := range comps {
@@ -287,6 +311,28 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	res.N = len(ramps)
 	res.Ramps = ramps
 	return res
+}
+
+// sidesFollow reports whether the two sides of a candidate merge are
+// themselves ramps of the union's slope: a band of a true ramp carries
+// the ramp's slope inside it, a flat colour carries none, so two flats
+// (or a flat and a ramp) across a soft step never pass. A side too thin
+// for a fit of its own, or too narrow for the union's slope to change
+// its colour by a printable step across it, does not vote; at least
+// one side must.
+func sidesFollow(a, b *group, union fitted) bool {
+	voted := false
+	for _, g := range []*group{a, b} {
+		f := g.m.fit()
+		if !f.ok || float64(union.slope*f.extent) < minSpan {
+			continue
+		}
+		voted = true
+		if f.slope < sideSlope*union.slope {
+			return false
+		}
+	}
+	return voted
 }
 
 // interior reports whether every in-image 4-neighbour of pixel p carries

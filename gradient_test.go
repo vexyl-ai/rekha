@@ -107,12 +107,13 @@ func TestGradientsDeterministic(t *testing.T) {
 }
 
 func TestRampPageNotOmitted(t *testing.T) {
-	// A white-to-light-grey ramp over the whole page: one region at
-	// depth 0, near white on average, but a ramp, so it is emitted.
+	// A white-to-near-white ramp over the whole page: one region at
+	// depth 0, within canvasWhite on average, but a ramp, so it is
+	// emitted.
 	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
 	for y := 0; y < 64; y++ {
 		for x := 0; x < 64; x++ {
-			v := uint8(255 - x*40/63)
+			v := uint8(255 - x*10/63)
 			img.SetNRGBA(x, y, color.NRGBA{v, v, v, 255})
 		}
 	}
@@ -126,20 +127,31 @@ func TestRampPageNotOmitted(t *testing.T) {
 }
 
 func TestSecondRemapAfterMerge(t *testing.T) {
-	s, err := Segment(synth(t, "gradient-h"), photoGradients())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(s.Ramps) != len(s.Palette) {
-		t.Fatalf("%d ramps for %d colours", len(s.Ramps), len(s.Palette))
-	}
-	for p := range s.Labels {
-		if int(s.Second[p]) >= len(s.Palette) {
-			t.Fatalf("second %d past palette %d", s.Second[p], len(s.Palette))
+	for _, name := range []string{"gradient-h", "gradient-shapes"} {
+		s, err := Segment(synth(t, name), photoGradients())
+		if err != nil {
+			t.Fatal(err)
 		}
-		if s.Ramps[s.Labels[p]] != nil && (s.Blend[p] != 255 || s.Second[p] != s.Labels[p]) {
-			t.Fatalf("pixel %d inside a ramp: second %d blend %d", p, s.Second[p], s.Blend[p])
+		if len(s.Ramps) != len(s.Palette) {
+			t.Fatalf("%s: %d ramps for %d colours", name, len(s.Ramps), len(s.Palette))
 		}
+		for p := range s.Labels {
+			if int(s.Second[p]) >= len(s.Palette) {
+				t.Fatalf("%s: second %d past palette %d", name, s.Second[p], len(s.Palette))
+			}
+			if s.Ramps[s.Labels[p]] != nil && (s.Blend[p] != 255 || s.Second[p] != s.Labels[p]) {
+				t.Fatalf("%s: pixel %d inside a ramp: second %d blend %d", name, p, s.Second[p], s.Blend[p])
+			}
+		}
+	}
+}
+
+func TestGradientToleranceZeroFlatArtUnchanged(t *testing.T) {
+	off := PresetOptions(PresetPoster)
+	on := off
+	on.Gradients, on.GradientTolerance = true, 0
+	if a, b := traceSVG(t, "poster-discs", off), traceSVG(t, "poster-discs", on); a != b {
+		t.Error("poster-discs changed with gradients on at tolerance 0")
 	}
 }
 

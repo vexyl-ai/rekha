@@ -1,8 +1,10 @@
 package gradient
 
 import (
+	"math"
 	"math/rand/v2"
 	"testing"
+	"time"
 )
 
 // rampImage is a horizontal grey ramp 0..255 over w, quantised into
@@ -77,7 +79,7 @@ func TestMergeHardEdgeRefused(t *testing.T) {
 }
 
 func TestMergeNearFlatStaysFlat(t *testing.T) {
-	rgb, labels := twoFlats(64, 16, 100, 102) // step ≈ 0.014: may merge; a ramp spanning under tol stays flat
+	rgb, labels := twoFlats(64, 16, 100, 104) // step ≈ 0.027: two flats, never a ramp
 	r := Merge(rgb, labels, 64, 16, 2, 0.03)
 	for _, rp := range r.Ramps {
 		if rp != nil {
@@ -194,5 +196,111 @@ func TestMergeShortRampStaysFlat(t *testing.T) {
 		if rp != nil {
 			t.Errorf("short pocket produced a ramp %+v", rp)
 		}
+	}
+}
+
+func TestMergeLoneRampBeforeMergedGroupsNoPanic(t *testing.T) {
+	// 254 labels in use: a lone ramp first in scan order, then two
+	// two-band ramps. Only two fresh labels are free; the merged groups
+	// must get them and the lone ramp must stay flat, never a panic.
+	const w, h = 192, 32
+	rgb := make([]uint8, 3*w*h)
+	labels := make([]uint8, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			p := y*w + x
+			var v int
+			var l uint8
+			switch {
+			case x < 64:
+				v, l = x*40/63, 0
+			case x < 128:
+				v, l = 200+(x-64)*40/63, 1
+				if x >= 96 {
+					l = 2
+				}
+			default:
+				v, l = 60+(x-128)*40/63, 3
+				if x >= 160 {
+					l = 4
+				}
+			}
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = uint8(v), uint8(v), uint8(v)
+			labels[p] = l
+		}
+	}
+	r := Merge(rgb, labels, w, h, 254, 0.03)
+	if r.N > 256 {
+		t.Fatalf("N %d", r.N)
+	}
+	ramps := 0
+	for _, rp := range r.Ramps {
+		if rp != nil {
+			ramps++
+		}
+	}
+	if ramps != 2 {
+		t.Errorf("%d ramps, want the two merged groups", ramps)
+	}
+}
+
+func TestMergeAAEdgeRefused(t *testing.T) {
+	// Two flats with a slanted anti-aliased edge: the edge pixels mix by
+	// coverage and carry the nearer label, halving the measured step.
+	const w, h = 128, 64
+	for _, d := range []int{6, 10, 16} {
+		rgb := make([]uint8, 3*w*h)
+		labels := make([]uint8, w*h)
+		for y := 0; y < h; y++ {
+			ex := float64(w)/2 + 0.3*float64(y)
+			for x := 0; x < w; x++ {
+				p := y*w + x
+				cov := math.Max(0, math.Min(1, float64(x)+1-ex))
+				rgb[3*p] = uint8(math.Round(100 + float64(d)*cov))
+				rgb[3*p+1], rgb[3*p+2] = 100, 100
+				if cov >= 0.5 {
+					labels[p] = 1
+				}
+			}
+		}
+		r := Merge(rgb, labels, w, h, 2, 0.03)
+		if r.N != 2 || r.Ramps[0] != nil || r.Ramps[1] != nil {
+			t.Errorf("step %d/255: N %d ramps %v", d, r.N, r.Ramps)
+		}
+	}
+}
+
+func TestMergeToleranceZeroKeepsFlatFlat(t *testing.T) {
+	rgb, labels := twoFlats(64, 32, 120, 120)
+	r := Merge(rgb, labels, 64, 32, 2, 0)
+	for _, rp := range r.Ramps {
+		if rp != nil {
+			t.Errorf("flat region became a ramp at tolerance 0: %+v", rp)
+		}
+	}
+}
+
+func TestMergeHubAbsorbsIslandsInOnePass(t *testing.T) {
+	// A ramp dotted with 10 404 islands that all belong to it (the side is
+	// a multiple of the period so no island is clipped): a hub must
+	// absorb many neighbours per pass, not one per round.
+	const w, h = 1020, 1020
+	rgb := make([]uint8, 3*w*h)
+	labels := make([]uint8, w*h)
+	for p := range labels {
+		x, y := p%w, p/w
+		v := uint8(x * 255 / (w - 1))
+		rgb[3*p], rgb[3*p+1], rgb[3*p+2] = v, v, v
+		if x%10 >= 2 && x%10 < 8 && y%10 >= 2 && y%10 < 8 {
+			labels[p] = 1
+		}
+	}
+	start := time.Now()
+	r := Merge(rgb, labels, w, h, 2, 0.03)
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("took %v", d)
+	}
+	if r.N != 1 || r.Ramps[0] == nil {
+		t.Errorf("N %d", r.N)
 	}
 }

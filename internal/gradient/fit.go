@@ -14,6 +14,15 @@ const minPixels = 16
 // stays flat.
 const minLength = 16
 
+// minSpan is the least colour change end to end (sRGB distance, channels
+// 0..1) a ramp may have whatever the tolerance: about two counts per
+// channel, below which two stops print the same.
+const minSpan = 0.0136
+
+// sideSlope is the share of the union's slope each side of a merge must
+// carry inside itself; flats carry none and are refused.
+const sideSlope = 0.5
+
 // Stop is one colour of a ramp at an offset in 0..1.
 type Stop struct {
 	Offset float64
@@ -78,6 +87,7 @@ type fitted struct {
 	u          [2]float64
 	a, b       [3]float64
 	rms, slope float64
+	extent     float64 // pixels the fit spans along u (a uniform strip's width from the spread of t)
 }
 
 // fit chooses the direction u from the per-channel least-squares planes
@@ -131,6 +141,7 @@ func (m *moments) fit() fitted {
 	}
 	f.rms = math.Sqrt(math.Max(rss, 0) / n)
 	f.slope = math.Sqrt(slope2)
+	f.extent = 2 * math.Sqrt(3*math.Max(ctt, 0)/n)
 	return f
 }
 
