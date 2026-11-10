@@ -361,7 +361,14 @@ func checkColourSane(t *testing.T, img image.Image, o Options) {
 				for i, sg := range pix {
 					loop[i] = geom.Point{X: int(sg.P[0].X), Y: int(sg.P[0].Y)}
 				}
-				if budget := len(geom.MergeCollinearIndices(loop)) + 4; len(sp.Segs) > budget {
+				budget := len(geom.MergeCollinearIndices(loop)) + 4
+				if usePlanar(o) {
+					// Shared boundaries break at every junction, so a
+					// straight run of edges with junctions along it is
+					// one line per edge.
+					budget = max(budget, len(pix)+4)
+				}
+				if len(sp.Segs) > budget {
 					t.Fatalf("path %d subpath %d: %d segments for a %d-corner loop", k, j, len(sp.Segs), budget-4)
 				}
 			}

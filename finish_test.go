@@ -10,10 +10,14 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vexyl-ai/rekha/internal/colour"
 	"github.com/vexyl-ai/rekha/internal/corpus"
+	"github.com/vexyl-ai/rekha/internal/fit"
+	"github.com/vexyl-ai/rekha/internal/geom"
 	"github.com/vexyl-ai/rekha/internal/rasttest"
+	"github.com/vexyl-ai/rekha/internal/svg"
 )
 
 func hexOf(c color.NRGBA) string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B) }
@@ -378,5 +382,105 @@ func TestCutoutStrokeNotInPixelMode(t *testing.T) {
 		if p.Stroke != "" {
 			t.Fatalf("pixel-mode path %d has stroke %q", i, p.Stroke)
 		}
+	}
+}
+
+// cutoutSpline traces name under poster, cutout, plain spline.
+func cutoutSpline(t *testing.T, name string) (*Segmentation, *Result) {
+	t.Helper()
+	o := PresetOptions(PresetPoster)
+	o.Hierarchical = HierarchicalCutout
+	o.Mode = ModeSpline
+	s, err := Segment(synth(t, name), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.Finish(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, r
+}
+
+// TestCutoutSharedPathData: on aa-abut the red and blue shapes meet along
+// one boundary, and every segment of one path whose ends are vertices of
+// the other appears in the other path with the same numbers, reversed.
+func TestCutoutSharedPathData(t *testing.T) {
+	_, r := cutoutSpline(t, "aa-abut")
+	if len(r.Paths) != 2 {
+		t.Fatalf("%d paths, want 2", len(r.Paths))
+	}
+	segsOf := func(p svg.Path) []fit.Segment {
+		var out []fit.Segment
+		for _, sp := range p.Subpaths {
+			out = append(out, sp.Segs...)
+		}
+		return out
+	}
+	a, b := segsOf(r.Paths[0]), segsOf(r.Paths[1])
+	ends := map[geom.Vec2]bool{}
+	for _, s := range b {
+		ends[s.P[0]], ends[s.P[3]] = true, true
+	}
+	shared := 0
+	for _, s := range a {
+		if !ends[s.P[0]] || !ends[s.P[3]] {
+			continue
+		}
+		found := false
+		for _, u := range b {
+			if u.Line == s.Line && u.P[0] == s.P[3] && u.P[1] == s.P[2] && u.P[2] == s.P[1] && u.P[3] == s.P[0] {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("segment %v→%v of path 0 has no reversed twin in path 1", s.P[0], s.P[3])
+		}
+		shared++
+	}
+	if shared == 0 {
+		t.Fatal("no shared segment between the two paths")
+	}
+}
+
+// TestCutoutPixelSetsUnchanged: the shapes assembled from the planar map,
+// painted as polygons in output order, reproduce the labels exactly.
+func TestCutoutPixelSetsUnchanged(t *testing.T) {
+	for _, name := range []string{"logo-holes", "poster-discs"} {
+		o := PresetOptions(PresetPoster)
+		o.Hierarchical = HierarchicalCutout
+		o.Mode = ModeSpline
+		s, err := Segment(synth(t, name), o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		layers, pm := s.buildLayersMap(o)
+		if pm == nil {
+			t.Fatalf("%s: no planar map", name)
+		}
+		r := &Result{Width: s.Width, Height: s.Height}
+		for _, l := range layers {
+			p := svg.Path{Fill: hexOf(s.Palette[l.colour])}
+			for _, c := range l.contours {
+				p.Subpaths = append(p.Subpaths, svg.Subpath{Segs: lines(toVec(c.Pts))})
+			}
+			r.Paths = append(r.Paths, p)
+		}
+		if mis := paintLabels(t, s, r); mis != 0 {
+			t.Errorf("%s: %d pixels differ from Labels", name, mis)
+		}
+	}
+}
+
+// TestCutoutCheckerboardFast: a 2-px checkerboard has a junction at every
+// other vertex; the map and the fit of its thousands of arcs stay quick.
+func TestCutoutCheckerboardFast(t *testing.T) {
+	start := time.Now()
+	_, r := cutoutSpline(t, "checkerboard-2px")
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("took %v", d)
+	}
+	if len(r.Paths) == 0 {
+		t.Fatal("no paths")
 	}
 }

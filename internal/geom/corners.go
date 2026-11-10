@@ -47,3 +47,27 @@ func armPoint(poly []Vec2, i, step int) Vec2 {
 	}
 	return poly[j]
 }
+
+// TurnOpen is Turn for an open polyline: the arms stop at its ends, and
+// the ends themselves turn by zero.
+func TurnOpen(poly []Vec2, i int) float64 {
+	cur := poly[i]
+	a := cur.Sub(armPointOpen(poly, i, -1))
+	b := armPointOpen(poly, i, +1).Sub(cur)
+	if a == (Vec2{}) || b == (Vec2{}) {
+		return 0
+	}
+	return math.Abs(math.Atan2(Cross(a, b), a.Dot(b))) * 180 / math.Pi
+}
+
+// armPointOpen is armPoint without wrapping: the walk stops at the
+// polyline's end.
+func armPointOpen(poly []Vec2, i, step int) Vec2 {
+	dist := 0.0
+	j := i
+	for j+step >= 0 && j+step < len(poly) && dist < cornerArm {
+		dist += poly[j+step].Sub(poly[j]).Len()
+		j += step
+	}
+	return poly[j]
+}

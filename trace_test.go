@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"testing"
@@ -656,5 +657,103 @@ func TestSmallGlyphsFloor(t *testing.T) {
 	t.Logf("small-glyphs bw spline: %.2f dB", got)
 	if got < smallGlyphsFloor {
 		t.Errorf("small-glyphs %.2f dB, floor %.2f", got, smallGlyphsFloor)
+	}
+}
+
+// quarterArcCrack returns the crack polyline of a quarter circle of
+// radius r about (r, r) from the top (r, 0) to the right (2r, r) as the
+// upper-right boundary of the filled disc, open.
+func quarterArcCrack(r int) []geom.Point {
+	var pts []geom.Point
+	x, y := r, 0
+	pts = append(pts, geom.Point{X: x, Y: y})
+	inside := func(px, py int) bool { // pixel (px,py) centre inside the disc
+		dx, dy := float64(px)+0.5-float64(r), float64(py)+0.5-float64(r)
+		return dx*dx+dy*dy <= float64(r*r)
+	}
+	for !(x == 2*r && y == r) {
+		// Walk east while the pixel below-right is inside, else south.
+		if x < 2*r && inside(x, y) {
+			x++
+		} else {
+			y++
+		}
+		pts = append(pts, geom.Point{X: x, Y: y})
+	}
+	return pts
+}
+
+func TestFitArcEndsExact(t *testing.T) {
+	pts := quarterArcCrack(40)
+	segs := fitArc(pts, DefaultOptions())
+	if len(segs) == 0 {
+		t.Fatal("no segments")
+	}
+	first, last := segs[0].P[0], segs[len(segs)-1].P[3]
+	if first != pts[0].Vec() || last != pts[len(pts)-1].Vec() {
+		t.Fatalf("ends %v %v, want %v %v", first, last, pts[0], pts[len(pts)-1])
+	}
+	for _, p := range pts {
+		if d := distToSegs(p.Vec(), segs); d > 1.5 {
+			t.Errorf("point %v is %.2f px from the fit", p, d)
+		}
+	}
+	if len(segs) > 3 {
+		t.Errorf("quarter circle fitted with %d segments", len(segs))
+	}
+}
+
+func TestFitArcReverseIdentical(t *testing.T) {
+	pts := quarterArcCrack(40)
+	segs := fitArc(pts, DefaultOptions())
+	rev := reverseSegs(segs)
+	if len(rev) != len(segs) {
+		t.Fatal("length")
+	}
+	for i := range segs {
+		s, r := segs[i], rev[len(rev)-1-i]
+		if s.Line != r.Line || s.P[0] != r.P[3] || s.P[1] != r.P[2] || s.P[2] != r.P[1] || s.P[3] != r.P[0] {
+			t.Fatalf("segment %d: %+v reversed %+v", i, s, r)
+		}
+	}
+	// Fitting the reversed polyline lands within 0.1 px of the same curve.
+	back := make([]geom.Point, len(pts))
+	for i, p := range pts {
+		back[len(pts)-1-i] = p
+	}
+	other := fitArc(back, DefaultOptions())
+	for _, s := range segs {
+		for _, u := range []float64{0.25, 0.5, 0.75} {
+			if d := distToSegs(s.P.At(u), other); d > 0.1 {
+				t.Errorf("reverse fit differs by %.3f px at %v", d, s.P.At(u))
+			}
+		}
+	}
+}
+
+// distToSegs is the distance from p to the nearest segment, sampled.
+func distToSegs(p geom.Vec2, segs []fit.Segment) float64 {
+	best := math.Inf(1)
+	for _, s := range segs {
+		for i := 0; i <= 64; i++ {
+			if d := s.P.At(float64(i) / 64).Sub(p).Len(); d < best {
+				best = d
+			}
+		}
+	}
+	return best
+}
+
+// TestFitLoopEqualsSpline: spline mode routes a closed loop through
+// fitLoop, so the Phase 1 goldens stay the proof of its output.
+func TestFitLoopEqualsSpline(t *testing.T) {
+	o := DefaultOptions()
+	s, err := Segment(synth(t, "circle-aa"), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pts := s.buildLayers(o)[0].contours[0].Pts
+	if !reflect.DeepEqual(segments(pts, o), fitLoop(pts, o)) {
+		t.Fatal("segments differs from fitLoop in spline mode")
 	}
 }

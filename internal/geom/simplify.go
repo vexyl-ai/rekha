@@ -34,6 +34,25 @@ func MergeCollinearIndices(poly []Point) []int {
 	return out
 }
 
+// MergeCollinearOpenIndices is MergeCollinearIndices for an open polyline:
+// both ends are always kept.
+func MergeCollinearOpenIndices(poly []Point) []int {
+	n := len(poly)
+	out := make([]int, 0, n)
+	for i := 0; i < n; i++ {
+		if i > 0 && i < n-1 {
+			prev, cur, next := poly[i-1], poly[i], poly[i+1]
+			din := Point{cur.X - prev.X, cur.Y - prev.Y}
+			dout := Point{next.X - cur.X, next.Y - cur.Y}
+			if din.X*dout.Y-din.Y*dout.X == 0 && din.X*dout.X+din.Y*dout.Y > 0 {
+				continue // same direction
+			}
+		}
+		out = append(out, i)
+	}
+	return out
+}
+
 // pick returns the points of poly at the given indices.
 func pick(poly []Point, idx []int) []Point {
 	out := make([]Point, len(idx))
@@ -81,6 +100,18 @@ func RemoveStaircases(poly []Point) []Point {
 // RemoveStaircasesIndices returns, in ascending order, the indices of the
 // vertices RemoveStaircases keeps.
 func RemoveStaircasesIndices(poly []Point) []int {
+	return removeStaircases(poly, false)
+}
+
+// RemoveStaircasesOpenIndices is RemoveStaircasesIndices for an open
+// polyline: the ends turn nowhere, so no chain crosses or drops them.
+func RemoveStaircasesOpenIndices(poly []Point) []int {
+	return removeStaircases(poly, true)
+}
+
+// removeStaircases is the index form of RemoveStaircases; open treats
+// poly as a polyline whose closing segment does not exist.
+func removeStaircases(poly []Point, open bool) []int {
 	n := len(poly)
 	all := func() []int {
 		out := make([]int, n)
@@ -106,8 +137,14 @@ func RemoveStaircasesIndices(poly []Point) []int {
 		segLen[i] = dx + dy
 		segVert[i] = dy > 0
 	}
+	if open {
+		segLen[n-1] = 1 << 30 // the closing segment: longer than any run
+	}
 	sign := make([]int, n)
 	for i := 0; i < n; i++ {
+		if open && (i == 0 || i == n-1) {
+			continue
+		}
 		prev, cur, next := poly[(i+n-1)%n], poly[i], poly[(i+1)%n]
 		c := (cur.X-prev.X)*(next.Y-cur.Y) - (cur.Y-prev.Y)*(next.X-cur.X)
 		switch {

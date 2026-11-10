@@ -222,3 +222,29 @@ func TestStaircaseKeepsSliverEnds(t *testing.T) {
 		t.Fatalf("got %d points %v, want 6", len(got), got)
 	}
 }
+
+// TestRemoveStaircasesOpenKeepsEnds: on an open polyline the ends are
+// always kept, interior staircases collapse and no chain wraps round.
+func TestRemoveStaircasesOpenKeepsEnds(t *testing.T) {
+	// A digital line of slope 1/2 from (0,0) to (8,4), as crack vertices.
+	var pts []Point
+	for x := 0; x <= 8; x++ {
+		pts = append(pts, Point{X: x, Y: x / 2})
+		if x%2 == 1 && x < 8 {
+			pts = append(pts, Point{X: x + 1, Y: x / 2})
+		}
+	}
+	pts = pick(pts, MergeCollinearOpenIndices(pts))
+	idx := RemoveStaircasesOpenIndices(pts)
+	if len(idx) < 2 || idx[0] != 0 || idx[len(idx)-1] != len(pts)-1 {
+		t.Fatalf("kept %v of %d points", idx, len(pts))
+	}
+	if len(idx) > 3 {
+		t.Errorf("staircase kept %d points: %v", len(idx), idx)
+	}
+	// MergeCollinearOpenIndices keeps the ends of a straight run.
+	straight := []Point{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 2, Y: 0}, {X: 3, Y: 0}}
+	if got := MergeCollinearOpenIndices(straight); len(got) != 2 || got[0] != 0 || got[1] != 3 {
+		t.Errorf("open collinear merge kept %v", got)
+	}
+}

@@ -50,7 +50,7 @@ func segments(pts []geom.Point, o Options) []fit.Segment {
 	case ModePolygon:
 		return lines(geom.Simplify(pts, o.SimplifyTolerance))
 	default:
-		return spline(pts, o)
+		return fitLoop(pts, o)
 	}
 }
 
@@ -155,7 +155,9 @@ type vertex struct {
 	span      int       // flank window used, in dense points
 }
 
-func spline(pts []geom.Point, o Options) []fit.Segment {
+// fitLoop fits one closed crack loop as a spline: corners refined to
+// sub-pixel vertices, straight edges as lines, the runs between as cubics.
+func fitLoop(pts []geom.Point, o Options) []fit.Segment {
 	// The dense points are pixel corners, up to half a pixel off the true
 	// edge; without that allowance the max-error test sits on the noise
 	// floor and splits curves into many short cubics.
@@ -201,14 +203,99 @@ func spline(pts []geom.Point, o Options) []fit.Segment {
 		bends = append(bends, dssIdx[simpIdx[bi]])
 	}
 	verts := refineCorners(dense, clusterCorners(corners, len(dense)), bends)
-	verts = append(verts, straightEdgeVertices(dense, dssIdx, verts)...)
+	verts = append(verts, straightEdgeVertices(dense, dssIdx, verts, false)...)
 	if len(verts) == 0 {
 		return fit.FitClosed(dense, fitTol)
 	}
+	return fitRuns(dense, verts, fitTol, false)
+}
+
+// fitArc fits an open crack polyline: a planar arc whose ends are
+// junctions shared with other arcs. The first and last segment points are
+// exactly pts[0] and pts[n-1], and the pipeline is symmetric, so fitting
+// the polyline backwards gives the same curve reversed and both regions
+// along the arc can share one boundary.
+func fitArc(pts []geom.Point, o Options) []fit.Segment {
+	n := len(pts)
+	if n < 2 {
+		return nil
+	}
+	fitTol := o.FitTolerance + quantisation
+	dense := toVec(pts)
+	mergeIdx := geom.MergeCollinearOpenIndices(pts)
+	if n < 4 || len(mergeIdx) < 3 {
+		return []fit.Segment{{Line: true, P: fit.Cubic{dense[0], dense[0], dense[n-1], dense[n-1]}}}
+	}
+	merged := make([]geom.Point, len(mergeIdx))
+	for k, i := range mergeIdx {
+		merged[k] = pts[i]
+	}
+	dssIdx := geom.RemoveStaircasesOpenIndices(merged)
+	for k, i := range dssIdx {
+		dssIdx[k] = mergeIdx[i]
+	}
+	dss := make([]geom.Vec2, len(dssIdx))
+	for k, i := range dssIdx {
+		dss[k] = dense[i]
+	}
+	simpIdx := geom.RDPIndices(dss, o.SimplifyTolerance)
+	simp := make([]geom.Vec2, len(simpIdx))
+	for k, i := range simpIdx {
+		simp[k] = dss[i]
+	}
+	// Interior corners and bends as in fitLoop; the ends bound every flank
+	// window as bends do, so no window crosses them.
+	var corners []int
+	bends := []int{0}
+	for ci := 1; ci+1 < len(simp); ci++ {
+		turn := geom.TurnOpen(simp, ci)
+		if turn > o.CornerThreshold && geom.TurnOpen(dss, simpIdx[ci]) > o.CornerThreshold {
+			corners = append(corners, dssIdx[simpIdx[ci]])
+		}
+		if turn > flankBend {
+			bends = append(bends, dssIdx[simpIdx[ci]])
+		}
+	}
+	bends = append(bends, n-1)
+	verts := refineCorners(dense, clusterCorners(corners, n), bends)
+	// The end vertices sit exactly on the junctions; their tangents come
+	// from a flank that stops at the first bend or corner.
+	first, last := n-1, 0
+	for _, v := range verts {
+		first, last = min(first, v.in), max(last, v.out)
+	}
+	endSpan := func(run int) int {
+		return max(1, min(flankWindow(n), run))
+	}
+	v0 := vertex{pos: dense[0], span: endSpan(first)}
+	_, v0.tOut = fit.FitLine(append([]geom.Vec2{dense[0]}, window(dense, 0, +1, 0, v0.span)...))
+	vn := vertex{pos: dense[n-1], in: n - 1, out: n - 1, span: endSpan(n - 1 - last)}
+	_, vn.tIn = fit.FitLine(append(window(dense, n-1, -1, 0, vn.span), dense[n-1]))
+	verts = append(verts, v0, vn)
+	verts = append(verts, straightEdgeVertices(dense, dssIdx, verts, true)...)
+	return fitRuns(dense, verts, fitTol, true)
+}
+
+// reverseSegs returns the path segs walked backwards: the same numbers,
+// each segment's control points in the opposite order.
+func reverseSegs(segs []fit.Segment) []fit.Segment {
+	out := make([]fit.Segment, len(segs))
+	for i, s := range segs {
+		out[len(segs)-1-i] = fit.Segment{Line: s.Line, P: fit.Cubic{s.P[3], s.P[2], s.P[1], s.P[0]}}
+	}
+	return out
+}
+
+// fitRuns fits the runs of dense between consecutive vertices, wrapping
+// from the last vertex to the first unless open.
+func fitRuns(dense []geom.Vec2, verts []vertex, fitTol float64, open bool) []fit.Segment {
 	sort.Slice(verts, func(a, b int) bool { return verts[a].in < verts[b].in })
 	n := len(dense)
 	var segs []fit.Segment
 	for k, v := range verts {
+		if open && k == len(verts)-1 {
+			break
+		}
 		next := verts[(k+1)%len(verts)]
 		if len(verts) > 1 && next.in == v.out {
 			// Two vertices at one dense index: nothing lies between them.
@@ -370,7 +457,7 @@ func flankDir(dense []geom.Vec2, i, step, count int) geom.Vec2 {
 // existing vertex's flank window are skipped. Where two straight edges
 // share an end, the two breakpoints merge into one vertex at the
 // intersection of the edges' lines.
-func straightEdgeVertices(dense []geom.Vec2, dssIdx []int, have []vertex) []vertex {
+func straightEdgeVertices(dense []geom.Vec2, dssIdx []int, have []vertex, open bool) []vertex {
 	n := len(dense)
 	// Ends inside a corner's flank window are already covered by that
 	// corner's line fit.
@@ -391,7 +478,11 @@ func straightEdgeVertices(dense []geom.Vec2, dssIdx []int, have []vertex) []vert
 		p, d geom.Vec2 // the edge's least-squares line
 	}
 	var ends []end
-	for i := 0; i < m; i++ {
+	edges := m
+	if open {
+		edges = m - 1 // no closing edge
+	}
+	for i := 0; i < edges; i++ {
 		ia, ib := dssIdx[i], dssIdx[(i+1)%m]
 		a, b := dense[ia], dense[ib]
 		l := b.Sub(a).Len()
@@ -412,11 +503,19 @@ func straightEdgeVertices(dense []geom.Vec2, dssIdx []int, have []vertex) []vert
 		half := min(look, len(run))
 		_, dEnd := fit.FitLine(run[len(run)-half:])
 		_, dStart := fit.FitLine(run[:half])
-		_, after := fit.FitLine(window(dense, ib, +1, 0, look))
-		_, before := fit.FitLine(window(dense, ia, -1, 0, look))
-		before = before.Scale(-1) // window runs backwards; orient forward
-		turnStart, turnEnd := angle(before, dStart), angle(dEnd, after)
 		thr := straightTurn * 3 / l
+		// An open polyline ends at a junction, where the boundary turns
+		// by definition; the end vertex there is already a breakpoint.
+		turnStart, turnEnd := math.Inf(1), math.Inf(1)
+		if !open || ib+look <= n-1 {
+			_, after := fit.FitLine(window(dense, ib, +1, 0, look))
+			turnEnd = angle(dEnd, after)
+		}
+		if !open || ia-look >= 0 {
+			_, before := fit.FitLine(window(dense, ia, -1, 0, look))
+			before = before.Scale(-1) // window runs backwards; orient forward
+			turnStart = angle(before, dStart)
+		}
 		if max(turnStart, turnEnd) < thr {
 			continue // turns like a chord of a curve: fit it as a curve
 		}
@@ -442,7 +541,7 @@ func straightEdgeVertices(dense []geom.Vec2, dssIdx []int, have []vertex) []vert
 		var next *end
 		if k+1 < len(ends) && ends[k+1].idx == e.idx {
 			next = &ends[k+1]
-		} else if k == len(ends)-1 && len(out) > 0 && ends[0].idx == e.idx && len(ends) > 1 {
+		} else if !open && k == len(ends)-1 && len(out) > 0 && ends[0].idx == e.idx && len(ends) > 1 {
 			// The loop's last edge ends where its first edge begins.
 			out[0].tIn = e.d
 			if x, ok := fit.Intersect(e.p, e.d, ends[0].p, ends[0].d); ok && x.Sub(dense[e.idx]).Len() <= cornerMaxMove {

@@ -11,7 +11,9 @@ import (
 	"github.com/vexyl-ai/rekha/internal/bitmap"
 	"github.com/vexyl-ai/rekha/internal/colour"
 	"github.com/vexyl-ai/rekha/internal/contour"
+	"github.com/vexyl-ai/rekha/internal/fit"
 	"github.com/vexyl-ai/rekha/internal/geom"
+	"github.com/vexyl-ai/rekha/internal/planar"
 	"github.com/vexyl-ai/rekha/internal/refine"
 	"github.com/vexyl-ai/rekha/internal/svg"
 )
@@ -33,6 +35,20 @@ type layer struct {
 	omit     bool // the white page: not emitted, not extended into
 	contours []contour.Contour
 	band     []int32 // pixels the extension added, sorted; nil when none
+	loops    []int   // planar loop of each contour, when traced through the map
+}
+
+// arcFit is the fitted curve of one planar arc, shared by the two shapes
+// along it: one gets it forwards, the other reversed.
+type arcFit struct{ segs []fit.Segment }
+
+// usePlanar reports whether the shapes are traced through the shared-
+// boundary map: colour cutout in spline mode. Stacked output overlaps its
+// shapes instead, pixel and polygon modes are exact already, and the bw
+// preset has one colour. Refinement still fits each contour alone until
+// shared refinement lands.
+func usePlanar(o Options) bool {
+	return o.Hierarchical == HierarchicalCutout && o.Preset != PresetBW && o.Mode == ModeSpline && !o.Refine.Enabled
 }
 
 // inBand reports whether pixel index p lies in the layer's extension band.
@@ -58,8 +74,23 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 		return nil, fmt.Errorf("rekha: %d labels for a %d×%d segmentation", len(s.Labels), s.Width, s.Height)
 	}
 
-	layers := s.buildLayers(o)
+	layers, pm := s.buildLayersMap(o)
 	stacked := o.Hierarchical == HierarchicalStacked && o.Preset != PresetBW
+
+	// With the planar map every arc is fitted once, closed island loops
+	// as loops, and the shapes assemble their outlines from the fits.
+	var fits []arcFit
+	if pm != nil {
+		fits = make([]arcFit, len(pm.Arcs))
+		parallel(len(pm.Arcs), func(i int) {
+			a := pm.Arcs[i]
+			if a.Closed {
+				fits[i].segs = fitLoop(a.Pts, o)
+			} else {
+				fits[i].segs = fitArc(a.Pts, o)
+			}
+		})
+	}
 
 	// Fit every contour in parallel, indexed by layer and subpath.
 	subpaths := make([][]svg.Subpath, len(layers))
@@ -75,7 +106,12 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	parallel(len(jobs), func(j int) {
 		i, k := jobs[j][0], jobs[j][1]
 		c := layers[i].contours[k]
-		segs := segments(c.Pts, o)
+		var segs []fit.Segment
+		if pm != nil {
+			segs = assembleSegs(pm.Loops[layers[i].loops[k]], fits)
+		} else {
+			segs = segments(c.Pts, o)
+		}
 		if refining {
 			var band func(p int) bool
 			if layers[i].band != nil {
@@ -119,10 +155,37 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	return res, nil
 }
 
+// assembleSegs concatenates the arc fits of loop l, reversed where the
+// loop walks an arc backwards.
+func assembleSegs(l planar.Loop, fits []arcFit) []fit.Segment {
+	var out []fit.Segment
+	for _, r := range l.Refs {
+		segs := fits[r.Arc].segs
+		if r.Reverse {
+			segs = reverseSegs(segs)
+		}
+		out = append(out, segs...)
+	}
+	return out
+}
+
 // buildLayers traces the colours, nests the shapes, drops the white page,
 // extends stacked siblings and returns the layers to emit in output order.
 func (s *Segmentation) buildLayers(o Options) []layer {
-	layers := s.layers(o)
+	layers, _ := s.buildLayersMap(o)
+	return layers
+}
+
+// buildLayersMap is buildLayers that also returns the planar map the
+// layers were traced through, nil when usePlanar(o) is false.
+func (s *Segmentation) buildLayersMap(o Options) ([]layer, *planar.Map) {
+	var layers []layer
+	var pm *planar.Map
+	if usePlanar(o) {
+		layers, pm = s.planarLayers()
+	} else {
+		layers = s.layers(o)
+	}
 	stacked := o.Hierarchical == HierarchicalStacked && o.Preset != PresetBW
 	shapes := make([]contour.Shape, len(layers))
 	for i, l := range layers {
@@ -169,7 +232,37 @@ func (s *Segmentation) buildLayers(o Options) []layer {
 			kept = append(kept, l)
 		}
 	}
-	return kept
+	return kept, pm
+}
+
+// planarLayers traces every colour through the shared-boundary map and
+// returns the shapes as layers in colour then scan order, each contour
+// tagged with its loop, together with the map.
+func (s *Segmentation) planarLayers() ([]layer, *planar.Map) {
+	counts := make([]int, len(s.Palette))
+	for _, l := range s.Labels {
+		counts[l]++
+	}
+	colours := make([]uint8, len(s.Palette))
+	for c := range colours {
+		colours[c] = uint8(c)
+	}
+	pm := planar.Build(s.Labels, s.Width, s.Height, colours, func(c uint8) func(x, y int) bool {
+		return s.saddle(c, counts)
+	})
+	loop := func(i int) contour.Contour {
+		return contour.Contour{Pts: pm.Assemble(pm.Loops[i]), Area2: pm.Loops[i].Area2}
+	}
+	var out []layer
+	for _, sh := range pm.Shapes() {
+		l := layer{colour: int(pm.Loops[sh[0]].Colour), loops: sh}
+		l.shape.Outer = loop(sh[0])
+		for _, h := range sh[1:] {
+			l.shape.Holes = append(l.shape.Holes, loop(h))
+		}
+		out = append(out, l)
+	}
+	return out, &pm
 }
 
 // layers traces each colour's label mask into shapes, colours in a worker
