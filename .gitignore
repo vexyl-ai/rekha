@@ -5,3 +5,5 @@
 /.superpowers/
 /bench/reference/*/*
 !/bench/reference/*/README.md
+/web/rekha.wasm
+/web/wasm_exec.js

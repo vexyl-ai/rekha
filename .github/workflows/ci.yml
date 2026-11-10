@@ -16,4 +16,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: make lint test wasm-check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: make lint test wasm-check wasm wasm-test web-test
