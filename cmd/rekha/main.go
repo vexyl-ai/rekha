@@ -4,13 +4,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"image/color"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/vexyl-ai/rekha"
+	"github.com/vexyl-ai/rekha/internal/apiopts"
 	"github.com/vexyl-ai/rekha/internal/cli"
 
 	// Decoders for the formats TraceReader accepts.
@@ -80,7 +80,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	o.TurnPolicy = rekha.TurnPolicy(turnPolicy)
 	o.Hierarchical = rekha.Hierarchical(hierarchical)
 	if palette != "" {
-		pal, err := parsePalette(palette)
+		pal, err := apiopts.ParsePalette(palette)
 		if err != nil {
 			fmt.Fprintln(stderr, "rekha: --palette: "+err.Error())
 			return cli.ExitUsage
@@ -130,24 +130,6 @@ func presetArg(args []string) rekha.Preset {
 		}
 	}
 	return rekha.PresetBW
-}
-
-// parsePalette parses "#rrggbb,#rrggbb,…".
-func parsePalette(s string) ([]color.NRGBA, error) {
-	var pal []color.NRGBA
-	for _, tok := range strings.Split(s, ",") {
-		tok = strings.TrimSpace(tok)
-		hex, ok := strings.CutPrefix(tok, "#")
-		if !ok || len(hex) != 6 {
-			return nil, fmt.Errorf("%q is not a #rrggbb colour", tok)
-		}
-		v, err := strconv.ParseUint(hex, 16, 24)
-		if err != nil {
-			return nil, fmt.Errorf("%q is not a #rrggbb colour", tok)
-		}
-		pal = append(pal, color.NRGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 255})
-	}
-	return pal, nil
 }
 
 // traceOne traces input ("-" for stdin) and writes the SVG to out ("-" for
