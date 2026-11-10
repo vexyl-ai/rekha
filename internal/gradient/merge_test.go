@@ -508,3 +508,193 @@ func TestMergeSteepGrainyRampJoins(t *testing.T) {
 		t.Errorf("N %d ramps %v", r.N, r.Ramps)
 	}
 }
+
+// canvas is a grey image with labels, painted region by region.
+type canvas struct {
+	w, h   int
+	rgb    []uint8
+	labels []uint8
+}
+
+func newCanvas(w, h int) *canvas {
+	return &canvas{w: w, h: h, rgb: make([]uint8, 3*w*h), labels: make([]uint8, w*h)}
+}
+
+func (c *canvas) set(x, y int, v uint8, l uint8) {
+	p := y*c.w + x
+	c.rgb[3*p], c.rgb[3*p+1], c.rgb[3*p+2] = v, v, v
+	c.labels[p] = l
+}
+
+// quad paints a quadratic grey ramp 0.2..0.8 over columns x0..x0+256,
+// quantised into 8 bands labelled l0..l0+7 by colour range.
+func (c *canvas) quad(x0 int, l0 uint8) {
+	for y := 0; y < c.h; y++ {
+		for x := 0; x < 256; x++ {
+			s := float64(x) / 255
+			v := 0.2 + float64(0.6*float64(s*s))
+			c.set(x0+x, y, uint8(math.Round(v*255)), l0+uint8(min(int((v-0.2)/0.6*8), 7)))
+		}
+	}
+}
+
+// wander paints a band over columns x0..x0+128 that meets 204 grey at
+// its left edge and then varies along y more and more with x, so it
+// joins a ramp ending at 204 across a soft boundary but fits no model
+// along the ramp's direction.
+func (c *canvas) wander(x0 int, l uint8) {
+	for y := 0; y < c.h; y++ {
+		for x := 0; x < 128; x++ {
+			v := 204 + x*(y-c.h/2)/(c.h/2)
+			c.set(x0+x, y, clamp8(v), l)
+		}
+	}
+}
+
+func rampLabels(r Result) (n int, stops int) {
+	for _, rp := range r.Ramps {
+		if rp != nil {
+			n++
+			stops = max(stops, len(rp.Stops))
+		}
+	}
+	return n, stops
+}
+
+func TestMergePartialDissolveKeepsGoodMembers(t *testing.T) {
+	c := newCanvas(384, 32)
+	c.quad(0, 0)
+	c.wander(256, 8)
+	r := Merge(c.rgb, c.labels, c.w, c.h, 9, 0.03)
+	ramps, stops := rampLabels(r)
+	if r.N != 2 || ramps != 1 || stops < 3 {
+		t.Errorf("N %d ramps %d stops %d: the bent ramp must stay one group while the wandering band reverts", r.N, ramps, stops)
+	}
+}
+
+func TestMergePartialDissolveSplits(t *testing.T) {
+	c := newCanvas(640, 32)
+	c.quad(0, 0)
+	c.wander(256, 8)
+	// Mirror the wandering band's right edge into a second ramp: paint
+	// the ramp reversed so it starts at 204 where the band ends.
+	for y := 0; y < c.h; y++ {
+		for x := 0; x < 256; x++ {
+			s := float64(255-x) / 255
+			v := 0.2 + float64(0.6*float64(s*s))
+			c.set(384+x, y, uint8(math.Round(v*255)), 9+uint8(min(int((v-0.2)/0.6*8), 7)))
+		}
+	}
+	// The band's right edge must meet 204: repaint its last column flat.
+	for y := 0; y < c.h; y++ {
+		c.set(383, y, 204, 8)
+	}
+	r := Merge(c.rgb, c.labels, c.w, c.h, 17, 0.03)
+	ramps, stops := rampLabels(r)
+	if r.N != 3 || ramps != 2 || stops < 3 {
+		t.Errorf("N %d ramps %d stops %d: both bent ramps must survive as groups of their own", r.N, ramps, stops)
+	}
+}
+
+func TestMergePartialDissolveLabelBudget(t *testing.T) {
+	c := newCanvas(640, 33)
+	c.quad(0, 0)
+	c.wander(256, 8)
+	for y := 0; y < 32; y++ {
+		for x := 0; x < 256; x++ {
+			s := float64(255-x) / 255
+			v := 0.2 + float64(0.6*float64(s*s))
+			c.set(384+x, y, uint8(math.Round(v*255)), 9+uint8(min(int((v-0.2)/0.6*8), 7)))
+		}
+	}
+	const n = 253
+	for k := 17; k < n; k++ { // a speck of every other label on the last row
+		c.set(2*k+1, 32, 128, uint8(k))
+	}
+	r := Merge(c.rgb, c.labels, c.w, c.h, n, 0.03)
+	if r.N > 256 {
+		t.Errorf("N %d > 256", r.N)
+	}
+	for p, l := range r.Labels {
+		if int(l) >= r.N {
+			t.Fatalf("label %d past N %d at %d", l, r.N, p)
+		}
+	}
+}
+
+// islandImage is the 128×32 four-band grey ramp with an island of label
+// 4 over x0..x1 × y0..y1 whose grey is the ramp's value plus delta.
+func islandImage(x0, x1, y0, y1, delta int) (rgb, labels []uint8) {
+	rgb, labels = rampImage(128, 32, 4)
+	for y := y0; y < y1; y++ {
+		for x := x0; x < x1; x++ {
+			p := y*128 + x
+			v := clamp8(x*255/127 + delta)
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = v, v, v
+			labels[p] = 4
+		}
+	}
+	return rgb, labels
+}
+
+func TestMergeIslandAbsorbed(t *testing.T) {
+	rgb, labels := islandImage(60, 63, 14, 17, 4)
+	r := Merge(rgb, labels, 128, 32, 5, 0.03)
+	if r.N != 1 || r.Ramps[0] == nil {
+		t.Errorf("N %d ramps %v: a speck of the ramp's own colour must join it", r.N, r.Ramps)
+	}
+	if r.OldToNew[4] != -1 {
+		t.Errorf("OldToNew[4] %d, want -1 (every pixel joined the ramp)", r.OldToNew[4])
+	}
+}
+
+func TestMergeIslandOfOtherColourKept(t *testing.T) {
+	rgb, labels := islandImage(60, 63, 14, 17, 40)
+	r := Merge(rgb, labels, 128, 32, 5, 0.03)
+	if r.N != 2 || r.Labels[15*128+61] == r.Labels[15*128+20] {
+		t.Errorf("N %d: a speck 40 counts off must keep its label", r.N)
+	}
+}
+
+func TestMergeIslandSliverAbsorbed(t *testing.T) {
+	rgb, labels := islandImage(60, 61, 10, 16, 3)
+	r := Merge(rgb, labels, 128, 32, 5, 0.03)
+	if r.N != 1 || r.Ramps[0] == nil {
+		t.Errorf("N %d ramps %v: a 1-px sliver has no interior pixel but still joins", r.N, r.Ramps)
+	}
+}
+
+func TestMergeIslandPicksLargestBorder(t *testing.T) {
+	// A: horizontal ramp 40+x over x < 128 (labels 0..3); B: vertical
+	// ramp 167+2(y−15) over x ≥ 128 (labels 4..7); a hard step between
+	// them except near y = 15. The island (label 8) over x 125..128,
+	// y 14..16 fits both models at its centroid; it borders A along 9
+	// pixel pairs and B along 5, so it takes A's label.
+	const w, h = 256, 32
+	rgb := make([]uint8, 3*w*h)
+	labels := make([]uint8, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			p := y*w + x
+			var v int
+			if x < 128 {
+				v, labels[p] = 40+x, uint8(x/32)
+			} else {
+				v, labels[p] = 167+2*(y-15), uint8(4+y/8)
+			}
+			if x >= 125 && x < 129 && y >= 14 && y < 17 {
+				v, labels[p] = 167, 8
+			}
+			c := clamp8(v)
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = c, c, c
+		}
+	}
+	r := Merge(rgb, labels, w, h, 9, 0.03)
+	a, b, isl := r.Labels[15*w+60], r.Labels[15*w+200], r.Labels[15*w+126]
+	if a == b || r.Ramps[a] == nil || r.Ramps[b] == nil {
+		t.Fatalf("fixture: a %d b %d ramps %v", a, b, r.Ramps)
+	}
+	if isl != a {
+		t.Errorf("island label %d, want A's %d (B is %d)", isl, a, b)
+	}
+}

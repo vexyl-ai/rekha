@@ -22,9 +22,12 @@ type Result struct {
 
 // component is one 4-connected run of equal labels.
 type component struct {
-	label uint8
-	first int32 // scan-order index of its first pixel
-	m     moments
+	label  uint8
+	first  int32 // scan-order index of its first pixel
+	m      moments
+	size   int        // all its pixels, edge included
+	sx, sy float64    // Σ pixel centres over all its pixels
+	sc     [3]float64 // Σ colour over all its pixels
 }
 
 // edge is the boundary between two components: 4-adjacent pixel pairs
@@ -76,6 +79,12 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		if c.first < 0 {
 			c.first = int32(p)
 			c.label = labels[p]
+		}
+		c.size++
+		c.sx += float64(p%w) + 0.5
+		c.sy += float64(p/w) + 0.5
+		for k, v := range colourOf(rgb, p) {
+			c.sc[k] += v
 		}
 		if interior(labels, w, h, p) {
 			c.m.add(float64(p%w)+0.5, float64(p/w)+0.5, colourOf(rgb, p))
@@ -466,9 +475,46 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 			rampOf[r] = rp
 		}
 	}
+	// Islands: a component too small to merge takes the label of the
+	// bordering ramp (the one it shares the most pixel pairs with, the
+	// lower root on a tie) whose model matches the island's mean colour
+	// at its centroid within tol. A speck of another colour (a highlight,
+	// an eye) differs by more and keeps its label.
+	type border struct {
+		root  int32
+		pairs int
+	}
+	best := map[int32]border{}
+	for _, k := range edgeKeys {
+		e := edges[k]
+		for _, ij := range [2][2]int32{{k[0], k[1]}, {k[1], k[0]}} {
+			i, r := ij[0], r2[ij[1]]
+			if comps[i].m.n >= minPixels || rampOf[r] == nil {
+				continue
+			}
+			if b, ok := best[i]; !ok || e.pairs > b.pairs || e.pairs == b.pairs && r < b.root {
+				best[i] = border{root: r, pairs: e.pairs}
+			}
+		}
+	}
+	absorbed := make([]int32, ncomp)
+	for i := range absorbed {
+		absorbed[i] = -1
+	}
+	for i, b := range best {
+		c, e := &comps[i], ext[b.root]
+		n := float64(c.size)
+		t := float64(e.f.u[0]*(c.sx/n)) + float64(e.f.u[1]*(c.sy/n))
+		mean := [3]float64{c.sc[0] / n, c.sc[1] / n, c.sc[2] / n}
+		if dist(colourAt(e.model, (t-e.tmin)/(e.tmax-e.tmin)), mean) <= tol {
+			absorbed[i] = b.root
+		}
+	}
 	pre := make([]int, ncomp)
 	for i := range comps {
-		if l, ok := fresh[r2[i]]; ok {
+		if a := absorbed[i]; a >= 0 {
+			pre[i] = fresh[a]
+		} else if l, ok := fresh[r2[i]]; ok {
 			pre[i] = l
 		} else {
 			pre[i] = int(comps[i].label)
@@ -485,7 +531,11 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		l := pre[comp[p]]
 		if remap[l] < 0 {
 			remap[l] = len(ramps)
-			ramps = append(ramps, rampOf[r2[comp[p]]])
+			r := r2[comp[p]]
+			if a := absorbed[comp[p]]; a >= 0 {
+				r = a
+			}
+			ramps = append(ramps, rampOf[r])
 		}
 		res.Labels[p] = uint8(remap[l])
 	}
@@ -601,8 +651,8 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 			e.b.add(proj(e, p), colourOf(rgb, p))
 		}
 	}
-	for r, e := range ext {
-		if groups[r].merged && e.b != nil {
+	for _, e := range ext {
+		if e.b != nil {
 			e.model = e.b.model(tol)
 		}
 	}
