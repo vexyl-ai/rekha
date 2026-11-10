@@ -53,7 +53,7 @@
   </section>
 </aside>
 
-<main class="stage">
+<main class="stage" tabindex="0" aria-label="Canvas: drag to pan, ctrl and wheel to zoom">
   <div class="compare" id="compare" hidden>
     <img id="sourceImg" alt="Source image" draggable="false">
     <div class="svgClip" id="svgClip"><img id="svgImg" alt="Traced SVG" draggable="false"></div>
@@ -63,6 +63,12 @@
   <div class="empty" id="drop">
     <p class="big">Drop an image here</p>
     <p>or paste one, or choose a file</p>
+  </div>
+  <div class="zoom" id="zoom" hidden>
+    <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+    <button id="zoomLevel" title="Actual pixels (1)">100%</button>
+    <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+    <button id="zoomFit" title="Fit to view (0)">Fit</button>
   </div>
 </main>
 

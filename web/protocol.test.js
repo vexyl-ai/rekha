@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { SEGMENT_KEYS, needsResegment, Requests, progressText } = require('./protocol.js');
+const { SEGMENT_KEYS, needsResegment, Requests, progressText, Viewport } = require('./protocol.js');
 
 test('segment keys', () => {
   assert.deepEqual(SEGMENT_KEYS, ['preset', 'threshold', 'colorPrecision', 'colorTolerance', 'maxColors', 'palette', 'filterSpeckle', 'gradients', 'gradientTolerance']);
@@ -78,4 +78,55 @@ test('progress text names the stage and the count', () => {
   assert.equal(progressText('curves', 312, 1204), 'Fitting curves… 312 of 1,204');
   assert.equal(progressText('curves', 1204, 1204), 'Fitting curves… 1,204 of 1,204');
   assert.equal(progressText('nonsense', 0, 0), 'Working…');
+});
+
+test('viewport fits the image centred in the view', () => {
+  const v = new Viewport();
+  v.setView(1000, 600);
+  v.setImage(2000, 1000);
+  assert.deepEqual([v.z, v.x, v.y], [0.5, 0, 50]);
+  assert.equal(v.fitted, true);
+});
+
+test('viewport zooms about the cursor and clamps to the edges', () => {
+  const v = new Viewport();
+  v.setView(1000, 600);
+  v.setImage(2000, 1000);
+  v.zoomAt(2, 500, 300);
+  assert.deepEqual([v.z, v.x, v.y], [1, -500, -200]);
+  assert.equal(v.fitted, false);
+  v.pan(-2000, 0);
+  assert.equal(v.x, -1000);
+  v.pan(0, 5000);
+  assert.equal(v.y, 0);
+});
+
+test('viewport centres an image smaller than the view', () => {
+  const v = new Viewport();
+  v.setView(1000, 600);
+  v.setImage(2000, 1000);
+  v.zoomAt(0.5, 0, 0);
+  assert.deepEqual([v.z, v.x, v.y], [0.25, 250, 175]);
+});
+
+test('viewport zoom is bounded', () => {
+  const v = new Viewport();
+  v.setView(1000, 600);
+  v.setImage(2000, 1000);
+  v.zoomAt(1e6, 0, 0);
+  assert.equal(v.z, 32);
+  v.zoomAt(1e-6, 0, 0);
+  assert.equal(v.z, 0.125); // a quarter of the fit scale
+});
+
+test('viewport refits on resize while fitted, keeps the zoom otherwise', () => {
+  const v = new Viewport();
+  v.setView(1000, 600);
+  v.setImage(2000, 1000);
+  v.setView(500, 500);
+  assert.deepEqual([v.z, v.x, v.y], [0.25, 0, 125]);
+  v.zoomTo(1, 250, 250);
+  v.setView(400, 400);
+  assert.equal(v.z, 1);
+  assert.ok(v.x <= 0 && v.x >= 400 - 2000);
 });

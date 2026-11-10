@@ -2,7 +2,7 @@
 // rekha.wasm in a worker, re-segments only when a segmentation option
 // changed, drops stale replies, frees replaced handles, and cancels by
 // terminating the worker. The result is shown as a wipe over the source.
-const { needsResegment, Requests, Handles, imageFileFromItems, progressText } = self.RekhaProtocol;
+const { needsResegment, Requests, Handles, imageFileFromItems, progressText, Viewport } = self.RekhaProtocol;
 
 const $ = (id) => document.getElementById(id);
 const status = $('status');
@@ -151,15 +151,47 @@ async function decode(file) {
   return { width, height, data, note };
 }
 
-// fitCompare sizes the compare box to the stage, keeping the image's aspect.
+// The stage is a viewport over the compare box: the box is laid out at
+// the image's natural size times the zoom (so the SVG is rasterised at
+// what is shown, not scaled up from a thumbnail) and placed by the
+// viewport's offset. The view keeps a 20 px margin when fitted.
+const vp = new Viewport();
+const MARGIN = 20;
+function viewSize() {
+  const r = stage.getBoundingClientRect();
+  return [Math.max(1, r.width - 2 * MARGIN), Math.max(1, r.height - 2 * MARGIN)];
+}
+function render() {
+  const w = vp.image.w * vp.z, h = vp.image.h * vp.z;
+  compare.style.width = w + 'px';
+  compare.style.height = h + 'px';
+  compare.style.left = (vp.x + MARGIN) + 'px';
+  compare.style.top = (vp.y + MARGIN) + 'px';
+  $('zoomLevel').textContent = Math.round(vp.z * 100) + '%';
+  $('zoomFit').disabled = vp.fitted;
+}
 function fitCompare() {
   const img = $('sourceImg');
   if (!img.naturalWidth) return;
+  vp.setView(...viewSize());
+  vp.setImage(img.naturalWidth, img.naturalHeight);
+  render();
+}
+function resized() {
+  if (!vp.image.w) return;
+  vp.setView(...viewSize());
+  render();
+}
+// stagePoint maps a pointer event to view coordinates (margin removed).
+function stagePoint(e) {
   const r = stage.getBoundingClientRect();
-  const w = r.width - 40, h = r.height - 40;
-  const s = Math.min(w / img.naturalWidth, h / img.naturalHeight);
-  compare.style.width = Math.max(1, Math.floor(img.naturalWidth * s)) + 'px';
-  compare.style.height = Math.max(1, Math.floor(img.naturalHeight * s)) + 'px';
+  return [e.clientX - r.left - MARGIN, e.clientY - r.top - MARGIN];
+}
+function zoomBy(factor, at) {
+  if (!vp.image.w) return;
+  const [w, h] = viewSize();
+  vp.zoomAt(factor, ...(at || [w / 2, h / 2]));
+  render();
 }
 
 function showSource(file) {
@@ -168,6 +200,7 @@ function showSource(file) {
   $('sourceImg').src = sourceURL;
   $('svgImg').removeAttribute('src');
   $('compare').hidden = false;
+  $('zoom').hidden = false;
   $('drop').hidden = true;
   $('download').disabled = true;
 }
@@ -228,7 +261,7 @@ async function load(file) {
 const stage = document.querySelector('.stage');
 const compare = $('compare'), divider = $('divider'), clip = $('svgClip');
 $('sourceImg').addEventListener('load', fitCompare);
-window.addEventListener('resize', fitCompare);
+window.addEventListener('resize', resized);
 $('file').addEventListener('change', (e) => load(e.target.files[0]));
 stage.addEventListener('dragover', (e) => { e.preventDefault(); stage.classList.add('over'); });
 stage.addEventListener('dragleave', () => stage.classList.remove('over'));
@@ -253,6 +286,50 @@ $('download').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = svgURL; a.download = 'rekha.svg'; a.click();
 });
+
+// Zoom and pan: ctrl/cmd + wheel or a pinch zooms about the cursor,
+// a plain wheel pans, dragging the image pans, double-click zooms in;
+// the toolbar and the keys + - 0 1 do the same from the keyboard.
+stage.addEventListener('wheel', (e) => {
+  if (!vp.image.w) return;
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {
+    zoomBy(Math.exp(-e.deltaY * 0.01), stagePoint(e));
+  } else {
+    vp.pan(-e.deltaX, -e.deltaY);
+    render();
+  }
+}, { passive: false });
+let panFrom = null;
+stage.addEventListener('pointerdown', (e) => {
+  if (!vp.image.w || e.button !== 0 || e.target.closest('.divider, .zoom')) return;
+  panFrom = [e.clientX, e.clientY];
+  stage.setPointerCapture(e.pointerId);
+  stage.classList.add('panning');
+});
+stage.addEventListener('pointermove', (e) => {
+  if (!panFrom) return;
+  vp.pan(e.clientX - panFrom[0], e.clientY - panFrom[1]);
+  panFrom = [e.clientX, e.clientY];
+  render();
+});
+const endPan = () => { panFrom = null; stage.classList.remove('panning'); };
+stage.addEventListener('pointerup', endPan);
+stage.addEventListener('pointercancel', endPan);
+stage.addEventListener('dblclick', (e) => { if (!e.target.closest('.divider, .zoom')) zoomBy(2, stagePoint(e)); });
+stage.addEventListener('keydown', (e) => {
+  if (e.target !== stage) return;
+  if (e.key === '+' || e.key === '=') zoomBy(1.25);
+  else if (e.key === '-' || e.key === '_') zoomBy(0.8);
+  else if (e.key === '0') { if (vp.image.w) { vp.fit(); render(); } }
+  else if (e.key === '1') { if (vp.image.w) { const [w, h] = viewSize(); vp.zoomTo(1, w / 2, h / 2); render(); } }
+  else return;
+  e.preventDefault();
+});
+$('zoomIn').addEventListener('click', () => zoomBy(1.25));
+$('zoomOut').addEventListener('click', () => zoomBy(0.8));
+$('zoomFit').addEventListener('click', () => { if (vp.image.w) { vp.fit(); render(); } });
+$('zoomLevel').addEventListener('click', () => { if (vp.image.w) { const [w, h] = viewSize(); vp.zoomTo(1, w / 2, h / 2); render(); } });
 
 // Wipe divider: drag, or arrow keys when focused.
 function setWipe(frac) {

@@ -8,7 +8,7 @@ make wasm-test       # go test under Node through go_js_wasm_exec
 make serve           # rekha-serve -static web → http://localhost:8080
 ```
 
-`web/` is the demo page: drop, paste or choose an image, wipe between source and SVG with a draggable divider, move the controls, download. It needs no build step beyond `make wasm` and any static file server. CI builds and tests the wasm on every push.
+`web/` is the demo page: drop, paste or choose an image, wipe between source and SVG with a draggable divider, zoom and pan the canvas (ctrl or ⌘ + wheel or a pinch zooms about the cursor, wheel or drag pans, double-click zooms in, the toolbar and the keys `+` `-` `0` fit `1` actual pixels do the same; the SVG is rasterised at the zoom shown, so detail is real), move the controls, download. The page keeps to the viewport height; the control rail scrolls on its own. It needs no build step beyond `make wasm` and any static file server. CI builds and tests the wasm on every push.
 
 ## JS API
 
