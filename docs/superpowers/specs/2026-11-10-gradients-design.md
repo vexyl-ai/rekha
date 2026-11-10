@@ -1,6 +1,6 @@
 # Gradient fills design
 
-Status: design, 2026-11-10. Follows Phase 4 (open half, merged as 901d4ce) and the web polish (1912e58). The user asked for a gradient option after a bird illustration with smooth feather shading traced into dozens of flat colour bands; design questions were skipped at the user's request, so every choice below is the author's call. Phases 1–4 stay the base: segmentation, cleanup, contour tracing, stacking, the planar map, fitting and refinement are unchanged except where a section below says otherwise.
+Status: design, 2026-11-10; §2a (multi-stop ramps, v2) added the same day after the first build left seams between partial ramps on the bird's curved feathers. Follows Phase 4 (open half, merged as 901d4ce) and the web polish (1912e58). The user asked for a gradient option after a bird illustration with smooth feather shading traced into dozens of flat colour bands; design questions were skipped at the user's request, so every choice below is the author's call. Phases 1–4 stay the base: segmentation, cleanup, contour tracing, stacking, the planar map, fitting and refinement are unchanged except where a section below says otherwise.
 
 ## Intent
 
@@ -128,3 +128,11 @@ White page. A disc (centre 72,128, r 56) with a vertical ramp from blue (30,60,2
 - `TestGradientsDeterministic`: `gradient-shapes` under GOMAXPROCS 1 and 8: identical bytes (Segment is single-threaded; the test guards the contract).
 - `TestBirdReport` (`REKHA_BIRD`): prints the numbers; no assertion.
 - Goldens: `gradient-h-photo-gradients-spline.svg`, `gradient-shapes-photo-gradients-spline.svg` under `svgClose`.
+
+## 2a. Multi-stop ramps (v2)
+
+The two-stop build merged the bands of a curved ramp (orange → pink → magenta along a feather) only in chunks that a straight line fits, and each chunk's line disagreed with its neighbour's where they met: a seam worse than the band step it replaced. v2 keeps the direction shared and lets the colour along it bend.
+
+- **Gates (replace §2 step 3's first gate).** For a candidate pair, `u` is the principal direction of the union's plane fit. Each side is fitted in one dimension *along `u`* (the same moments, projected on `u`); each side's `rms ≤ tol` (locally linear along the shared direction). `ρ = max(|slope_A|, |slope_B|)` along `u`. A side is measurable when `ρ · extent_side ≥ minSpan`; every measurable side must carry `|slope| ≥ ½ ρ`, and at least one side must be measurable. The boundary step gate becomes `Σ|Δc| / pairs ≤ max(3ρ, tol)`. Everything else (minPixels, incremental passes, label cap) is unchanged. Signs are ignored, so a ramp that rises then falls along `u` merges into one region.
+- **Stops (replace §2 step 4's ramp construction).** For a ramp group: `u` from its plane fit, `tmin`/`tmax` over all its pixels; its interior pixels are binned along `t` into `nb = clamp(⌈(tmax − tmin) / 8⌉, 1, 64)` equal bins; each non-empty bin gives a stop at its centre with the bin's mean colour; stops at offsets 0 and 1 are the linear extrapolation of the two nearest stops, clamped to 0..255; the stop list is then simplified by Douglas-Peucker in colour with tolerance `tol / 2`, so an exactly linear ramp keeps two stops (the gradient-h golden is unchanged). A group with fewer than two non-empty bins, an extent under `minLength`, or a colour span (largest distance of any stop from the first) under `max(tol, minSpan)` stays flat.
+- **Exit tests.** `TestMergeCurvedRampJoins`: a quadratic grey ramp (`v = 255·(x/w)²`) quantised into 8 bands merges into one region whose ramp has at least three stops and whose stops lie within `tol` of the true curve. `TestRampStopsLinearIsTwo`: an exact linear ramp gives exactly two stops. `TestMergeRiseAndFall`: a ramp bright in the middle merges into one ramp. All v1 tests still hold; flat-art identity tests still hold; the bird shows no seam inside a feather (visual, recorded in the baseline with the new numbers).
