@@ -95,10 +95,13 @@ func writeNums(b *strings.Builder, prec int, nums ...float64) {
 	}
 }
 
-// Stop is one colour of a gradient at an offset in 0..1.
+// Stop is one colour of a gradient at an offset in 0..1, at an opacity
+// (1 is opaque and the usual case; a translucent stop is written with
+// stop-opacity).
 type Stop struct {
-	Offset float64
-	Colour string // "#rrggbb"
+	Offset  float64
+	Colour  string // "#rrggbb"
+	Opacity float64
 }
 
 // LinearGradient is a <linearGradient> in user space (pixel coordinates)
@@ -126,6 +129,16 @@ type Document struct {
 	Paths         []Path
 }
 
+// writeStop writes one <stop/> with its offset to prec decimals; the
+// opacity, when under 1, to three.
+func writeStop(b *strings.Builder, s Stop, prec int) {
+	fmt.Fprintf(b, "<stop offset=\"%s\" stop-color=\"%s\"", FormatNum(s.Offset, prec), s.Colour)
+	if s.Opacity < 1 {
+		fmt.Fprintf(b, " stop-opacity=\"%s\"", FormatNum(s.Opacity, 3))
+	}
+	b.WriteString("/>")
+}
+
 // Write emits a complete SVG document with no gradients.
 func Write(w io.Writer, width, height int, paths []Path, prec int) error {
 	return WriteDocument(w, Document{Width: width, Height: height, Paths: paths}, prec)
@@ -146,7 +159,7 @@ func WriteDocument(w io.Writer, d Document, prec int) error {
 			fmt.Fprintf(&b, "<linearGradient id=\"%s\" gradientUnits=\"userSpaceOnUse\" x1=\"%s\" y1=\"%s\" x2=\"%s\" y2=\"%s\">",
 				g.ID, FormatNum(g.X1, prec), FormatNum(g.Y1, prec), FormatNum(g.X2, prec), FormatNum(g.Y2, prec))
 			for _, s := range g.Stops {
-				fmt.Fprintf(&b, "<stop offset=\"%s\" stop-color=\"%s\"/>", FormatNum(s.Offset, 3), s.Colour)
+				writeStop(&b, s, 3)
 			}
 			b.WriteString("</linearGradient>")
 		}
@@ -154,7 +167,7 @@ func WriteDocument(w io.Writer, d Document, prec int) error {
 			fmt.Fprintf(&b, "<radialGradient id=\"%s\" gradientUnits=\"userSpaceOnUse\" cx=\"%s\" cy=\"%s\" r=\"%s\">",
 				g.ID, FormatNum(g.CX, prec), FormatNum(g.CY, prec), FormatNum(g.R, prec))
 			for _, s := range g.Stops {
-				fmt.Fprintf(&b, "<stop offset=\"%s\" stop-color=\"%s\"/>", FormatNum(s.Offset, 4), s.Colour)
+				writeStop(&b, s, 4)
 			}
 			b.WriteString("</radialGradient>")
 		}

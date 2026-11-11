@@ -599,12 +599,13 @@ func TestMergePartialDissolveSplits(t *testing.T) {
 // bentCanvas is a 256×64 hub: a merged chunk M (labels 0 and 1, a linear
 // ramp 128..204 along x over columns 0..128 of the lower half) meets a
 // wandering band W (label 2, columns 128..256 of the lower half, 204 at
-// its left edge, bending more and more along y with x) which in turn
-// meets two lone bands A (label 3) and B (label 4) above it, a quadratic
-// fall 204..24 along x that no line fits but one multi-stop ramp does.
-// The join pass takes all four across soft edges, the group fits no
-// model, and in the replay only A with B fits. F (label 5, flat 128)
-// fills the upper-left quarter and joins nothing.
+// its left edge, rippling along y more and more with x: no smooth model,
+// layered or not, follows it) which in turn meets two lone bands A
+// (label 3) and B (label 4) above it, a quadratic fall 204..24 along x
+// that no line fits but one multi-stop ramp does. The join pass takes
+// all four across soft edges, the group fits no model, and in the
+// replay only A with B fits. F (label 5, flat 128) fills the upper-left
+// quarter and joins nothing.
 func bentCanvas() *canvas {
 	c := newCanvas(256, 64)
 	for y := 0; y < 64; y++ {
@@ -618,7 +619,7 @@ func bentCanvas() *canvas {
 			case y < 32:
 				c.set(x, y, clamp8(int(math.Round(204-float64(180*float64(s*s))))), 3+uint8((x-128)/64))
 			default:
-				g := 1 - float64(2*float64(y-32))/31
+				g := math.Cos(float64(y-32) * math.Pi / 8)
 				c.set(x, y, clamp8(int(math.Round(204-float64(180*float64(s*s))*g))), 2)
 			}
 		}
@@ -829,5 +830,64 @@ func TestMergeRadialRings(t *testing.T) {
 		if d := math.Abs(float64(st.Colour.R)/255 - want); d > 0.03 {
 			t.Errorf("stop %+v is %.3f from the shading", st, d)
 		}
+	}
+}
+
+// sphereLabels bands the sphere of sphereImage: six bands along x,
+// the highlight's core and the rim light's core as labels of their
+// own, the page 0.
+func sphereLabels(w, h int, pix []int) []uint8 {
+	labels := make([]uint8, w*h)
+	for _, p := range pix {
+		x, y := float64(p%w)+0.5, float64(p/w)+0.5
+		switch {
+		case math.Hypot(x-70, y-130) < 45:
+			labels[p] = 7
+		case math.Hypot(x-260, y-100) < 180:
+			labels[p] = 8
+		default:
+			labels[p] = uint8(1 + min(int(x/float64(w)*6), 5))
+		}
+	}
+	return labels
+}
+
+// The bands of a sphere shaded a highlight and a rim light over a ramp
+// fit no single field, linear or radial; they join as a layered ramp
+// (a base with overlays) instead of dissolving into bands.
+func TestMergeLayeredSphere(t *testing.T) {
+	const w, h = 200, 200
+	rgb, pix, _ := sphereImage(w, h)
+	labels := sphereLabels(w, h, pix)
+	r := Merge(rgb, labels, w, h, 9, 0.03)
+	var rp *Ramp
+	lab := -1
+	for i, x := range r.Ramps {
+		if x != nil && len(x.Overlays) > 0 {
+			rp, lab = x, i
+		}
+	}
+	if rp == nil {
+		t.Fatalf("no layered ramp: N %d ramps %+v", r.N, r.Ramps)
+	}
+	// Nearly the whole sphere is the layered region (a sliver of a
+	// band the cores cut off may keep its label).
+	joined := 0
+	for _, p := range pix {
+		if int(r.Labels[p]) == lab {
+			joined++
+		}
+	}
+	if joined < len(pix)*95/100 {
+		t.Errorf("layered region holds %d of the sphere's %d pixels", joined, len(pix))
+	}
+	found := false
+	for _, o := range rp.Overlays {
+		if math.Hypot(o.CX-70, o.CY-130) <= 10 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no overlay on the highlight: %+v", rp.Overlays)
 	}
 }

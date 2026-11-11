@@ -40,6 +40,18 @@ type Ramp struct {
 	Radial         bool
 	CX, CY, R      float64
 	Stops          []Stop
+	// Overlays, when the region is shaded more than one way, are painted
+	// over the ramp in order, each as another path of the region's
+	// shape filled with its radial gradient.
+	Overlays []Overlay
+}
+
+// Overlay is a radial gradient of one colour whose stops' alpha fades
+// it from its centre outwards; the region shows through where it is
+// clear.
+type Overlay struct {
+	CX, CY, R float64
+	Stops     []Stop
 }
 
 // field is a one-dimensional parametrisation of the plane: t = u·p for a
@@ -316,24 +328,33 @@ const (
 type bins struct {
 	tmin, tmax float64
 	nb         int
-	st         []float64    // Σt per bin
-	sc         [][3]float64 // Σcolour per bin
-	cnt        []int
+	st         []float64    // Σt·weight per bin
+	sc         [][3]float64 // Σcolour·weight per bin
+	wt         []float64    // Σweight per bin
 }
 
 func newBins(tmin, tmax float64) *bins {
 	nb := int(math.Ceil((tmax - tmin) / binWidth))
 	nb = max(1, min(nb, maxBins))
-	return &bins{tmin: tmin, tmax: tmax, nb: nb, st: make([]float64, nb), sc: make([][3]float64, nb), cnt: make([]int, nb)}
+	return &bins{tmin: tmin, tmax: tmax, nb: nb, st: make([]float64, nb), sc: make([][3]float64, nb), wt: make([]float64, nb)}
 }
 
 func (b *bins) add(t float64, c [3]float64) {
+	b.addWeighted(t, c, 1)
+}
+
+// addWeighted adds a sample with weight w (a layered fit weighs a
+// pixel by how much of its colour the base shows through).
+func (b *bins) addWeighted(t float64, c [3]float64, w float64) {
+	if w <= 0 {
+		return
+	}
 	i := int(float64((t-b.tmin)/(b.tmax-b.tmin)) * float64(b.nb))
 	i = max(0, min(i, b.nb-1))
-	b.st[i] += t
-	b.cnt[i]++
+	b.st[i] += float64(t * w)
+	b.wt[i] += w
 	for k, v := range c {
-		b.sc[i][k] += v
+		b.sc[i][k] += float64(v * w)
 	}
 }
 
@@ -350,11 +371,11 @@ type rawStop struct {
 func (b *bins) raw() []rawStop {
 	span := b.tmax - b.tmin
 	var out []rawStop
-	for i := range b.cnt {
-		if b.cnt[i] == 0 {
+	for i := range b.wt {
+		if b.wt[i] == 0 {
 			continue
 		}
-		n := float64(b.cnt[i])
+		n := b.wt[i]
 		s := rawStop{offset: (b.st[i]/n - b.tmin) / span}
 		for k := range s.colour {
 			s.colour[k] = b.sc[i][k] / n
@@ -382,7 +403,11 @@ func (b *bins) raw() []rawStop {
 // tol/2: a sample within tol/2 of the straight colour line between its
 // kept neighbours is dropped. nil when the ramp cannot be sampled.
 func (b *bins) model(tol float64) []rawStop {
-	raw := b.raw()
+	return modelOf(b.raw(), tol)
+}
+
+// modelOf simplifies raw samples by Douglas-Peucker in colour at tol/2.
+func modelOf(raw []rawStop, tol float64) []rawStop {
 	if raw == nil {
 		return nil
 	}

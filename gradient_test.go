@@ -259,3 +259,47 @@ func TestGradientRadialDisc(t *testing.T) {
 		t.Error("no radial gradient")
 	}
 }
+
+// sphereImage is a disc shaded by a ramp along x under a highlight and
+// a rim light, the shading of internal/gradient's sphere fixture.
+func sphereImage() *image.NRGBA {
+	const w, h = 200, 200
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	over := func(c [3]float64, a float64, hc [3]float64) [3]float64 {
+		return [3]float64{c[0] + a*(hc[0]-c[0]), c[1] + a*(hc[1]-c[1]), c[2] + a*(hc[2]-c[2])}
+	}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			px, py := float64(x)+0.5, float64(y)+0.5
+			c := [3]float64{1, 1, 1}
+			if math.Hypot(px-100, py-100) <= 90 {
+				f := px / w
+				c = [3]float64{0.3 + 0.2*f, 0.3 - 0.1*f, 0.8 - 0.2*f}
+				a1 := math.Max(0, 1-math.Hypot(px-70, py-130)/90)
+				c = over(c, a1*a1, [3]float64{0.6, 0.7, 1})
+				a2 := math.Max(0, math.Min(1, (220-math.Hypot(px-260, py-100))/80))
+				c = over(c, 0.6*a2, [3]float64{0.3, 0, 0.3})
+			}
+			ch := func(v float64) uint8 { return uint8(math.Round(math.Max(0, math.Min(1, v)) * 255)) }
+			img.SetNRGBA(x, y, color.NRGBA{ch(c[0]), ch(c[1]), ch(c[2]), 255})
+		}
+	}
+	return img
+}
+
+// A sphere shaded two ways traces as one region painted in layers: a
+// base gradient path and, over it, one path per overlay filled with a
+// radial gradient that fades by stop-opacity.
+func TestGradientLayeredSphere(t *testing.T) {
+	svg := traceImageSVG(t, sphereImage(), photoGradients())
+	if !strings.Contains(svg, "stop-opacity") {
+		t.Fatal("no translucent stop")
+	}
+	radials := strings.Count(svg, "<radialGradient")
+	if radials < 1 || radials > 2 {
+		t.Errorf("%d radial gradients", radials)
+	}
+	if n := strings.Count(svg, "<path"); n > 2+radials {
+		t.Errorf("%d paths for the page, the sphere and %d overlays", n, radials)
+	}
+}

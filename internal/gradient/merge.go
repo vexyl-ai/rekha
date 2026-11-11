@@ -56,10 +56,12 @@ type group struct {
 // groups so formed, and bands that bend, along a shared direction when
 // the boundary is as soft and each side either carries the slope or is
 // bent (its colour spreads by tol or more); a joined group's ramp
-// samples the colour along the direction, and a joined group whose
-// samples do not reproduce its pixels within tol falls back to the
-// first pass's groups. A ramp that changes colour by less than tol
-// stays flat.
+// samples the colour along the direction, or by the distance from a
+// centre when its gradients point through one, or as a base ramp under
+// translucent radial layers (layer.go) when neither field reproduces
+// its pixels within tol; a joined group that no model reproduces
+// falls back to the first pass's groups. A ramp that changes colour by
+// less than tol stays flat.
 func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	np := w * h
 	comp := components(labels, w, h)
@@ -483,6 +485,9 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		if !groups[r].merged && float64(e.f.slope*(e.tmax-e.tmin)) < math.Max(tol, minSpan) {
 			return nil
 		}
+		if e.lay != nil {
+			return e.lay.ramp(&groups[r].m, tol)
+		}
 		return rampFrom(&groups[r].m, e.fld, e.b, tol)
 	}
 	// Merged groups always need a label (the rounds reserved one each);
@@ -531,9 +536,8 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	for i, b := range best {
 		c, e := &comps[i], ext[b.root]
 		n := float64(c.size)
-		t := e.fld.at(c.sx/n, c.sy/n)
 		mean := [3]float64{c.sc[0] / n, c.sc[1] / n, c.sc[2] / n}
-		if dist(colourAt(e.model, (t-e.tmin)/(e.tmax-e.tmin)), mean) <= tol {
+		if dist(e.colourAt(c.sx/n, c.sy/n), mean) <= tol {
 			absorbed[i] = b.root
 		}
 	}
@@ -634,12 +638,21 @@ type extent struct {
 	model      []rawStop
 	err        float64
 	cnt        int
+	lay        *layered // the layered model, when no single field reproduced the group
 }
 
 // fails reports whether a joined group's model does not reproduce its
 // pixels within tol.
 func (e *extent) fails(tol float64) bool {
-	return e == nil || e.model == nil || e.err > float64(tol*tol)*float64(e.cnt)
+	return e == nil || e.lay == nil && (e.model == nil || e.err > float64(tol*tol)*float64(e.cnt))
+}
+
+// colourAt is the model's colour at (x, y).
+func (e *extent) colourAt(x, y float64) [3]float64 {
+	if e.lay != nil {
+		return e.lay.at(x, y)
+	}
+	return colourAt(e.model, (e.fld.at(x, y)-e.tmin)/(e.tmax-e.tmin))
 }
 
 // measure samples the pixels pix that member says belong to one group
@@ -742,13 +755,12 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 		e.cnt++
 	}
 	// A merged group that no direction reproduces is measured about its
-	// centre, when its gradients point through one.
+	// centre, when its gradients point through one, and failing that
+	// as a layered ramp along its direction.
 	retry := map[int32][]int{}
 	for r, e := range ext {
 		if groups[r].merged && e.fails(tol) {
-			if _, _, ok := groups[r].m.centre(); ok {
-				retry[r] = nil
-			}
+			retry[r] = nil
 		}
 	}
 	if len(retry) == 0 {
@@ -762,11 +774,19 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 		}
 	}
 	for r, pix := range retry {
-		cx, cy, _ := groups[r].m.centre()
 		member := func(p int) bool { return find(comp[p]) == r }
-		if e := measure(rgb, pix, member, w, h, field{radial: true, cx: cx, cy: cy}, tol); !e.fails(tol) {
-			e.f = ext[r].f
-			ext[r] = e
+		if cx, cy, ok := groups[r].m.centre(); ok {
+			if e := measure(rgb, pix, member, w, h, field{radial: true, cx: cx, cy: cy}, tol); !e.fails(tol) {
+				e.f = ext[r].f
+				ext[r] = e
+				continue
+			}
+		}
+		if tol <= 0 {
+			continue
+		}
+		if l := fitLayered(rgb, pix, member, w, h, ext[r].fld, tol); l != nil && l.rms <= tol {
+			ext[r].lay = l
 		}
 	}
 	return ext

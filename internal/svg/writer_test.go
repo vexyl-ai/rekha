@@ -2,6 +2,7 @@ package svg
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/fit"
@@ -108,7 +109,7 @@ func square4() []fit.Segment {
 
 func TestWriteDocumentDefs(t *testing.T) {
 	d := Document{Width: 4, Height: 4,
-		Gradients: []LinearGradient{{ID: "g0", X1: 0.5, Y1: 1, X2: 3.5, Y2: 1, Stops: []Stop{{Offset: 0, Colour: "#000000"}, {Offset: 1, Colour: "#ffffff"}}}},
+		Gradients: []LinearGradient{{ID: "g0", X1: 0.5, Y1: 1, X2: 3.5, Y2: 1, Stops: []Stop{{Offset: 0, Colour: "#000000", Opacity: 1}, {Offset: 1, Colour: "#ffffff", Opacity: 1}}}},
 		Paths:     []Path{{Fill: "url(#g0)", Subpaths: []Subpath{{Segs: square4()}}}}}
 	var b bytes.Buffer
 	if err := WriteDocument(&b, d, 2); err != nil {
@@ -132,7 +133,7 @@ func TestWriteDocumentNoDefsMatchesWrite(t *testing.T) {
 
 func TestWriteDocumentRadialDefs(t *testing.T) {
 	d := Document{Width: 4, Height: 4,
-		Radials: []RadialGradient{{ID: "g0", CX: 2, CY: 2.25, R: 1.5, Stops: []Stop{{Offset: 0.25, Colour: "#000000"}, {Offset: 1, Colour: "#ffffff"}}}},
+		Radials: []RadialGradient{{ID: "g0", CX: 2, CY: 2.25, R: 1.5, Stops: []Stop{{Offset: 0.25, Colour: "#000000", Opacity: 1}, {Offset: 1, Colour: "#ffffff", Opacity: 1}}}},
 		Paths:   []Path{{Fill: "url(#g0)", Subpaths: []Subpath{{Segs: square4()}}}}}
 	var b bytes.Buffer
 	if err := WriteDocument(&b, d, 2); err != nil {
@@ -141,5 +142,21 @@ func TestWriteDocumentRadialDefs(t *testing.T) {
 	want := "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\" viewBox=\"0 0 4 4\">\n<defs><radialGradient id=\"g0\" gradientUnits=\"userSpaceOnUse\" cx=\"2\" cy=\"2.25\" r=\"1.5\"><stop offset=\"0.25\" stop-color=\"#000000\"/><stop offset=\"1\" stop-color=\"#ffffff\"/></radialGradient></defs>\n<path fill=\"url(#g0)\" d=\"M0 0H4V4H0Z\"/>\n</svg>\n"
 	if b.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+}
+
+// A stop with an opacity under 1 carries it as stop-opacity; an opaque
+// stop (Opacity 1) carries nothing.
+func TestWriteDocumentStopOpacity(t *testing.T) {
+	d := Document{Width: 4, Height: 4,
+		Radials: []RadialGradient{{ID: "g0", CX: 2, CY: 2, R: 2, Stops: []Stop{{Offset: 0, Colour: "#ff0000", Opacity: 0.5}, {Offset: 1, Colour: "#ff0000", Opacity: 0}}}},
+		Paths:   []Path{{Fill: "url(#g0)", Subpaths: []Subpath{{Segs: square4()}}}}}
+	var b bytes.Buffer
+	if err := WriteDocument(&b, d, 2); err != nil {
+		t.Fatal(err)
+	}
+	want := "<defs><radialGradient id=\"g0\" gradientUnits=\"userSpaceOnUse\" cx=\"2\" cy=\"2\" r=\"2\"><stop offset=\"0\" stop-color=\"#ff0000\" stop-opacity=\"0.5\"/><stop offset=\"1\" stop-color=\"#ff0000\" stop-opacity=\"0\"/></radialGradient></defs>\n"
+	if !strings.Contains(b.String(), want) {
+		t.Errorf("got\n%s\nwant a defs line\n%s", b.String(), want)
 	}
 }
