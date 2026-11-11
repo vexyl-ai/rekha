@@ -166,7 +166,7 @@ release:
   footer: |
     ## Install
 
-    Homebrew on macOS or Linux: `brew tap vexyl-ai/tap && brew install --cask rekha`. Scoop: `scoop bucket add vexyl-ai https://github.com/vexyl-ai/scoop-bucket && scoop install rekha`.
+    Homebrew on macOS or Linux: `brew tap vexyl-ai/tap && brew trust vexyl-ai/tap && brew install --cask rekha` (`brew trust` from Homebrew 7; skip it on older versions). Scoop: `scoop bucket add vexyl-ai https://github.com/vexyl-ai/scoop-bucket && scoop install rekha`.
     Docker: `docker run --rm -p 8080:8080 ghcr.io/vexyl-ai/rekha:{{ .Version }}` serves the HTTP API.
 
     Or pick the archive for your platform above, unpack it and put `rekha` on your PATH.
