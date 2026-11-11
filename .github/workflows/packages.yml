@@ -1,0 +1,53 @@
+name: packages
+
+# Rebuilds the apt and yum repositories in vexyl-ai/packages from a
+# release's deb and rpm files. The release workflow dispatches it for
+# each tag; run it by hand to republish an older tag.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.2"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  repositories:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+      GPG_KEY_ID: B77BE8AB748189EA5E79101B8CA3421AD2087C2A
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: vexyl-ai/packages
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: pkgrepo
+      - name: Download the release packages
+        run: gh release download "$TAG" -R vexyl-ai/rekha -p '*.deb' -p '*.rpm' -D pkgs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Install repository tools
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm gnupg
+      - name: Import the signing key
+        run: printf '%s' "$PACKAGES_GPG_KEY" | gpg --batch --import
+        env:
+          PACKAGES_GPG_KEY: ${{ secrets.PACKAGES_GPG_KEY }}
+      - name: Rebuild the repositories
+        run: scripts/packages-repo.sh pkgs pkgrepo "$GPG_KEY_ID"
+      - name: Check the signatures
+        run: |
+          rpm --import pkgrepo/gpg.key
+          rpm -K pkgrepo/rpm/*.rpm
+          gpg --verify pkgrepo/apt/dists/stable/InRelease
+      - name: Push
+        run: |
+          cd pkgrepo
+          git config user.name "Rekha packages"
+          git config user.email "vexyl-ai@users.noreply.github.com"
+          git add -A
+          git commit -m "Rekha $TAG" || echo "nothing changed"
+          git push

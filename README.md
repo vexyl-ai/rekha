@@ -52,12 +52,18 @@ scoop bucket add vexyl-ai https://github.com/vexyl-ai/scoop-bucket && scoop inst
 docker run --rm -p 8080:8080 ghcr.io/vexyl-ai/rekha   # HTTP API in a container
 ```
 
-Linux package repositories, hosted on [Cloudsmith](https://cloudsmith.io/~vexyl-ai/repos/rekha/): add the repository once, then install and upgrade with the system package manager.
+Linux package repositories at [vexyl-ai.github.io/packages](https://vexyl-ai.github.io/packages/), signed, rebuilt on every release: add one once, then install and upgrade with the system package manager.
 
 ```sh
-curl -sLf https://dl.cloudsmith.io/public/vexyl-ai/rekha/cfg/setup/bash.deb.sh | sudo bash && sudo apt install rekha      # Debian, Ubuntu
-curl -sLf https://dl.cloudsmith.io/public/vexyl-ai/rekha/cfg/setup/bash.rpm.sh | sudo bash && sudo dnf install rekha      # Fedora, RHEL, openSUSE
-curl -sLf https://dl.cloudsmith.io/public/vexyl-ai/rekha/cfg/setup/bash.alpine.sh | sudo bash && sudo apk add rekha      # Alpine (needs bash)
+# Debian, Ubuntu
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://vexyl-ai.github.io/packages/gpg.key | sudo tee /etc/apt/keyrings/vexyl-ai.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/vexyl-ai.asc] https://vexyl-ai.github.io/packages/apt stable main" | sudo tee /etc/apt/sources.list.d/vexyl-ai.list
+sudo apt update && sudo apt install rekha
+
+# Fedora, RHEL, openSUSE
+sudo curl -fsSL https://vexyl-ai.github.io/packages/rpm/vexyl-ai.repo -o /etc/yum.repos.d/vexyl-ai.repo
+sudo dnf install rekha
 ```
 
 Prebuilt binaries for Linux, macOS, Windows and FreeBSD (amd64 and arm64) are on the [releases page](https://github.com/vexyl-ai/rekha/releases/latest), as archives and as `.deb`, `.rpm`, `.apk` and Arch packages. Each archive holds `rekha` and `rekha-serve`; unpack and put them on your PATH.
@@ -86,7 +92,7 @@ make build        # bin/rekha and bin/rekha-serve
 make test         # unit tests and goldens
 ```
 
-Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) with [GoReleaser](https://goreleaser.com) when a `v*` tag is pushed: binaries, packages, the Homebrew cask in [`vexyl-ai/homebrew-tap`](https://github.com/vexyl-ai/homebrew-tap), the Scoop manifest in [`vexyl-ai/scoop-bucket`](https://github.com/vexyl-ai/scoop-bucket), the image at `ghcr.io/vexyl-ai/rekha`, and the deb, rpm and apk packages to the Cloudsmith repository (`CLOUDSMITH_API_KEY` secret). `make release-check` builds the binaries and packages into `dist/` locally.
+Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) with [GoReleaser](https://goreleaser.com) when a `v*` tag is pushed: binaries, packages, the Homebrew cask in [`vexyl-ai/homebrew-tap`](https://github.com/vexyl-ai/homebrew-tap), the Scoop manifest in [`vexyl-ai/scoop-bucket`](https://github.com/vexyl-ai/scoop-bucket), and the image at `ghcr.io/vexyl-ai/rekha`; it then dispatches [`packages.yml`](.github/workflows/packages.yml), which signs the deb and rpm files and rebuilds the apt and yum repositories in [`vexyl-ai/packages`](https://github.com/vexyl-ai/packages) (`PACKAGES_GPG_KEY` secret; `scripts/packages-repo.sh` does the work). `make release-check` builds the binaries and packages into `dist/` locally.
 
 ## Quick start
 
