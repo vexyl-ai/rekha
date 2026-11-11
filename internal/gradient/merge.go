@@ -596,6 +596,21 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	}
 	res.N = len(ramps)
 	res.Ramps = ramps
+	if tol > 0 {
+		model := make([]func(x, y float64) [3]float64, len(ramps))
+		for p := 0; p < np; p++ {
+			l := res.Labels[p]
+			if model[l] != nil || ramps[l] == nil {
+				continue
+			}
+			r := r2[comp[p]]
+			if a := absorbed[comp[p]]; a >= 0 {
+				r = a
+			}
+			model[l] = ext[r].colourAt
+		}
+		smoothSeams(res.Labels, rgb, w, h, model, tol)
+	}
 	return res
 }
 
