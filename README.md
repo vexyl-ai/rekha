@@ -7,11 +7,12 @@
 <p align="center">
 <a href="https://github.com/vexyl-ai/rekha/actions/workflows/ci.yml"><img src="https://github.com/vexyl-ai/rekha/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 <a href="https://pkg.go.dev/github.com/vexyl-ai/rekha"><img src="https://pkg.go.dev/badge/github.com/vexyl-ai/rekha.svg" alt="Go Reference"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/licence-Apache--2.0-blue.svg" alt="Apache-2.0"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/licence-AGPL--3.0-blue.svg" alt="AGPL-3.0"></a>
+<a href="COMMERCIAL.md"><img src="https://img.shields.io/badge/commercial-licence%20available-green.svg" alt="Commercial licence available"></a>
 <img src="https://img.shields.io/badge/Go-1.26-00ADD8.svg" alt="Go 1.26">
 </p>
 
-Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase provides a Go library, a command-line tool, an HTTP service and a WebAssembly build for the browser. It has no cgo and no dependency beyond `golang.org/x/image`, and it is a clean-room implementation under the Apache-2.0 licence.
+Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase provides a Go library, a command-line tool, an HTTP service and a WebAssembly build for the browser. It has no cgo and no dependency beyond `golang.org/x/image`, and it is a clean-room implementation, dual-licensed: AGPL-3.0 for open source, a [commercial licence](COMMERCIAL.md) for everything else.
 
 ## Contents
 
@@ -213,4 +214,9 @@ Package documentation: [pkg.go.dev/github.com/vexyl-ai/rekha](https://pkg.go.dev
 
 ## Licence
 
-Apache License 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+Dual-licensed.
+
+- **AGPL-3.0** for open source: free to use, change, ship and host, provided what you build with it is released under the AGPL-3.0 too. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+- **Commercial licence** for products, services and internal tools that will not release their source. It funds the development of the open version. See [`COMMERCIAL.md`](COMMERCIAL.md).
+
+Versions published before this change (up to commit `fe2e104`) remain under the Apache License 2.0 they were released with.

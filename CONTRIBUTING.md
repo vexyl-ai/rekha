@@ -6,7 +6,7 @@ Every commit must carry a `Signed-off-by:` line certifying the [Developer Certif
 
 ## Licence
 
-Inbound = outbound. By contributing you agree your contribution is licensed under the [Apache License 2.0](LICENSE), the same licence as the project.
+Rekha is dual-licensed: [AGPL-3.0](LICENSE) for open source and a [commercial licence](COMMERCIAL.md) sold by the maintainer to fund development. By contributing you agree that your contribution is licensed under the AGPL-3.0, and you grant the maintainer (Anil Mathew) a perpetual, worldwide, royalty-free right to distribute it under the commercial licence as well. You keep your copyright. Without this grant the commercial side could not include your work, and the project could not accept it.
 
 ## Clean-room rule
 

@@ -8,7 +8,7 @@ Two products from one codebase.
 
 | | Open-source CLI | Subscription online |
 |---|---|---|
-| Repo | `rekha` (public, MIT or Apache-2.0) | `rekha-cloud` (private) |
+| Repo | `rekha` (public, AGPL-3.0 + commercial) | `rekha-cloud` (private) |
 | Contains | Library, CLI, WASM build, all classical tracing including Phase 3 refinement | Web GUI, HTTP API, accounts, billing, batch, storage, Phase 6 AI services |
 | Depends on | Standard library, `golang.org/x/image` | Imports public `rekha` module as a dependency, never forks it |
 | Runs where | User's machine, CI, browser (WASM) | Our servers |
@@ -18,7 +18,7 @@ Rules that keep the split clean:
 1. **All tracing quality lives in the open repo.** Refinement, presets, cutout, primitive detection: all open. Quality is the marketing for the paid tier, and a crippled CLI would get forked. The paid tier sells convenience, scale and AI, not better curves.
 2. **Private repo only adds, never patches.** If the cloud product needs a change in the tracer, the change goes upstream into the public module. No private fork of the core.
 3. **AI layer is private and separate** (Phase 6). It never enters the public module's import graph, so the public build stays pure Go, cgo-free and WASM-capable, and model licences never touch the open repo.
-4. **Permissive licence trade-off, accepted.** MIT/Apache means anyone can host the open CLI as a service. The moat is the AI pre-processing, the GUI, the API reliability and the brand, not the tracer. If this later proves wrong, the public repo can move to AGPL for new versions only with a CLA/DCO in place from day one, so collect DCO sign-offs from the first commit.
+4. **Dual licence, decided 2026-11-11.** The public repo started under Apache-2.0 (the moat was to be the AI layer, the GUI and the brand). To fund development it moved to AGPL-3.0 plus a paid commercial licence (`COMMERCIAL.md`) before any tagged release and while the sole author held every copyright; DCO sign-offs from the first commit made that clean. Versions up to `fe2e104` stay Apache-2.0. Contributions now come with a grant to relicense commercially (`CONTRIBUTING.md`).
 5. **Trademark the product name** before launch. Open code, protected name. Same approach Potrace's author uses.
 
 ## Phases

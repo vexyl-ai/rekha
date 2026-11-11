@@ -1,5 +1,9 @@
 Rekha
-Copyright 2026 The Rekha Authors
+Copyright 2026 Anil Mathew
 
-This product includes software developed as an independent implementation.
-It contains no code derived from Potrace or any GPL-licensed tracer.
+Licensed under the GNU Affero General Public License v3.0 (see LICENSE).
+A commercial licence without the AGPL's obligations is available from
+the copyright holder (see COMMERCIAL.md).
+
+This product is an independent implementation. It contains no code
+derived from Potrace or any GPL-licensed tracer.
