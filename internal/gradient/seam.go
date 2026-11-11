@@ -7,8 +7,10 @@ package gradient
 // that shows once each side is filled with a smooth gradient. A majority
 // vote over a window moves such pixels to the label that surrounds them,
 // which straightens the staircase; a pixel changes hands only when its
-// new model paints it within tolerance, so crisp edges, where the other
-// side's model misfits, stay where they are. A pixel with fewer than two
+// new model paints it within tolerance, or no worse than its old one
+// by more than seamSlack (where a fading overlay leaves both sides'
+// models a little off, the seam is still noise), so crisp edges, where
+// the other side's model misfits, stay where they are. A pixel with fewer than two
 // neighbours of its own label is a strand or a lone island, which would
 // become a path of its own: it goes to the label most of its neighbours
 // carry, flat or not, whatever the fit. Otherwise flat labels (no model)
@@ -18,6 +20,7 @@ const (
 	seamStep   = 4.0 / 255 // largest neighbour step that counts as soft
 	seamSweeps = 16        // Jacobi passes per radius, at most
 	seamStrand = 2         // fewer own neighbours than this is a strand
+	seamSlack  = 2.0 / 255 // a new model may misfit this much more than the old
 )
 
 // seamRadii are the half-widths of the voting window, coarse to fine:
@@ -164,7 +167,7 @@ func (s *seams) sweep(radius int) {
 				best = l
 			}
 		}
-		if best != a && (strand || s.fit(best, p) <= s.tol) {
+		if best != a && (strand || s.fit(best, p) <= max(s.tol, s.fit(a, p)+seamSlack)) {
 			s.labels[p] = uint8(best)
 			s.enqueue(p)
 			s.neighbours(p, s.enqueue)

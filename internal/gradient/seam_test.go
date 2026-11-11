@@ -79,6 +79,20 @@ func assertNoIslands(t *testing.T, labels []uint8, w, h int) {
 	}
 }
 
+func TestSmoothSeamsStraightensWhenBothModelsMisfit(t *testing.T) {
+	rgb, labels := seamCanvas(false)
+	// Both models paint the seam 10 counts too bright: over tolerance,
+	// but neither side is a better home, so the seam still straightens.
+	bright := func(x, _ float64) [3]float64 {
+		v := (110 + x - 0.5) / 255
+		return [3]float64{v, v, v}
+	}
+	smoothSeams(labels, rgb, 64, 128, []func(x, y float64) [3]float64{bright, bright}, 0.03)
+	if s := seamSpread(labels, 64, 128); s > 1 {
+		t.Fatalf("boundary still wobbles by %d px", s)
+	}
+}
+
 func TestSmoothSeamsLeavesCrispBoundary(t *testing.T) {
 	rgb, labels := seamCanvas(true)
 	left := func(x, _ float64) [3]float64 {
