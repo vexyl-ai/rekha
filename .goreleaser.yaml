@@ -160,6 +160,9 @@ release:
     owner: vexyl-ai
     name: rekha
   name_template: "Rekha {{ .Tag }}"
+  # A re-run of the workflow for the same tag must not stop on assets it
+  # already uploaded.
+  replace_existing_artifacts: true
   footer: |
     ## Install
 
