@@ -175,6 +175,7 @@ All numbers in this file are produced by `make test` and `make bench`; fixtures 
 | Small glyphs | 32.26 dB, 86 nodes (Potrace: 32.22 dB, 107 nodes) |
 | 3.4-megapixel colour logo, `--preset poster` | 14 paths; PSNR level with VTracer (28.95 vs 28.98 dB), white counters kept white |
 | 16-megapixel illustration, `--preset photo --gradients` | 155 → 82 paths, 36.7 → 39.8 dB, 60 % fewer bytes |
+| 4-megapixel browser mark, `--preset photo --gradients` | 35 paths at 36.3 dB with layered gradients (flat bands: 31 paths at 34.5 dB), 42 % fewer bytes; the globe one smooth region |
 | WebAssembly | median 4.5× one-core native; 1.2 MB gzipped |
 
 Recorded baselines: [`bench/results/`](bench/results/). Methodology and reference-tool comparison: [`docs/benchmark.md`](docs/benchmark.md).
