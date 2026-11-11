@@ -134,7 +134,7 @@ function call(msg, transfer) {
 
 async function decode(file) {
   const bitmap = await createImageBitmap(file);
-  const cap = Math.max(10000, +$('pixelCap').value || 4000000);
+  const cap = Math.max(10000, +$('pixelCap').value || 4300000);
   let { width, height } = bitmap;
   let note = '';
   if (width * height > cap) {
