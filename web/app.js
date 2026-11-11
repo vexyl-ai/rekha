@@ -8,13 +8,14 @@ const $ = (id) => document.getElementById(id);
 const status = $('status');
 const requests = new Requests();
 
-// Preset defaults mirror rekha.PresetOptions so the form shows what runs.
+// Preset defaults mirror rekha.PresetOptions so the form shows what runs;
+// the photo preset, the page's starting one, also turns gradients on.
 const PRESETS = {
-  bw:     { hierarchical: 'cutout',  maxColors: 2, colorTolerance: 0,    filterSpeckle: 4 },
-  poster: { hierarchical: 'stacked', maxColors: 0, colorTolerance: 0.08, filterSpeckle: 4 },
-  photo:  { hierarchical: 'stacked', maxColors: 0, colorTolerance: 0.04, filterSpeckle: 16 },
+  bw:     { hierarchical: 'cutout',  maxColors: 2, colorTolerance: 0,    filterSpeckle: 4,  gradients: false },
+  poster: { hierarchical: 'stacked', maxColors: 0, colorTolerance: 0.08, filterSpeckle: 4,  gradients: false },
+  photo:  { hierarchical: 'stacked', maxColors: 0, colorTolerance: 0.04, filterSpeckle: 16, gradients: true },
 };
-const COMMON = { mode: 'spline', threshold: 0.5, thresholdAuto: false, refine: false, refinePasses: 3, stroke: 0, pathPrecision: 2, gradients: false, gradientTolerance: 0.03 };
+const COMMON = { mode: 'spline', threshold: 0.5, thresholdAuto: false, refine: false, refinePasses: 3, stroke: 0, pathPrecision: 2, gradientTolerance: 0.03 };
 
 let worker = null;
 let pending = new Map();         // id → {resolve, reject}
@@ -353,5 +354,5 @@ divider.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') setWipe(cur + 0.05);
 });
 
-applyPreset('bw');
+applyPreset('photo');
 startWorker();

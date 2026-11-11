@@ -32,12 +32,12 @@
 
   <section>
     <h2>Colours <small>re-runs segmentation</small></h2>
-    <label class="row"><span>Preset</span><select id="preset"><option value="bw">Black and white</option><option value="poster">Poster</option><option value="photo">Photo</option></select></label>
+    <label class="row"><span>Preset</span><select id="preset"><option value="bw">Black and white</option><option value="poster">Poster</option><option value="photo" selected>Photo</option></select></label>
     <label class="row"><span>Max colours</span><input type="number" id="maxColors" min="0" max="256" step="1"></label>
     <label class="row"><span>Colour tolerance</span><input type="number" id="colorTolerance" min="0" max="1" step="0.01"></label>
     <label class="row"><span>Threshold</span><span class="pair"><input type="number" id="threshold" min="0" max="1" step="0.05"><label class="check"><input type="checkbox" id="thresholdAuto"> auto</label></span></label>
     <label class="row"><span>Drop specks below</span><span class="pair"><input type="number" id="filterSpeckle" min="0" max="1024" step="1"><span class="unit">px</span></span></label>
-    <label class="check wide"><input type="checkbox" id="gradients"> Smooth gradients</label>
+    <label class="check wide"><input type="checkbox" id="gradients" checked> Smooth gradients</label>
     <label class="row"><span>Gradient tolerance</span><input type="number" id="gradientTolerance" min="0" max="1" step="0.01"></label>
     <p class="hint">Joins colour bands that shade smoothly into one gradient fill. Not for the black and white preset.</p>
   </section>
