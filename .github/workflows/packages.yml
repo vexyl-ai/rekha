@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   repositories:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       TAG: ${{ inputs.tag }}
       GPG_KEY_ID: B77BE8AB748189EA5E79101B8CA3421AD2087C2A
@@ -36,7 +36,10 @@ jobs:
           for f in /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
             [ -f "$f" ] && sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' "$f"
           done
-          sudo apt-get update -q
+          for try in 1 2 3 4 5; do
+            sudo apt-get update -q && break
+            echo "apt-get update failed, try $try"; sleep 20
+          done
           sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm gnupg
       - name: Import the signing key
         run: printf '%s' "$PACKAGES_GPG_KEY" | gpg --batch --import
