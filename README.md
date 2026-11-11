@@ -46,6 +46,12 @@ Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase pr
 
 ## Installation
 
+```sh
+brew install --cask vexyl-ai/tap/rekha          # macOS and Linux, Homebrew
+scoop bucket add vexyl-ai https://github.com/vexyl-ai/scoop-bucket && scoop install rekha   # Windows
+docker run --rm -p 8080:8080 ghcr.io/vexyl-ai/rekha   # HTTP API in a container
+```
+
 Prebuilt binaries for Linux, macOS, Windows and FreeBSD (amd64 and arm64) are on the [releases page](https://github.com/vexyl-ai/rekha/releases/latest), as archives and as `.deb`, `.rpm`, `.apk` and Arch packages. Each archive holds `rekha` and `rekha-serve`; unpack and put them on your PATH.
 
 ```sh
@@ -72,7 +78,7 @@ make build        # bin/rekha and bin/rekha-serve
 make test         # unit tests and goldens
 ```
 
-Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) with [GoReleaser](https://goreleaser.com) when a `v*` tag is pushed; `make release-check` builds the same artefacts into `dist/` locally.
+Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) with [GoReleaser](https://goreleaser.com) when a `v*` tag is pushed: binaries, packages, the Homebrew cask in [`vexyl-ai/homebrew-tap`](https://github.com/vexyl-ai/homebrew-tap), the Scoop manifest in [`vexyl-ai/scoop-bucket`](https://github.com/vexyl-ai/scoop-bucket) and the image at `ghcr.io/vexyl-ai/rekha`. `make release-check` builds the binaries and packages into `dist/` locally.
 
 ## Quick start
 

@@ -133,7 +133,9 @@
 
     <h3>On the command line</h3>
     <p class="prose"><a href="https://github.com/vexyl-ai/rekha/releases/latest">Download a binary</a> for Linux, macOS, Windows or FreeBSD, a <code>.deb</code>, <code>.rpm</code> or <code>.apk</code> package, or install with Go 1.26 or later. Then point it at an image. Each preset seeds every other setting; any flag you give overrides it. Output goes next to the input unless you say otherwise.</p>
-<pre><code>go install github.com/vexyl-ai/rekha/cmd/rekha@latest
+<pre><code>brew install --cask vexyl-ai/tap/rekha           # macOS and Linux
+scoop install rekha                              # Windows, after adding the vexyl-ai bucket
+go install github.com/vexyl-ai/rekha/cmd/rekha@latest
 
 rekha logo.png                                   # black and white, writes logo.svg
 rekha --preset poster --refine logo.png          # flat colours, refined curves
@@ -157,8 +159,7 @@ err = res.WriteSVG(out, o)        // out is an io.Writer</code></pre>
 
     <h3>As a service</h3>
     <p class="prose">The same binary that serves this site answers <code>POST /v1/trace</code> with an image and the CLI's options as form fields, with caps on size and time so one client cannot exhaust the host.</p>
-<pre><code>go install github.com/vexyl-ai/rekha/cmd/rekha-serve@latest
-rekha-serve
+<pre><code>docker run --rm -p 8080:8080 ghcr.io/vexyl-ai/rekha   # or: go install github.com/vexyl-ai/rekha/cmd/rekha-serve@latest
 curl -F image=@logo.png -F preset=poster -F refine=true localhost:8080/v1/trace &gt; logo.svg</code></pre>
     <p class="cite prose">Full flag table, library documentation and the HTTP API are in the <a href="https://github.com/vexyl-ai/rekha#readme">README</a> and <a href="https://pkg.go.dev/github.com/vexyl-ai/rekha">pkg.go.dev</a>.</p>
   </div>

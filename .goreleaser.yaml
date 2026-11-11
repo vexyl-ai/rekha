@@ -66,6 +66,85 @@ nfpms:
       - src: NOTICE
         dst: /usr/share/doc/rekha/NOTICE
 
+homebrew_casks:
+  - name: rekha
+    ids: [default]
+    repository:
+      owner: vexyl-ai
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    commit_author:
+      name: Anil Mathew
+      email: vexyl-ai@users.noreply.github.com
+    homepage: https://vexyl-ai.github.io/rekha/
+    description: Raster to SVG tracer with gradient fills
+    license: AGPL-3.0-or-later
+    binaries: [rekha, rekha-serve]
+    hooks:
+      post:
+        # The binaries are unsigned; clear the quarantine flag so Gatekeeper runs them.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/rekha"]
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/rekha-serve"]
+          end
+
+scoops:
+  - name: rekha
+    ids: [default]
+    repository:
+      owner: vexyl-ai
+      name: scoop-bucket
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: bucket
+    commit_author:
+      name: Anil Mathew
+      email: vexyl-ai@users.noreply.github.com
+    homepage: https://vexyl-ai.github.io/rekha/
+    description: Raster to SVG tracer with gradient fills
+    license: AGPL-3.0-or-later
+
+dockers:
+  - id: amd64
+    ids: [rekha, rekha-serve]
+    goos: linux
+    goarch: amd64
+    use: buildx
+    image_templates:
+      - "ghcr.io/vexyl-ai/rekha:{{ .Version }}-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title=rekha"
+      - "--label=org.opencontainers.image.description=Raster to SVG tracer with gradient fills; rekha-serve on :8080"
+      - "--label=org.opencontainers.image.source=https://github.com/vexyl-ai/rekha"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=AGPL-3.0-or-later"
+  - id: arm64
+    ids: [rekha, rekha-serve]
+    goos: linux
+    goarch: arm64
+    use: buildx
+    image_templates:
+      - "ghcr.io/vexyl-ai/rekha:{{ .Version }}-arm64"
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title=rekha"
+      - "--label=org.opencontainers.image.description=Raster to SVG tracer with gradient fills; rekha-serve on :8080"
+      - "--label=org.opencontainers.image.source=https://github.com/vexyl-ai/rekha"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=AGPL-3.0-or-later"
+
+docker_manifests:
+  - name_template: "ghcr.io/vexyl-ai/rekha:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/vexyl-ai/rekha:{{ .Version }}-amd64"
+      - "ghcr.io/vexyl-ai/rekha:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/vexyl-ai/rekha:latest"
+    image_templates:
+      - "ghcr.io/vexyl-ai/rekha:{{ .Version }}-amd64"
+      - "ghcr.io/vexyl-ai/rekha:{{ .Version }}-arm64"
+
 changelog:
   sort: asc
   use: github
@@ -84,7 +163,10 @@ release:
   footer: |
     ## Install
 
-    Pick the archive for your platform above, unpack it and put `rekha` on your PATH.
+    Homebrew on macOS or Linux: `brew install --cask vexyl-ai/tap/rekha`. Scoop: `scoop bucket add vexyl-ai https://github.com/vexyl-ai/scoop-bucket && scoop install rekha`.
+    Docker: `docker run --rm -p 8080:8080 ghcr.io/vexyl-ai/rekha:{{ .Version }}` serves the HTTP API.
+
+    Or pick the archive for your platform above, unpack it and put `rekha` on your PATH.
     Debian and Ubuntu: `sudo dpkg -i rekha_*_linux_amd64.deb`. Fedora and RHEL: `sudo rpm -i rekha_*_linux_amd64.rpm`.
     Alpine: `sudo apk add --allow-untrusted rekha_*_linux_amd64.apk`. Arch: `sudo pacman -U rekha_*_linux_amd64.pkg.tar.zst`.
     With Go: `go install github.com/vexyl-ai/rekha/cmd/rekha@{{ .Tag }}`.

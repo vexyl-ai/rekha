@@ -4,6 +4,7 @@
 
 ```
 go run ./cmd/rekha-serve -static web          # API on :8080 and the demo page at /
+docker run --rm -p 8080:8080 ghcr.io/vexyl-ai/rekha   # the same API from the release image (no demo page)
 curl -F image=@logo.png -F preset=poster -F refine=true localhost:8080/v1/trace > logo.svg
 curl -H 'Content-Type: image/png' --data-binary @logo.png 'localhost:8080/v1/trace?preset=bw&threshold=auto' > logo.svg
 ```

@@ -33,4 +33,4 @@ build:
 # Builds every release artefact into dist/ without publishing; needs goreleaser.
 release-check:
 	goreleaser check
-	goreleaser release --snapshot --clean --skip=publish
+	goreleaser release --snapshot --clean --skip=publish,docker
