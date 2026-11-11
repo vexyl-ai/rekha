@@ -161,15 +161,19 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	// mode is exact and the bw preset has no abutting colours.
 	stroke := o.Preset != PresetBW && o.Mode != ModePixel && o.Stroke > 0
 	mergeable := false
-	gradientIDs := map[int]int{} // palette index → index into res.Gradients
+	gradientIDs := map[int]int{} // palette index → gradient id
 	for i, l := range layers {
 		fill := colour.FromSRGB8(s.Palette[l.colour].R, s.Palette[l.colour].G, s.Palette[l.colour].B).Hex()
 		if s.hasRamp(l.colour) {
 			id, ok := gradientIDs[l.colour]
 			if !ok {
-				id = len(res.Gradients)
+				id = len(res.Gradients) + len(res.Radials)
 				gradientIDs[l.colour] = id
-				res.Gradients = append(res.Gradients, linearGradient(fmt.Sprintf("g%d", id), s.Ramps[l.colour]))
+				if r := s.Ramps[l.colour]; r.Radial {
+					res.Radials = append(res.Radials, radialGradient(fmt.Sprintf("g%d", id), r))
+				} else {
+					res.Gradients = append(res.Gradients, linearGradient(fmt.Sprintf("g%d", id), r))
+				}
 			}
 			fill = fmt.Sprintf("url(#g%d)", id)
 		}
@@ -197,13 +201,22 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	return res, nil
 }
 
-// linearGradient is the SVG form of a ramp.
+// linearGradient is the SVG form of a linear ramp.
 func linearGradient(id string, r *gradient.Ramp) svg.LinearGradient {
-	g := svg.LinearGradient{ID: id, X1: r.X0, Y1: r.Y0, X2: r.X1, Y2: r.Y1}
+	return svg.LinearGradient{ID: id, X1: r.X0, Y1: r.Y0, X2: r.X1, Y2: r.Y1, Stops: svgStops(r)}
+}
+
+// radialGradient is the SVG form of a radial ramp.
+func radialGradient(id string, r *gradient.Ramp) svg.RadialGradient {
+	return svg.RadialGradient{ID: id, CX: r.CX, CY: r.CY, R: r.R, Stops: svgStops(r)}
+}
+
+func svgStops(r *gradient.Ramp) []svg.Stop {
+	var stops []svg.Stop
 	for _, st := range r.Stops {
-		g.Stops = append(g.Stops, svg.Stop{Offset: st.Offset, Colour: fmt.Sprintf("#%02x%02x%02x", st.Colour.R, st.Colour.G, st.Colour.B)})
+		stops = append(stops, svg.Stop{Offset: st.Offset, Colour: fmt.Sprintf("#%02x%02x%02x", st.Colour.R, st.Colour.G, st.Colour.B)})
 	}
-	return g
+	return stops
 }
 
 // assembleSegs concatenates the arc fits of loop l, reversed where the

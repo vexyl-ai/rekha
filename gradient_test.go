@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	_ "image/jpeg"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -233,5 +234,28 @@ func TestBirdReport(t *testing.T) {
 			line += fmt.Sprintf(", %.2f dB", p)
 		}
 		t.Log(line)
+	}
+}
+
+// A disc shaded from its centre out traces to one radial gradient.
+func TestGradientRadialDisc(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 160, 160))
+	for y := 0; y < 160; y++ {
+		for x := 0; x < 160; x++ {
+			r := math.Hypot(float64(x)+0.5-80, float64(y)+0.5-80)
+			c := color.NRGBA{255, 255, 255, 255}
+			if r <= 70 {
+				v := uint8(math.Round(255 * (0.25 + 0.5*r/70)))
+				c = color.NRGBA{v, v, v, 255}
+			}
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	svg := traceImageSVG(t, img, photoGradients())
+	if n := strings.Count(svg, "<path"); n > 2 {
+		t.Errorf("%d paths", n)
+	}
+	if !strings.Contains(svg, "<radialGradient") {
+		t.Error("no radial gradient")
 	}
 }

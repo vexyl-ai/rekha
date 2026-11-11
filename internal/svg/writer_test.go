@@ -129,3 +129,17 @@ func TestWriteDocumentNoDefsMatchesWrite(t *testing.T) {
 		t.Errorf("WriteDocument without gradients differs from Write")
 	}
 }
+
+func TestWriteDocumentRadialDefs(t *testing.T) {
+	d := Document{Width: 4, Height: 4,
+		Radials: []RadialGradient{{ID: "g0", CX: 2, CY: 2.25, R: 1.5, Stops: []Stop{{Offset: 0.25, Colour: "#000000"}, {Offset: 1, Colour: "#ffffff"}}}},
+		Paths:   []Path{{Fill: "url(#g0)", Subpaths: []Subpath{{Segs: square4()}}}}}
+	var b bytes.Buffer
+	if err := WriteDocument(&b, d, 2); err != nil {
+		t.Fatal(err)
+	}
+	want := "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\" viewBox=\"0 0 4 4\">\n<defs><radialGradient id=\"g0\" gradientUnits=\"userSpaceOnUse\" cx=\"2\" cy=\"2.25\" r=\"1.5\"><stop offset=\"0.25\" stop-color=\"#000000\"/><stop offset=\"1\" stop-color=\"#ffffff\"/></radialGradient></defs>\n<path fill=\"url(#g0)\" d=\"M0 0H4V4H0Z\"/>\n</svg>\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+}

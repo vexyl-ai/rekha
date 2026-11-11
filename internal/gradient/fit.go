@@ -30,23 +30,48 @@ type Stop struct {
 	Colour color.NRGBA
 }
 
-// Ramp is a linear gradient in pixel coordinates (SVG userSpaceOnUse):
-// colour Stops[0] at (X0,Y0) to Stops[1] at (X1,Y1).
+// Ramp is a gradient in pixel coordinates (SVG userSpaceOnUse). Linear:
+// the Stops run from (X0,Y0) at offset 0 to (X1,Y1) at offset 1. Radial:
+// the Stops run from the centre (CX,CY) at offset 0 to the circle of
+// radius R at offset 1 (the first stop is where the region begins, which
+// may be well out from the centre).
 type Ramp struct {
 	X0, Y0, X1, Y1 float64
+	Radial         bool
+	CX, CY, R      float64
 	Stops          []Stop
+}
+
+// field is a one-dimensional parametrisation of the plane: t = u·p for a
+// linear ramp, t = |p − c| for a radial one. A ramp's colour is a
+// function of t.
+type field struct {
+	radial bool
+	u      [2]float64
+	cx, cy float64
+}
+
+func (f field) at(x, y float64) float64 {
+	if f.radial {
+		return math.Hypot(x-f.cx, y-f.cy)
+	}
+	return float64(f.u[0]*x) + float64(f.u[1]*y)
 }
 
 // moments are the sums a least-squares plane per channel needs, over
 // pixel centres, and the structure tensor of the colour gradient (the
 // sum of ∇c·∇cᵀ over channels and pixels), whose principal axis is the
-// direction the colour changes along whichever way it changes. They add
-// under a merge, so a union is never re-scanned.
+// direction the colour changes along whichever way it changes. With the
+// tensor go the sums of k·∇c, k = x·∂c/∂y − y·∂c/∂x, from which the point
+// every gradient points through, if there is one, is solved (centre).
+// They add under a merge, so a union is never re-scanned.
 type moments struct {
 	n                     int
 	sx, sy, sxx, sxy, syy float64
 	sc, scx, scy, scc     [3]float64
+	ng                    int // gradient samples (per channel)
 	gxx, gxy, gyy         float64
+	kgx, kgy              float64
 }
 
 func (m *moments) add(x, y float64, c [3]float64) {
@@ -64,21 +89,72 @@ func (m *moments) add(x, y float64, c [3]float64) {
 	}
 }
 
-// addGrad accumulates a pixel's colour gradient (per channel, in colour
-// units per pixel) into the structure tensor.
-func (m *moments) addGrad(gx, gy [3]float64) {
+// addGrad accumulates the colour gradient (per channel, in colour units
+// per pixel) at pixel centre (x, y) into the structure tensor and the
+// centre sums.
+func (m *moments) addGrad(x, y float64, gx, gy [3]float64) {
 	for i := range gx {
+		m.ng++
 		m.gxx += float64(gx[i] * gx[i])
 		m.gxy += float64(gx[i] * gy[i])
 		m.gyy += float64(gy[i] * gy[i])
+		k := float64(x*gy[i]) - float64(y*gx[i])
+		m.kgx += float64(k * gx[i])
+		m.kgy += float64(k * gy[i])
 	}
+}
+
+// gslope is the RMS colour change per pixel over the gradient samples,
+// whichever way each runs: a ring's slope, where a fit along one
+// direction sees none.
+func (m *moments) gslope() float64 {
+	if m.ng == 0 {
+		return 0
+	}
+	return math.Sqrt((m.gxx + m.gyy) / float64(m.ng))
+}
+
+// centreRatio bounds how far from the pixels' centroid a centre may lie,
+// in multiples of their RMS radius: farther, the iso-lines are straight
+// to the eye and the gradient is a linear one that happens not to fit.
+const centreRatio = 8
+
+// centre solves the point the colour gradients point through, by least
+// squares on (p − c) × ∇c = 0 over the gradient samples. ok is false
+// when the gradients are parallel (a linear ramp: the system is
+// singular) or the point lies beyond centreRatio.
+func (m *moments) centre() (cx, cy float64, ok bool) {
+	if m.ng == 0 || m.n == 0 {
+		return 0, 0, false
+	}
+	// Normal equations of Σ (k − cx·gy + cy·gx)²:
+	//   cx·Σgy² − cy·Σgx·gy = Σk·gy
+	//  −cx·Σgx·gy + cy·Σgx² = −Σk·gx
+	a11, a12, a22 := m.gyy, -m.gxy, m.gxx
+	b1, b2 := m.kgy, -m.kgx
+	det := float64(a11*a22) - float64(a12*a12)
+	if det <= 1e-6*float64(a11*a22) {
+		return 0, 0, false
+	}
+	cx = (float64(b1*a22) - float64(b2*a12)) / det
+	cy = (float64(a11*b2) - float64(a12*b1)) / det
+	n := float64(m.n)
+	mx, my := m.sx/n, m.sy/n
+	rr := (m.sxx+m.syy)/n - float64(mx*mx) - float64(my*my)
+	if float64((cx-mx)*(cx-mx))+float64((cy-my)*(cy-my)) > float64(centreRatio*centreRatio)*rr {
+		return 0, 0, false
+	}
+	return cx, cy, true
 }
 
 func (m *moments) merge(o *moments) {
 	m.n += o.n
+	m.ng += o.ng
 	m.gxx += o.gxx
 	m.gxy += o.gxy
 	m.gyy += o.gyy
+	m.kgx += o.kgx
+	m.kgy += o.kgy
 	m.sx += o.sx
 	m.sy += o.sy
 	m.sxx += o.sxx
@@ -403,18 +479,25 @@ func quantise(c [3]float64) color.NRGBA {
 }
 
 // rampFrom builds the ramp of a group from its moments (for the
-// centroid), its fit (for the direction) and its bins (for the stops):
-// the line runs from projection tmin to tmax on u through the centroid.
-// nil when the stops cannot be sampled, or the sampled colour changes
-// less than max(tol, minSpan) along the ramp.
-func rampFrom(m *moments, f fitted, b *bins, tol float64) *Ramp {
+// centroid), its field and its bins (for the stops). Linear: the line
+// runs from projection tmin to tmax on u through the centroid. Radial:
+// the circle is the centre and tmax, and the stops' offsets are their
+// distances over tmax. nil when the stops cannot be sampled, or the
+// sampled colour changes less than max(tol, minSpan) along the ramp.
+func rampFrom(m *moments, f field, b *bins, tol float64) *Ramp {
 	stops, span := b.stops(tol)
 	if stops == nil || span < math.Max(tol, minSpan) {
 		return nil
 	}
+	if f.radial {
+		for i := range stops {
+			stops[i].Offset = (b.tmin + float64(stops[i].Offset*(b.tmax-b.tmin))) / b.tmax
+		}
+		return &Ramp{Radial: true, CX: f.cx, CY: f.cy, R: b.tmax, Stops: stops}
+	}
 	n := float64(m.n)
 	cx, cy := m.sx/n, m.sy/n
-	tc := float64(f.u[0]*cx) + float64(f.u[1]*cy)
+	tc := f.at(cx, cy)
 	return &Ramp{
 		X0: cx + float64((b.tmin-tc)*f.u[0]), Y0: cy + float64((b.tmin-tc)*f.u[1]),
 		X1: cx + float64((b.tmax-tc)*f.u[0]), Y1: cy + float64((b.tmax-tc)*f.u[1]),

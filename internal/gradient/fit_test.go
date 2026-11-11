@@ -79,7 +79,7 @@ func TestRampStops(t *testing.T) {
 			b.add(float64(x)+0.5, [3]float64{v, v, v})
 		}
 	}
-	r := rampFrom(&m, f, b, 0.03)
+	r := rampFrom(&m, field{u: f.u}, b, 0.03)
 	if r.Stops[0].Colour != (color.NRGBA{0, 0, 0, 255}) || r.Stops[1].Colour != (color.NRGBA{255, 255, 255, 255}) {
 		t.Errorf("stops %+v", r.Stops)
 	}
@@ -132,7 +132,7 @@ func TestRampStopsLinearIsTwo(t *testing.T) {
 	if b.nb != 32 {
 		t.Fatalf("nb %d want 32", b.nb)
 	}
-	r := rampFrom(m, f, b, 0.03)
+	r := rampFrom(m, field{u: f.u}, b, 0.03)
 	if r == nil {
 		t.Fatal("nil ramp")
 	}
@@ -228,7 +228,7 @@ func TestRampFromPocketInEndBinIsNil(t *testing.T) {
 	if !f.ok || f.rms > 0.03 {
 		t.Fatalf("fixture must be a ramp candidate: %+v", f)
 	}
-	if r := rampFrom(&m, f, b, 0.03); r != nil {
+	if r := rampFrom(&m, field{u: f.u}, b, 0.03); r != nil {
 		t.Errorf("pocket gave %+v", r.Stops)
 	}
 }
@@ -242,7 +242,50 @@ func TestRampFromFlatIsNil(t *testing.T) {
 			b.add(float64(x)+0.5, [3]float64{0.5, 0.5, 0.5})
 		}
 	}
-	if r := rampFrom(&m, m.fit(), b, 0.03); r != nil {
+	if r := rampFrom(&m, field{u: m.fit().u}, b, 0.03); r != nil {
 		t.Errorf("flat gave %+v", r)
+	}
+}
+
+// A field whose colour depends on the distance from a point has colour
+// gradients that all point through that point; the centre solved from
+// the gradient moments is that point.
+func TestCentreOfRadialField(t *testing.T) {
+	const w, h = 120, 100
+	cx, cy := 37.5, 61.5
+	at := func(x, y float64) [3]float64 {
+		r := math.Hypot(x-cx, y-cy)
+		v := 0.2 + 0.006*r
+		return [3]float64{v, v * 0.8, v * 0.5}
+	}
+	var m moments
+	for y := 1; y < h-1; y++ {
+		for x := 1; x < w-1; x++ {
+			px, py := float64(x)+0.5, float64(y)+0.5
+			m.add(px, py, at(px, py))
+			m.addGrad(px, py, half(at(px+1, py), at(px-1, py)), half(at(px, py+1), at(px, py-1)))
+		}
+	}
+	gx, gy, ok := m.centre()
+	if !ok {
+		t.Fatal("no centre")
+	}
+	if math.Abs(gx-cx) > 0.5 || math.Abs(gy-cy) > 0.5 {
+		t.Fatalf("centre (%.2f,%.2f), want (%.1f,%.1f)", gx, gy, cx, cy)
+	}
+}
+
+// A linear ramp's gradients are parallel: no centre.
+func TestCentreOfLinearFieldIsNone(t *testing.T) {
+	var m moments
+	for y := 1; y < 50; y++ {
+		for x := 1; x < 50; x++ {
+			px, py := float64(x)+0.5, float64(y)+0.5
+			m.add(px, py, [3]float64{px / 100, px / 100, px / 100})
+			m.addGrad(px, py, [3]float64{0.01, 0.01, 0.01}, [3]float64{})
+		}
+	}
+	if _, _, ok := m.centre(); ok {
+		t.Fatal("linear field gave a centre")
 	}
 }

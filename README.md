@@ -33,7 +33,7 @@ Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase pr
 
 - **Curve refinement.** `--refine` optimises every Bézier against the image's anti-aliasing (after Yang et al., 2016), placing edges to a fraction of a pixel. On anti-aliased test images this adds 5–20 dB PSNR at about the same node count.
 - **Geometric primitives.** Circles become four exact arcs, rounded rectangles four lines and four arcs with one shared radius, rotated rectangles four nodes. The result edits cleanly in Illustrator, Figma or Inkscape.
-- **Gradient fills.** `--gradients` merges colour bands that follow one ramp into a single region filled by a multi-stop `<linearGradient>`, joined across bends, with specks inside a ramp absorbed. A 16-megapixel illustration drops from 155 flat paths at 36.7 dB to 82 paths at 39.8 dB with 60 % fewer bytes; flat art is byte-identical with the option on.
+- **Gradient fills.** `--gradients` merges colour bands that follow one ramp into a single region filled by a multi-stop `<linearGradient>`, joined across bends, or by a `<radialGradient>` when the bands run round a centre, with specks inside a ramp absorbed. A 16-megapixel illustration drops from 155 flat paths at 36.7 dB to 82 paths at 39.8 dB with 60 % fewer bytes; flat art is byte-identical with the option on.
 - **Clean colour edges.** Anti-aliased pixels between two colours are recognised as their mixture and absorbed, rather than surviving as slivers of a third colour.
 - **Three presets.** `bw` for line art and scans, `poster` for flat-colour artwork, `photo` for photographs and soft shading. Every parameter can be overridden.
 - **Shared boundaries.** Cutout output fits each boundary between two shapes once, so neighbours carry identical coordinates; stacked output layers shapes with no seams. `--stroke` seals hairline seams in either mode.
@@ -89,7 +89,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 | `--palette "#rrggbb,…"` | | Fixed palette, up to 256 entries |
 | `--color-precision N` | `6` | Bits per channel in the quantiser |
 | `--filter-speckle N` | `4` / `16` | Drop components below N pixels (`poster` / `photo`) |
-| `--gradients` | off | Colour presets: merge bands that follow one ramp into a `<linearGradient>` fill |
+| `--gradients` | off | Colour presets: merge bands that follow one ramp into a `<linearGradient>` fill, or a `<radialGradient>` when they run round a centre |
 | `--gradient-tolerance 0..1` | `0.03` | RMS error a ramp may leave, in sRGB units (about 8/255) |
 
 ### Curves
@@ -181,7 +181,7 @@ Recorded baselines: [`bench/results/`](bench/results/). Methodology and referenc
 
 ## Limitations
 
-- Photographs posterise into colour bands; `--gradients` smooths one-directional shading, but regions whose colour varies in two directions remain banded. An AI pre-pass is planned (roadmap phase 6).
+- Photographs posterise into colour bands; `--gradients` smooths shading that runs along one direction or out from one centre, but a region shaded two ways at once (a sphere with an off-centre highlight, layered translucent gradients) stays banded, since no single SVG gradient reproduces it. An AI pre-pass is planned (roadmap phase 6).
 - Cutout output shares boundaries exactly, yet most viewers anti-alias each shape separately and let the page show faintly through shared edges at 1:1. Stacked output is therefore the default.
 - Comparisons against Vector Magic and Vectorizer.AI are produced only when their outputs are placed under `bench/reference/` (see `docs/benchmark.md`).
 

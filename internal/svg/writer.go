@@ -109,11 +109,20 @@ type LinearGradient struct {
 	Stops          []Stop
 }
 
+// RadialGradient is a <radialGradient> in user space (pixel coordinates)
+// about (CX,CY) out to radius R; paths reference it as "url(#ID)".
+type RadialGradient struct {
+	ID        string
+	CX, CY, R float64
+	Stops     []Stop
+}
+
 // Document is a complete SVG: its size, the gradients its paths use and
 // the paths in paint order.
 type Document struct {
 	Width, Height int
 	Gradients     []LinearGradient
+	Radials       []RadialGradient
 	Paths         []Path
 }
 
@@ -123,12 +132,14 @@ func Write(w io.Writer, width, height int, paths []Path, prec int) error {
 }
 
 // WriteDocument emits d: the gradients, when any, as one <defs> line
-// before the paths. Offsets are printed with three decimals.
+// before the paths, linear ones first. Offsets are printed with three
+// decimals, four on a radial gradient (whose first stop may sit most of
+// the way out).
 func WriteDocument(w io.Writer, d Document, prec int) error {
 	if _, err := fmt.Fprintf(w, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\">\n", d.Width, d.Height, d.Width, d.Height); err != nil {
 		return err
 	}
-	if len(d.Gradients) > 0 {
+	if len(d.Gradients)+len(d.Radials) > 0 {
 		var b strings.Builder
 		b.WriteString("<defs>")
 		for _, g := range d.Gradients {
@@ -138,6 +149,14 @@ func WriteDocument(w io.Writer, d Document, prec int) error {
 				fmt.Fprintf(&b, "<stop offset=\"%s\" stop-color=\"%s\"/>", FormatNum(s.Offset, 3), s.Colour)
 			}
 			b.WriteString("</linearGradient>")
+		}
+		for _, g := range d.Radials {
+			fmt.Fprintf(&b, "<radialGradient id=\"%s\" gradientUnits=\"userSpaceOnUse\" cx=\"%s\" cy=\"%s\" r=\"%s\">",
+				g.ID, FormatNum(g.CX, prec), FormatNum(g.CY, prec), FormatNum(g.R, prec))
+			for _, s := range g.Stops {
+				fmt.Fprintf(&b, "<stop offset=\"%s\" stop-color=\"%s\"/>", FormatNum(s.Offset, 4), s.Colour)
+			}
+			b.WriteString("</radialGradient>")
 		}
 		b.WriteString("</defs>\n")
 		if _, err := io.WriteString(w, b.String()); err != nil {

@@ -776,3 +776,58 @@ func TestMergeIslandPicksLargestBorder(t *testing.T) {
 		t.Errorf("island label %d, want A's %d (B is %d)", isl, a, b)
 	}
 }
+
+// ringImage is a disc of radius rad about (cx, cy) on a white page,
+// shaded grey from v0 at the centre to v1 at the rim, quantised into
+// bands equal-width label bands; the page is label 0.
+func ringImage(w, h int, cx, cy, rad, v0, v1 float64, bands int) (rgb, labels []uint8) {
+	rgb = make([]uint8, 3*w*h)
+	labels = make([]uint8, w*h)
+	for p := range labels {
+		x, y := float64(p%w)+0.5, float64(p/w)+0.5
+		r := math.Hypot(x-cx, y-cy)
+		v := 1.0
+		if r <= rad {
+			s := r / rad
+			v = v0 + s*(v1-v0)
+			labels[p] = uint8(1 + min(int(s*float64(bands)), bands-1))
+		}
+		g := uint8(math.Round(v * 255))
+		rgb[3*p], rgb[3*p+1], rgb[3*p+2] = g, g, g
+	}
+	return rgb, labels
+}
+
+// Concentric bands of a disc shaded from its centre out join into one
+// region with a radial gradient about that centre: no direction fits
+// them, but the distance from the centre does.
+func TestMergeRadialRings(t *testing.T) {
+	const w, h = 160, 160
+	cx, cy, rad := 80.0, 80.0, 70.0
+	rgb, labels := ringImage(w, h, cx, cy, rad, 0.25, 0.75, 6)
+	r := Merge(rgb, labels, w, h, 7, 0.03)
+	if r.N != 2 {
+		t.Fatalf("N %d, want the page and one disc: ramps %v", r.N, r.Ramps)
+	}
+	var rp *Ramp
+	for _, x := range r.Ramps {
+		if x != nil {
+			rp = x
+		}
+	}
+	if rp == nil || !rp.Radial {
+		t.Fatalf("no radial ramp: %+v", rp)
+	}
+	if math.Abs(rp.CX-cx) > 1 || math.Abs(rp.CY-cy) > 1 || math.Abs(rp.R-rad) > 2 {
+		t.Fatalf("centre (%.1f,%.1f) r %.1f, want (%.0f,%.0f) r %.0f", rp.CX, rp.CY, rp.R, cx, cy, rad)
+	}
+	if len(rp.Stops) < 2 {
+		t.Fatalf("stops %+v", rp.Stops)
+	}
+	for _, st := range rp.Stops {
+		want := 0.25 + 0.5*float64(st.Offset*rp.R)/rad
+		if d := math.Abs(float64(st.Colour.R)/255 - want); d > 0.03 {
+			t.Errorf("stop %+v is %.3f from the shading", st, d)
+		}
+	}
+}

@@ -88,13 +88,16 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		}
 		if interior(labels, w, h, p) {
 			c.m.add(float64(p%w)+0.5, float64(p/w)+0.5, colourOf(rgb, p))
-			// The tensor sees gentle changes only: a step of tol or more
-			// per pixel is an edge (an outline's anti-aliasing, a band
-			// boundary's ringing), not a ramp's direction.
-			if x, y := p%w, p/w; x > 0 && x < w-1 && y > 0 && y < h-1 {
+			// The tensor sees gentle changes only, between pixels of the
+			// band: a step of tol or more per pixel is an edge (an
+			// outline's anti-aliasing, a band boundary's ringing), not a
+			// ramp's direction, and a difference taken against an edge
+			// pixel is a share of that step.
+			if x, y := p%w, p/w; x > 0 && x < w-1 && y > 0 && y < h-1 &&
+				interior(labels, w, h, p-1) && interior(labels, w, h, p+1) && interior(labels, w, h, p-w) && interior(labels, w, h, p+w) {
 				gx, gy := half(colourOf(rgb, p+1), colourOf(rgb, p-1)), half(colourOf(rgb, p+w), colourOf(rgb, p-w))
 				if float64(dist(gx, [3]float64{})*dist(gx, [3]float64{}))+float64(dist(gy, [3]float64{})*dist(gy, [3]float64{})) <= float64(tol*tol) {
-					c.m.addGrad(gx, gy)
+					c.m.addGrad(float64(x)+0.5, float64(y)+0.5, gx, gy)
 				}
 			}
 		}
@@ -174,7 +177,11 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	// in the join pass it does not, because the join may still dissolve
 	// into both groups, which then need their labels again.
 	release := true
-	passes := func(admit func(ga, gb *group, e *edge, f fitted) bool) {
+	// In the bend pass the union's slope is also measured whichever way
+	// the colour runs (gslope): concentric bands change colour round a
+	// centre, along no direction.
+	bend := false
+	passes := func(admit func(ga, gb *group, e *edge, f fitted, slope float64) bool) {
 		for {
 			// Candidate pairs of live groups, closest mean colours first.
 			var cands []cand
@@ -217,7 +224,11 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 				m := ga.m
 				m.merge(&gb.m)
 				f := m.fitWithin(tol)
-				if !f.ok || e.step/float64(e.pairs) > math.Max(3*f.slope, tol) || !admit(ga, gb, e, f) {
+				slope := f.slope
+				if bend {
+					slope = math.Max(slope, m.gslope())
+				}
+				if !f.ok || e.step/float64(e.pairs) > math.Max(3*slope, tol) || !admit(ga, gb, e, f, slope) {
 					continue
 				}
 				// Merge b into a: sums, flags, and b's neighbours become a's.
@@ -251,7 +262,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 			}
 		}
 	}
-	passes(func(ga, gb *group, e *edge, f fitted) bool { return f.rms <= tol && sidesFollow(ga, gb, f) })
+	passes(func(ga, gb *group, e *edge, f fitted, _ float64) bool { return f.rms <= tol && sidesFollow(ga, gb, f) })
 	// Snapshot the linear groups, then join across bends.
 	r1 := make([]int32, ncomp)
 	for i := range r1 {
@@ -259,7 +270,8 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	}
 	groups1 := slices.Clone(groups)
 	release = false
-	passes(func(ga, gb *group, e *edge, f fitted) bool { return sidesBend(ga, gb, f, tol) })
+	bend = true
+	passes(func(ga, gb *group, e *edge, f fitted, slope float64) bool { return sidesBend(ga, gb, f, slope, tol) })
 	r2 := make([]int32, ncomp)
 	for i := range r2 {
 		r2[i] = find(int32(i))
@@ -276,10 +288,9 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	// Labels: a group formed from lone bands only needs a label the join
 	// pass has not reserved, so it forms only while the budget allows.
 	ext := sample(rgb, comp, w, h, r2, groups, tol)
-	fails := func(e *extent) bool { return e == nil || e.model == nil || e.err > float64(tol*tol)*float64(e.cnt) }
 	var dissolved []int32
 	for r, e := range ext {
-		if groups[r].comps != groups1[r].comps && fails(e) {
+		if groups[r].comps != groups1[r].comps && e.fails(tol) {
 			dissolved = append(dissolved, r)
 		}
 	}
@@ -472,7 +483,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		if !groups[r].merged && float64(e.f.slope*(e.tmax-e.tmin)) < math.Max(tol, minSpan) {
 			return nil
 		}
-		return rampFrom(&groups[r].m, e.f, e.b, tol)
+		return rampFrom(&groups[r].m, e.fld, e.b, tol)
 	}
 	// Merged groups always need a label (the rounds reserved one each);
 	// lone ramps take what is left, in scan order.
@@ -520,7 +531,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	for i, b := range best {
 		c, e := &comps[i], ext[b.root]
 		n := float64(c.size)
-		t := float64(e.f.u[0]*(c.sx/n)) + float64(e.f.u[1]*(c.sy/n))
+		t := e.fld.at(c.sx/n, c.sy/n)
 		mean := [3]float64{c.sc[0] / n, c.sc[1] / n, c.sc[2] / n}
 		if dist(colourAt(e.model, (t-e.tmin)/(e.tmax-e.tmin)), mean) <= tol {
 			absorbed[i] = b.root
@@ -587,11 +598,12 @@ func sidesFollow(a, b *group, union fitted) bool {
 
 // sidesBend reports whether two groups may join across a bend along the
 // union's direction: each side either spreads in colour by tol or more
-// (a bent band, or a ramp) or, when the union's slope would change its
-// colour by a printable step across it, carries at least half that
-// slope along u; a flat side that is wide enough to tell refuses, and at
-// least one side must vote.
-func sidesBend(a, b *group, union fitted, tol float64) bool {
+// (a bent band, or a ramp) or, when the union's slope (slope: along u,
+// or whichever way the colour runs) would change its colour by a
+// printable step across it, carries at least half that slope, along u
+// or whichever way; a flat side that is wide enough to tell refuses, and
+// at least one side must vote.
+func sidesBend(a, b *group, union fitted, slope, tol float64) bool {
 	voted := false
 	for _, g := range []*group{a, b} {
 		if g.m.spread() >= tol {
@@ -599,27 +611,76 @@ func sidesBend(a, b *group, union fitted, tol float64) bool {
 			continue
 		}
 		f := g.m.along(union.u)
-		if !f.ok || float64(union.slope*f.extent) < minSpan {
+		if !f.ok || float64(slope*f.extent) < minSpan {
 			continue
 		}
 		voted = true
-		if f.slope < sideSlope*union.slope {
+		if math.Max(f.slope, g.m.gslope()) < sideSlope*slope {
 			return false
 		}
 	}
 	return voted
 }
 
-// extent is a ramp candidate: its direction, the range of projections
-// of its pixels on it, its colour samples and, for a joined group, the
-// sampled model and the squared error of its interior pixels against it.
+// extent is a ramp candidate: its fit, its field (the direction, or the
+// centre), the range of its pixels' parameters, its colour samples and,
+// for a joined group, the sampled model and the squared error of its
+// interior pixels against it.
 type extent struct {
 	f          fitted
+	fld        field
 	tmin, tmax float64
 	b          *bins
 	model      []rawStop
 	err        float64
 	cnt        int
+}
+
+// fails reports whether a joined group's model does not reproduce its
+// pixels within tol.
+func (e *extent) fails(tol float64) bool {
+	return e == nil || e.model == nil || e.err > float64(tol*tol)*float64(e.cnt)
+}
+
+// measure samples the pixels pix that member says belong to one group
+// along fld: the range of the parameter, the bins of the interior pixels
+// (every 4-neighbour a member) and the model, and the squared error of
+// those pixels against the model. The bins are nil when the range is
+// under minLength.
+func measure(rgb []uint8, pix []int, member func(p int) bool, w, h int, fld field, tol float64) *extent {
+	e := &extent{fld: fld, tmin: math.Inf(1), tmax: math.Inf(-1)}
+	at := func(p int) float64 { return fld.at(float64(p%w)+0.5, float64(p/w)+0.5) }
+	for _, p := range pix {
+		t := at(p)
+		e.tmin = math.Min(e.tmin, t)
+		e.tmax = math.Max(e.tmax, t)
+	}
+	if e.tmax-e.tmin < minLength {
+		return e
+	}
+	inside := func(p int) bool {
+		x, y := p%w, p/w
+		return (x == 0 || member(p-1)) && (x == w-1 || member(p+1)) &&
+			(y == 0 || member(p-w)) && (y == h-1 || member(p+w))
+	}
+	e.b = newBins(e.tmin, e.tmax)
+	for _, p := range pix {
+		if inside(p) {
+			e.b.add(at(p), colourOf(rgb, p))
+		}
+	}
+	e.model = e.b.model(tol)
+	if e.model == nil {
+		return e
+	}
+	for _, p := range pix {
+		if inside(p) {
+			d := dist(colourAt(e.model, (at(p)-e.tmin)/(e.tmax-e.tmin)), colourOf(rgb, p))
+			e.err += float64(d * d)
+			e.cnt++
+		}
+	}
+	return e
 }
 
 // sample measures every root group (root[i] per component) that may
@@ -638,12 +699,10 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 			continue
 		}
 		if f := g.m.fitWithin(tol); f.ok && (g.merged || f.rms <= tol) {
-			ext[int32(i)] = &extent{f: f, tmin: math.Inf(1), tmax: math.Inf(-1)}
+			ext[int32(i)] = &extent{f: f, fld: field{u: f.u}, tmin: math.Inf(1), tmax: math.Inf(-1)}
 		}
 	}
-	proj := func(e *extent, p int) float64 {
-		return float64(e.f.u[0]*(float64(p%w)+0.5)) + float64(e.f.u[1]*(float64(p/w)+0.5))
-	}
+	proj := func(e *extent, p int) float64 { return e.fld.at(float64(p%w)+0.5, float64(p/w)+0.5) }
 	for p := 0; p < np; p++ {
 		if e := ext[find(comp[p])]; e != nil {
 			t := proj(e, p)
@@ -682,59 +741,60 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 		e.err += float64(d * d)
 		e.cnt++
 	}
+	// A merged group that no direction reproduces is measured about its
+	// centre, when its gradients point through one.
+	retry := map[int32][]int{}
+	for r, e := range ext {
+		if groups[r].merged && e.fails(tol) {
+			if _, _, ok := groups[r].m.centre(); ok {
+				retry[r] = nil
+			}
+		}
+	}
+	if len(retry) == 0 {
+		return ext
+	}
+	for p := 0; p < np; p++ {
+		if r := find(comp[p]); r >= 0 {
+			if pix, ok := retry[r]; ok {
+				retry[r] = append(pix, p)
+			}
+		}
+	}
+	for r, pix := range retry {
+		cx, cy, _ := groups[r].m.centre()
+		member := func(p int) bool { return find(comp[p]) == r }
+		if e := measure(rgb, pix, member, w, h, field{radial: true, cx: cx, cy: cy}, tol); !e.fails(tol) {
+			e.f = ext[r].f
+			ext[r] = e
+		}
+	}
 	return ext
 }
 
 // modelFits reports whether the union of the linear groups flagged in
 // in (per linear root, r1 per component) is reproduced within tol by a
-// ramp sampled along the union's direction: the same measure sample
-// applies to a joined group, over the union's interior pixels. pix is
-// the pixels to walk (a superset of the union's), so a check costs the
-// dissolved group, not the image.
+// ramp sampled along the union's direction or, failing that, about its
+// centre: the same measure sample applies to a joined group, over the
+// union's interior pixels. pix is the pixels to walk (a superset of the
+// union's), so a check costs the dissolved group, not the image.
 func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, pix []int, m *moments, tol float64) bool {
 	f := m.fitWithin(tol)
 	if !f.ok {
 		return false
 	}
-	proj := func(p int) float64 {
-		return float64(f.u[0]*(float64(p%w)+0.5)) + float64(f.u[1]*(float64(p/w)+0.5))
-	}
-	tmin, tmax := math.Inf(1), math.Inf(-1)
+	member := func(p int) bool { return in[r1[comp[p]]] }
+	var mine []int
 	for _, p := range pix {
-		if in[r1[comp[p]]] {
-			t := proj(p)
-			tmin = math.Min(tmin, t)
-			tmax = math.Max(tmax, t)
+		if member(p) {
+			mine = append(mine, p)
 		}
 	}
-	if tmax-tmin < minLength {
-		return false
+	if !measure(rgb, mine, member, w, h, field{u: f.u}, tol).fails(tol) {
+		return true
 	}
-	inside := func(p int) bool {
-		x, y := p%w, p/w
-		return (x == 0 || in[r1[comp[p-1]]]) && (x == w-1 || in[r1[comp[p+1]]]) &&
-			(y == 0 || in[r1[comp[p-w]]]) && (y == h-1 || in[r1[comp[p+w]]])
-	}
-	b := newBins(tmin, tmax)
-	for _, p := range pix {
-		if in[r1[comp[p]]] && inside(p) {
-			b.add(proj(p), colourOf(rgb, p))
-		}
-	}
-	model := b.model(tol)
-	if model == nil {
-		return false
-	}
-	var err float64
-	cnt := 0
-	for _, p := range pix {
-		if in[r1[comp[p]]] && inside(p) {
-			d := dist(colourAt(model, (proj(p)-tmin)/(tmax-tmin)), colourOf(rgb, p))
-			err += float64(d * d)
-			cnt++
-		}
-	}
-	return err <= float64(tol*tol)*float64(cnt)
+	cx, cy, ok := m.centre()
+	return ok && !measure(rgb, mine, member, w, h, field{radial: true, cx: cx, cy: cy}, tol).fails(tol)
 }
 
 // interior reports whether every in-image 4-neighbour of pixel p carries

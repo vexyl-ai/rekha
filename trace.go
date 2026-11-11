@@ -18,6 +18,7 @@ import (
 type Result struct {
 	Width, Height int
 	Gradients     []svg.LinearGradient
+	Radials       []svg.RadialGradient
 	Paths         []svg.Path
 }
 
@@ -41,7 +42,7 @@ func Trace(img image.Image, o Options) (*Result, error) {
 
 // WriteSVG writes r as an SVG document with o.PathPrecision decimals.
 func (r *Result) WriteSVG(w io.Writer, o Options) error {
-	return svg.WriteDocument(w, svg.Document{Width: r.Width, Height: r.Height, Gradients: r.Gradients, Paths: r.Paths}, o.PathPrecision)
+	return svg.WriteDocument(w, svg.Document{Width: r.Width, Height: r.Height, Gradients: r.Gradients, Radials: r.Radials, Paths: r.Paths}, o.PathPrecision)
 }
 
 // segments converts one closed crack loop into path segments for o.Mode.
