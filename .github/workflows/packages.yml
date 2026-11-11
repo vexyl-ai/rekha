@@ -30,6 +30,13 @@ jobs:
         run: gh release download "$TAG" -R vexyl-ai/rekha -p '*.deb' -p '*.rpm' -D pkgs
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Runner network check
+        run: |
+          cat /etc/resolv.conf | grep -v '^#' | head -5
+          for h in archive.ubuntu.com azure.archive.ubuntu.com deb.debian.org dl-cdn.alpinelinux.org registry.fedoraproject.org proxy.golang.org pypi.org github.com; do
+            if getent hosts "$h" > /dev/null; then echo "ok   $h"; else echo "FAIL $h"; fi
+          done
+          which apt-ftparchive createrepo_c rpmsign rpm gpg || true
       - name: Install repository tools
         run: |
           # The runner's Azure-internal Ubuntu mirror fails to resolve now and then; use the public archive.
