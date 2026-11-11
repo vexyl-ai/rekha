@@ -2,12 +2,12 @@ package gradient
 
 import "testing"
 
-// seamCanvas is a 64×64 image whose colour runs smoothly across x, cut
+// seamCanvas is a 64×128 image whose colour runs smoothly across x, cut
 // into two labels by a staircase boundary that wobbles ±3 px around
 // x = 32. With crisp set, the right label's pixels are a different
 // colour, so the boundary is a real edge.
 func seamCanvas(crisp bool) (rgb, labels []uint8) {
-	const w, h = 64, 64
+	const w, h = 64, 128
 	rgb = make([]uint8, 3*w*h)
 	labels = make([]uint8, w*h)
 	for y := 0; y < h; y++ {
@@ -30,9 +30,12 @@ func seamCanvas(crisp bool) (rgb, labels []uint8) {
 	return rgb, labels
 }
 
+// seamSpread measures how far the first column of label 1 wanders over
+// the rows a voting window away from the top and bottom borders, where
+// the window is whole.
 func seamSpread(labels []uint8, w, h int) int {
 	lo, hi := w, 0
-	for y := 0; y < h; y++ {
+	for y := seamRadii[0]; y < h-seamRadii[0]; y++ {
 		for x := 0; x < w; x++ {
 			if labels[y*w+x] == 1 {
 				lo, hi = min(lo, x), max(hi, x)
@@ -49,9 +52,30 @@ func TestSmoothSeamsStraightensSoftBoundary(t *testing.T) {
 		v := (100 + x - 0.5) / 255
 		return [3]float64{v, v, v}
 	}
-	smoothSeams(labels, rgb, 64, 64, []func(x, y float64) [3]float64{ramp, ramp}, 0.03)
-	if s := seamSpread(labels, 64, 64); s > 1 {
+	smoothSeams(labels, rgb, 64, 128, []func(x, y float64) [3]float64{ramp, ramp}, 0.03)
+	if s := seamSpread(labels, 64, 128); s > 1 {
 		t.Fatalf("boundary still wobbles by %d px", s)
+	}
+	assertNoIslands(t, labels, 64, 128)
+}
+
+// assertNoIslands fails when a pixel has no 4-neighbour of its own label.
+func assertNoIslands(t *testing.T, labels []uint8, w, h int) {
+	t.Helper()
+	for p, l := range labels {
+		x, y := p%w, p/w
+		own := 0
+		for _, q := range []int{p - 1, p + 1, p - w, p + w} {
+			if q < 0 || q >= w*h || (q == p-1 && x == 0) || (q == p+1 && x == w-1) {
+				continue
+			}
+			if labels[q] == l {
+				own++
+			}
+		}
+		if own == 0 {
+			t.Fatalf("pixel (%d,%d) is an island of label %d", x, y, l)
+		}
 	}
 }
 
@@ -66,7 +90,7 @@ func TestSmoothSeamsLeavesCrispBoundary(t *testing.T) {
 		return [3]float64{v, v, v}
 	}
 	before := append([]uint8(nil), labels...)
-	smoothSeams(labels, rgb, 64, 64, []func(x, y float64) [3]float64{left, right}, 0.03)
+	smoothSeams(labels, rgb, 64, 128, []func(x, y float64) [3]float64{left, right}, 0.03)
 	for p := range labels {
 		if labels[p] != before[p] {
 			t.Fatalf("pixel %d relabelled across a crisp edge", p)
@@ -82,7 +106,7 @@ func TestSmoothSeamsRefusesMisfit(t *testing.T) {
 	}
 	wrong := func(_, _ float64) [3]float64 { return [3]float64{0, 0, 0} }
 	before := append([]uint8(nil), labels...)
-	smoothSeams(labels, rgb, 64, 64, []func(x, y float64) [3]float64{ramp, wrong}, 0.03)
+	smoothSeams(labels, rgb, 64, 128, []func(x, y float64) [3]float64{ramp, wrong}, 0.03)
 	for p := range labels {
 		if labels[p] == 1 && before[p] == 0 {
 			t.Fatalf("pixel %d handed to a model that misfits it", p)
@@ -100,7 +124,7 @@ func TestSmoothSeamsAbsorbsStrandedPixel(t *testing.T) {
 		v := (100 + x - 0.5) / 255
 		return [3]float64{v, v, v}
 	}
-	smoothSeams(labels, rgb, 64, 64, []func(x, y float64) [3]float64{ramp, ramp}, 0.03)
+	smoothSeams(labels, rgb, 64, 128, []func(x, y float64) [3]float64{ramp, ramp}, 0.03)
 	if labels[p] != 1 {
 		t.Fatal("stranded pixel kept its own label")
 	}
@@ -116,7 +140,7 @@ func TestSmoothSeamsAbsorbsStrandIntoFlat(t *testing.T) {
 		v := (100 + x - 0.5) / 255
 		return [3]float64{v, v, v}
 	}
-	smoothSeams(labels, rgb, 64, 64, []func(x, y float64) [3]float64{ramp, nil}, 0.03)
+	smoothSeams(labels, rgb, 64, 128, []func(x, y float64) [3]float64{ramp, nil}, 0.03)
 	if labels[p] != 1 {
 		t.Fatal("stranded pixel kept its own label beside a flat one")
 	}
@@ -141,7 +165,7 @@ func TestSmoothSeamsStrandFollowsItsNeighbours(t *testing.T) {
 		v := (100 + x - 0.5) / 255
 		return [3]float64{v, v, v}
 	}
-	smoothSeams(labels, rgb, 64, 64, []func(x, y float64) [3]float64{ramp, ramp}, 0.03)
+	smoothSeams(labels, rgb, 64, 128, []func(x, y float64) [3]float64{ramp, ramp}, 0.03)
 	if labels[cy*64+cx] != 1 {
 		t.Fatal("ringed pixel did not join its neighbours")
 	}
@@ -154,7 +178,7 @@ func TestSmoothSeamsSkipsFlatLabels(t *testing.T) {
 		return [3]float64{v, v, v}
 	}
 	before := append([]uint8(nil), labels...)
-	smoothSeams(labels, rgb, 64, 64, []func(x, y float64) [3]float64{ramp, nil}, 0.03)
+	smoothSeams(labels, rgb, 64, 128, []func(x, y float64) [3]float64{ramp, nil}, 0.03)
 	for p := range labels {
 		if labels[p] != before[p] {
 			t.Fatalf("pixel %d moved although one side is flat", p)
@@ -162,12 +186,12 @@ func TestSmoothSeamsSkipsFlatLabels(t *testing.T) {
 	}
 }
 
-// creaseCanvas folds two ramps along x = 32: the left half brightens
+// creaseCanvas (64×128) folds two ramps along x = 32: the left half brightens
 // down y, the right half brightens across x, and they meet at the same
 // colour on the fold, so the seam is soft but the halves cannot share
 // one linear model. The labels wobble ±3 px around the fold.
 func creaseCanvas() (rgb, labels []uint8) {
-	const w, h = 64, 64
+	const w, h = 64, 128
 	rgb = make([]uint8, 3*w*h)
 	labels = make([]uint8, w*h)
 	for y := 0; y < h; y++ {
@@ -177,7 +201,7 @@ func creaseCanvas() (rgb, labels []uint8) {
 		}
 		for x := 0; x < w; x++ {
 			p := y*w + x
-			v := 30 + 2*y
+			v := 30 + y
 			if x >= 32 {
 				v += 3 * (x - 32)
 			}
@@ -192,11 +216,12 @@ func creaseCanvas() (rgb, labels []uint8) {
 
 func TestMergeSmoothsSoftSeam(t *testing.T) {
 	rgb, labels := creaseCanvas()
-	r := Merge(rgb, labels, 64, 64, 2, 0.01)
+	r := Merge(rgb, labels, 64, 128, 2, 0.01)
 	if r.N != 2 || r.Ramps[0] == nil || r.Ramps[1] == nil {
 		t.Fatalf("want two ramp labels, got N=%d ramps=%v", r.N, r.Ramps)
 	}
-	if s := seamSpread(r.Labels, 64, 64); s > 1 {
+	if s := seamSpread(r.Labels, 64, 128); s > 1 {
 		t.Fatalf("seam still wobbles by %d px", s)
 	}
+	assertNoIslands(t, r.Labels, 64, 128)
 }

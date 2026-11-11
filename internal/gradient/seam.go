@@ -16,115 +16,158 @@ package gradient
 
 const (
 	seamStep   = 4.0 / 255 // largest neighbour step that counts as soft
-	seamRadius = 5         // half-width of the voting window
-	seamSweeps = 16        // Jacobi passes, at most
+	seamSweeps = 16        // Jacobi passes per radius, at most
 	seamStrand = 2         // fewer own neighbours than this is a strand
 )
+
+// seamRadii are the half-widths of the voting window, coarse to fine:
+// a window only straightens steps shorter than its width, so the wide
+// one takes a staircase whose steps run tens of pixels and the narrow
+// one cleans the corners it leaves.
+var seamRadii = [...]int{32, 5}
 
 // smoothSeams relabels soft boundary pixels in place. model[l] paints
 // label l, or is nil for a flat label.
 func smoothSeams(labels []uint8, rgb []uint8, w, h int, model []func(x, y float64) [3]float64, tol float64) {
-	np := w * h
-	hasModel := func(l int) bool { return l < len(model) && model[l] != nil }
-	fit := func(l, p int) float64 {
-		return dist(model[l](float64(p%w)+0.5, float64(p/w)+0.5), colourOf(rgb, p))
+	s := &seams{labels: labels, rgb: rgb, w: w, h: h, model: model, tol: tol}
+	s.queued = make([]bool, w*h)
+	s.votes = make([]int, len(model))
+	for _, radius := range seamRadii {
+		for p := 0; p < w*h; p++ {
+			if soft, strand := s.look(p); soft || strand {
+				s.enqueue(p)
+			}
+		}
+		for sweep := 0; sweep < seamSweeps && len(s.cand) > 0; sweep++ {
+			s.sweep(radius)
+		}
+		s.drop()
 	}
-	// Candidates are pixels on a soft boundary between two modelled
-	// labels; after a sweep the neighbourhood of every moved pixel is
-	// looked at again.
-	cand := make([]int, 0, np/16)
-	queued := make([]bool, np)
-	enqueue := func(p int) {
-		if !queued[p] {
-			queued[p] = true
-			cand = append(cand, p)
-		}
-	}
-	neighbours := func(p int, f func(q int)) {
-		x, y := p%w, p/w
-		if x > 0 {
-			f(p - 1)
-		}
-		if x < w-1 {
-			f(p + 1)
-		}
-		if y > 0 {
-			f(p - w)
-		}
-		if y < h-1 {
-			f(p + w)
+	// A capped last sweep may have cut a strand loose: peel what is
+	// left, strands only, until nothing moves.
+	for p := 0; p < w*h; p++ {
+		if _, strand := s.look(p); strand {
+			s.enqueue(p)
 		}
 	}
-	// look reports whether p is worth a vote: on a soft boundary with
-	// another modelled label, or stranded (fewer than seamStrand
-	// neighbours of its own label).
-	look := func(p int) (soft, strand bool) {
-		a := int(labels[p])
-		if !hasModel(a) {
-			return false, false
+	for len(s.cand) > 0 {
+		s.sweep(0)
+	}
+}
+
+type seams struct {
+	labels, rgb []uint8
+	w, h        int
+	model       []func(x, y float64) [3]float64
+	tol         float64
+	cand        []int // pixels to look at in the next sweep
+	queued      []bool
+	votes       []int
+}
+
+func (s *seams) hasModel(l int) bool { return l < len(s.model) && s.model[l] != nil }
+
+func (s *seams) fit(l, p int) float64 {
+	return dist(s.model[l](float64(p%s.w)+0.5, float64(p/s.w)+0.5), colourOf(s.rgb, p))
+}
+
+// drop empties the queue, so a pixel left over at the sweep cap can be
+// queued again later.
+func (s *seams) drop() {
+	for _, p := range s.cand {
+		s.queued[p] = false
+	}
+	s.cand = s.cand[:0]
+}
+
+func (s *seams) enqueue(p int) {
+	if !s.queued[p] {
+		s.queued[p] = true
+		s.cand = append(s.cand, p)
+	}
+}
+
+func (s *seams) neighbours(p int, f func(q int)) {
+	x, y := p%s.w, p/s.w
+	if x > 0 {
+		f(p - 1)
+	}
+	if x < s.w-1 {
+		f(p + 1)
+	}
+	if y > 0 {
+		f(p - s.w)
+	}
+	if y < s.h-1 {
+		f(p + s.w)
+	}
+}
+
+// look reports whether p is worth a vote: on a soft boundary with
+// another modelled label, or stranded (fewer than seamStrand neighbours
+// of its own label).
+func (s *seams) look(p int) (soft, strand bool) {
+	a := int(s.labels[p])
+	if !s.hasModel(a) {
+		return false, false
+	}
+	c := colourOf(s.rgb, p)
+	own := 0
+	s.neighbours(p, func(q int) {
+		b := int(s.labels[q])
+		switch {
+		case b == a:
+			own++
+		case s.hasModel(b):
+			if dist(c, colourOf(s.rgb, q)) <= seamStep {
+				soft = true
+			}
 		}
-		c := colourOf(rgb, p)
-		own := 0
-		neighbours(p, func(q int) {
-			b := int(labels[q])
-			switch {
-			case b == a:
-				own++
-			case hasModel(b):
-				if dist(c, colourOf(rgb, q)) <= seamStep {
-					soft = true
+	})
+	return soft, own < seamStrand
+}
+
+// sweep votes on every queued pixel in queue order, moving each at
+// once (two neighbours voted together would swap for ever), and queues
+// the neighbourhood of each move for the next sweep. The window is
+// clipped symmetrically at the image border: a window cut on one side
+// would make the larger region eat the smaller one along a straight
+// seam, one pixel a sweep. Radius 0 votes on strands only.
+func (s *seams) sweep(radius int) {
+	cand := s.cand
+	s.cand = nil
+	for _, p := range cand {
+		s.queued[p] = false
+		soft, strand := s.look(p)
+		if !strand && (!soft || radius == 0) {
+			continue
+		}
+		a := int(s.labels[p])
+		for l := range s.votes {
+			s.votes[l] = 0
+		}
+		if strand {
+			s.neighbours(p, func(q int) { s.votes[s.labels[q]]++ })
+		} else {
+			x, y := p%s.w, p/s.w
+			rx := min(radius, x, s.w-1-x)
+			ry := min(radius, y, s.h-1-y)
+			for yy := y - ry; yy <= y+ry; yy++ {
+				for _, l := range s.labels[yy*s.w+x-rx : yy*s.w+x+rx+1] {
+					s.votes[l]++
 				}
 			}
-		})
-		return soft, own < seamStrand
-	}
-	for p := 0; p < np; p++ {
-		if soft, strand := look(p); soft || strand {
-			enqueue(p)
 		}
-	}
-	type move struct {
-		p int
-		l uint8
-	}
-	votes := make([]int, len(model))
-	for sweep := 0; sweep < seamSweeps && len(cand) > 0; sweep++ {
-		var moves []move
-		for _, p := range cand {
-			queued[p] = false
-			soft, strand := look(p)
-			if !soft && !strand {
-				continue
-			}
-			a := int(labels[p])
-			x, y := p%w, p/w
-			for l := range votes {
-				votes[l] = 0
-			}
-			if strand {
-				neighbours(p, func(q int) { votes[labels[q]]++ })
-			} else {
-				for yy := max(y-seamRadius, 0); yy <= min(y+seamRadius, h-1); yy++ {
-					for xx := max(x-seamRadius, 0); xx <= min(x+seamRadius, w-1); xx++ {
-						votes[labels[yy*w+xx]]++
-					}
-				}
-			}
-			best := a
-			for l, n := range votes {
-				if n > votes[best] && (strand || hasModel(l)) {
-					best = l
-				}
-			}
-			if best != a && (strand || fit(best, p) <= tol) {
-				moves = append(moves, move{p: p, l: uint8(best)})
+		best := a
+		for l, n := range s.votes {
+			if n > s.votes[best] && (strand || s.hasModel(l)) {
+				best = l
 			}
 		}
-		cand = cand[:0]
-		for _, m := range moves {
-			labels[m.p] = m.l
-			enqueue(m.p)
-			neighbours(m.p, enqueue)
+		if best != a && (strand || s.fit(best, p) <= s.tol) {
+			s.labels[p] = uint8(best)
+			s.enqueue(p)
+			s.neighbours(p, s.enqueue)
 		}
 	}
 }
