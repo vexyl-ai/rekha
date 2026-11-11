@@ -1,0 +1,94 @@
+# GoReleaser: one tag (v*) builds every platform, packages and the
+# GitHub release. `make release-check` runs a local snapshot build.
+version: 2
+project_name: rekha
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: rekha
+    main: ./cmd/rekha
+    binary: rekha
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: [-s -w]
+    goos: [linux, darwin, windows, freebsd]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - id: rekha-serve
+    main: ./cmd/rekha-serve
+    binary: rekha-serve
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: [-s -w]
+    goos: [linux, darwin, windows, freebsd]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    ids: [rekha, rekha-serve]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, COMMERCIAL.md, NOTICE, README.md]
+
+checksum:
+  name_template: checksums.txt
+
+nfpms:
+  - id: packages
+    package_name: rekha
+    ids: [rekha, rekha-serve]
+    vendor: Anil Mathew
+    homepage: https://vexyl-ai.github.io/rekha/
+    maintainer: Anil Mathew <vexyl-ai@users.noreply.github.com>
+    description: |-
+      Raster to SVG tracer with gradient fills.
+      Traces PNG, JPEG and GIF logos, icons and artwork into compact SVG,
+      fitting shading as gradient fills. Ships the rekha command and the
+      rekha-serve HTTP service. Pure Go, no runtime dependencies.
+    license: AGPL-3.0-or-later
+    section: graphics
+    priority: optional
+    formats: [deb, rpm, apk, archlinux]
+    bindir: /usr/bin
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/rekha/LICENSE
+      - src: COMMERCIAL.md
+        dst: /usr/share/doc/rekha/COMMERCIAL.md
+      - src: NOTICE
+        dst: /usr/share/doc/rekha/NOTICE
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^ci:"
+      - "^test:"
+      - "^bench:"
+
+release:
+  github:
+    owner: vexyl-ai
+    name: rekha
+  name_template: "Rekha {{ .Tag }}"
+  footer: |
+    ## Install
+
+    Pick the archive for your platform above, unpack it and put `rekha` on your PATH.
+    Debian and Ubuntu: `sudo dpkg -i rekha_*_linux_amd64.deb`. Fedora and RHEL: `sudo rpm -i rekha_*_linux_amd64.rpm`.
+    Alpine: `sudo apk add --allow-untrusted rekha_*_linux_amd64.apk`. Arch: `sudo pacman -U rekha_*_linux_amd64.pkg.tar.zst`.
+    With Go: `go install github.com/vexyl-ai/rekha/cmd/rekha@{{ .Tag }}`.
+
+    macOS may refuse an unsigned downloaded binary on first run; `xattr -d com.apple.quarantine rekha` clears that, or install with Go.
+
+    Rekha is AGPL-3.0; a commercial licence covers closed products, see COMMERCIAL.md.

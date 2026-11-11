@@ -7,3 +7,4 @@
 !/bench/reference/*/README.md
 /web/demo/rekha.wasm
 /web/demo/wasm_exec.js
+/dist/

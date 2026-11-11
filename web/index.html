@@ -62,6 +62,7 @@
       <p class="lead">Rekha traces PNG and JPEG logos, icons and artwork into compact SVG, and fits shading as real gradient fills instead of flat tiles. It runs in your browser, so your image never leaves your machine.</p>
       <div class="cta">
         <a class="btn primary" href="demo/">Open the playground</a>
+        <a class="btn" href="https://github.com/vexyl-ai/rekha/releases/latest">Download</a>
         <a class="btn" href="https://github.com/vexyl-ai/rekha">Source on GitHub</a>
       </div>
       <p class="fine">Free for open source under AGPL-3.0. Commercial licences for closed products.</p>
@@ -131,7 +132,7 @@
     <p class="prose">Open the <a href="demo/">playground</a>, drop an image, wipe between the source and the SVG, tune the controls and download. Everything runs in the page; nothing is uploaded.</p>
 
     <h3>On the command line</h3>
-    <p class="prose">Install with Go 1.26 or later, then point it at an image. Each preset seeds every other setting; any flag you give overrides it. Output goes next to the input unless you say otherwise.</p>
+    <p class="prose"><a href="https://github.com/vexyl-ai/rekha/releases/latest">Download a binary</a> for Linux, macOS, Windows or FreeBSD, a <code>.deb</code>, <code>.rpm</code> or <code>.apk</code> package, or install with Go 1.26 or later. Then point it at an image. Each preset seeds every other setting; any flag you give overrides it. Output goes next to the input unless you say otherwise.</p>
 <pre><code>go install github.com/vexyl-ai/rekha/cmd/rekha@latest
 
 rekha logo.png                                   # black and white, writes logo.svg

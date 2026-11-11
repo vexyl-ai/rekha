@@ -1,6 +1,6 @@
 export CGO_ENABLED=0
 
-.PHONY: test lint wasm-check wasm wasm-test web-test serve build bench
+.PHONY: test lint wasm-check wasm wasm-test web-test serve build bench release-check
 
 bench: build
 	./bin/rekha-bench -corpus testdata/corpus -out bench/out
@@ -29,3 +29,8 @@ serve: wasm
 
 build:
 	go build -o bin/ ./cmd/...
+
+# Builds every release artefact into dist/ without publishing; needs goreleaser.
+release-check:
+	goreleaser check
+	goreleaser release --snapshot --clean --skip=publish

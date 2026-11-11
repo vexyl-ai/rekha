@@ -46,7 +46,18 @@ Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase pr
 
 ## Installation
 
-Requires Go 1.26 or later.
+Prebuilt binaries for Linux, macOS, Windows and FreeBSD (amd64 and arm64) are on the [releases page](https://github.com/vexyl-ai/rekha/releases/latest), as archives and as `.deb`, `.rpm`, `.apk` and Arch packages. Each archive holds `rekha` and `rekha-serve`; unpack and put them on your PATH.
+
+```sh
+sudo dpkg -i rekha_*_linux_amd64.deb        # Debian, Ubuntu
+sudo rpm -i rekha_*_linux_amd64.rpm         # Fedora, RHEL, openSUSE
+sudo apk add --allow-untrusted rekha_*_linux_amd64.apk   # Alpine
+sudo pacman -U rekha_*_linux_amd64.pkg.tar.zst           # Arch
+```
+
+macOS may refuse an unsigned downloaded binary on first run; `xattr -d com.apple.quarantine rekha` clears that.
+
+With Go 1.26 or later:
 
 ```sh
 go install github.com/vexyl-ai/rekha/cmd/rekha@latest
@@ -60,6 +71,8 @@ cd rekha
 make build        # bin/rekha and bin/rekha-serve
 make test         # unit tests and goldens
 ```
+
+Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) with [GoReleaser](https://goreleaser.com) when a `v*` tag is pushed; `make release-check` builds the same artefacts into `dist/` locally.
 
 ## Quick start
 
