@@ -181,6 +181,25 @@ All numbers in this file are produced by `make test` and `make bench`; fixtures 
 
 Recorded baselines: [`bench/results/`](bench/results/). Methodology and reference-tool comparison: [`docs/benchmark.md`](docs/benchmark.md).
 
+### Compared with Adobe Express
+
+Three logos, each a 2048-pixel PNG with a transparent background, traced by Rekha (`--preset photo --gradients`, defaults otherwise) and converted by Adobe Express's image-to-SVG tool (export of 2026-11-11). Both outputs are rendered back at the source size with librsvg and scored against the source over the logo's opaque pixels, so neither tool is charged for how it treats the transparent background. Higher PSNR is closer to the source.
+
+| Logo | Rekha | Adobe Express |
+|---|---|---|
+| Browser mark (radial shading, translucent layers) | 33 paths, 32 kB, 34.8 dB | 197 paths, 325 kB, 28.7 dB |
+| Letter G (concentric ramps) | 16 paths, 14 kB, 32.6 dB | 49 paths, 78 kB, 24.0 dB |
+| Ball (flat colours, one highlight) | 5 paths, 4 kB, 33.3 dB | 5 paths, 12 kB, 26.6 dB |
+
+Rekha fits shading as SVG gradients (13 on the browser mark); Adobe Express cuts shading into flat cells, which shows as tiling on anything that fades and multiplies the paths and bytes. On flat art the two agree on the shapes and differ in curve economy.
+
+![Browser mark: source, Rekha, Adobe Express](docs/images/compare/firefox-globe.png)
+![Browser mark, tail: source, Rekha, Adobe Express](docs/images/compare/firefox-tail.png)
+![Letter G: source, Rekha, Adobe Express](docs/images/compare/letter-g.png)
+![Ball: source, Rekha, Adobe Express](docs/images/compare/pokeball.png)
+
+Numbers and strips: [`bench/results/2026-11-11-adobe-express.md`](bench/results/2026-11-11-adobe-express.md). Vector Magic and Vectorizer.AI are scored the same way when their outputs are placed under `bench/reference/` (see [`docs/benchmark.md`](docs/benchmark.md)).
+
 ## Limitations
 
 - Photographs posterise into colour bands; `--gradients` smooths shading that runs along one direction, out from one centre, or in up to two translucent layers over a base, but shading with more structure than that (a third light, a texture) stays banded. An AI pre-pass is planned (roadmap phase 6).
