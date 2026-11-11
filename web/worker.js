@@ -7,9 +7,9 @@ const go = new Go();
 const ready = (async () => {
   let result;
   try {
-    result = await WebAssembly.instantiateStreaming(fetch('rekha.wasm'), go.importObject);
+    result = await WebAssembly.instantiateStreaming(fetch('rekha.wasm', { cache: 'no-cache' }), go.importObject);
   } catch (e) {
-    const bytes = await (await fetch('rekha.wasm')).arrayBuffer();
+    const bytes = await (await fetch('rekha.wasm', { cache: 'no-cache' })).arrayBuffer();
     result = await WebAssembly.instantiate(bytes, go.importObject);
   }
   go.run(result.instance); // returns when main() exits; it never does

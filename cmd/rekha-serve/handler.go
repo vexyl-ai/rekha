@@ -61,7 +61,14 @@ func NewHandler(l Limits, static string) http.Handler {
 	})
 	h.mux.HandleFunc("/v1/trace", h.trace)
 	if static != "" {
-		h.mux.Handle("/", http.FileServer(http.Dir(static)))
+		files := http.FileServer(http.Dir(static))
+		h.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Revalidate on every load (cheap: the browser sends
+			// If-Modified-Since), so a rebuilt page, worker or wasm is
+			// picked up without a cache-busting query.
+			w.Header().Set("Cache-Control", "no-cache")
+			files.ServeHTTP(w, r)
+		})
 	}
 	return h
 }

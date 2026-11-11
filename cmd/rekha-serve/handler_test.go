@@ -247,6 +247,9 @@ func TestServeStatic(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "demo") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Fatalf("Cache-Control %q, want no-cache so a rebuilt page or wasm is picked up on reload", cc)
+	}
 	rec = httptest.NewRecorder()
 	NewHandler(limits(), "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != 404 {
