@@ -891,3 +891,64 @@ func TestMergeLayeredSphere(t *testing.T) {
 		t.Errorf("no overlay on the highlight: %+v", rp.Overlays)
 	}
 }
+
+// plateauImage is a grey ramp v0..v1 over the left columns that then
+// holds v1 flat (the ramp saturating, as a shading does at its end),
+// the ramp labelled 1 and the plateau 2; blend is the width in pixels
+// of a linear blend between the ramp's end and the plateau's level
+// v2 when that differs from v1.
+func plateauImage(w, h, ramp, blend int, v0, v1, v2 float64) (rgb, labels []uint8) {
+	rgb = make([]uint8, 3*w*h)
+	labels = make([]uint8, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			p := y*w + x
+			var v float64
+			switch {
+			case x < ramp:
+				v = v0 + (v1-v0)*float64(x)/float64(ramp-1)
+				labels[p] = 1
+			case x < ramp+blend:
+				v = v1 + (v2-v1)*float64(x-ramp+1)/float64(blend+1)
+				labels[p] = 2
+			default:
+				v = v2
+				labels[p] = 2
+			}
+			g := uint8(math.Round(v * 255))
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = g, g, g
+		}
+	}
+	return rgb, labels
+}
+
+// A flat band that continues a ramp at its end colour, with no step
+// across the boundary, is the ramp saturating: the two join as one
+// ramp whose last stops hold the level, instead of meeting at a seam.
+func TestMergePlateauContinuesRamp(t *testing.T) {
+	const w, h = 256, 32
+	rgb, labels := plateauImage(w, h, 128, 0, 0.3, 0.6, 0.6)
+	r := Merge(rgb, labels, w, h, 3, 0.03)
+	if r.Labels[16*w+64] != r.Labels[16*w+200] {
+		t.Fatalf("ramp and plateau kept apart: labels %d %d, ramps %v", r.Labels[16*w+64], r.Labels[16*w+200], r.Ramps)
+	}
+	rp := r.Ramps[r.Labels[16*w+64]]
+	if rp == nil {
+		t.Fatal("no ramp")
+	}
+	last := rp.Stops[len(rp.Stops)-1].Colour.R
+	if d := math.Abs(float64(last)/255 - 0.6); d > 0.03 {
+		t.Errorf("last stop %d, want the plateau's 153", last)
+	}
+}
+
+// A flat band of another level behind a blurred edge is a shape of its
+// own, not the ramp's end, and stays apart however soft the blur.
+func TestMergePlateauBehindBlurStaysApart(t *testing.T) {
+	const w, h = 256, 32
+	rgb, labels := plateauImage(w, h, 128, 6, 0.3, 0.6, 0.75)
+	r := Merge(rgb, labels, w, h, 3, 0.03)
+	if r.Labels[16*w+64] == r.Labels[16*w+200] {
+		t.Fatalf("plateau behind a blur joined the ramp: ramps %v", r.Ramps)
+	}
+}

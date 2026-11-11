@@ -30,12 +30,28 @@ type component struct {
 	sc     [3]float64 // Σ colour over all its pixels
 }
 
-// edge is the boundary between two components: 4-adjacent pixel pairs
-// and the sum of their sRGB distances.
+// edge is the boundary between two components: 4-adjacent pixel pairs,
+// the sum of their sRGB distances, and how many of them step by no
+// more than softStep.
 type edge struct {
 	pairs int
 	step  float64
+	soft  int
 }
+
+// softStep is the pixel step, two counts, under which a boundary is
+// continuous: the colour runs across it as it does inside a band.
+const softStep = 2.0 / 255
+
+// continuous reports whether nearly all of the boundary (softShare) is
+// continuous.
+func (e *edge) continuous() bool {
+	return e.soft*softShare >= e.pairs*(softShare-1)
+}
+
+// softShare: a continuous boundary has at most one pair in this many
+// stepping more than softStep.
+const softShare = 10
 
 // group is a set of components merged so far (union–find over
 // components, the root carries the sums).
@@ -121,7 +137,11 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 			edges[k] = e
 		}
 		e.pairs++
-		e.step += dist(colourOf(rgb, p), colourOf(rgb, q))
+		d := dist(colourOf(rgb, p), colourOf(rgb, q))
+		e.step += d
+		if d <= softStep {
+			e.soft++
+		}
 	}
 	for p := 0; p < np; p++ {
 		if p%w+1 < w {
@@ -251,6 +271,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 					if ea := adj[a][x]; ea != nil {
 						ea.pairs += ex.pairs
 						ea.step += ex.step
+						ea.soft += ex.soft
 					} else {
 						adj[a][x] = ex
 						adj[x][a] = ex
@@ -273,7 +294,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	groups1 := slices.Clone(groups)
 	release = false
 	bend = true
-	passes(func(ga, gb *group, e *edge, f fitted, slope float64) bool { return sidesBend(ga, gb, f, slope, tol) })
+	passes(func(ga, gb *group, e *edge, f fitted, slope float64) bool { return sidesBend(ga, gb, e, f, slope, tol) })
 	r2 := make([]int32, ncomp)
 	for i := range r2 {
 		r2[i] = find(int32(i))
@@ -605,9 +626,11 @@ func sidesFollow(a, b *group, union fitted) bool {
 // (a bent band, or a ramp) or, when the union's slope (slope: along u,
 // or whichever way the colour runs) would change its colour by a
 // printable step across it, carries at least half that slope, along u
-// or whichever way; a flat side that is wide enough to tell refuses, and
-// at least one side must vote.
-func sidesBend(a, b *group, union fitted, slope, tol float64) bool {
+// or whichever way; a flat side that is wide enough to tell refuses,
+// unless the boundary is continuous (the ramp saturating into a
+// plateau: the flat side is the ramp's end, and a stop can hold it),
+// and at least one side must vote.
+func sidesBend(a, b *group, e *edge, union fitted, slope, tol float64) bool {
 	voted := false
 	for _, g := range []*group{a, b} {
 		if g.m.spread() >= tol {
@@ -619,7 +642,7 @@ func sidesBend(a, b *group, union fitted, slope, tol float64) bool {
 			continue
 		}
 		voted = true
-		if math.Max(f.slope, g.m.gslope()) < sideSlope*slope {
+		if math.Max(f.slope, g.m.gslope()) < sideSlope*slope && !e.continuous() {
 			return false
 		}
 	}
