@@ -7,6 +7,7 @@ const path = require('node:path');
 const pages = {
   landing: { file: path.join(__dirname, 'index.html'), url: 'https://vexyl-ai.github.io/rekha/' },
   demo: { file: path.join(__dirname, 'demo', 'index.html'), url: 'https://vexyl-ai.github.io/rekha/demo/' },
+  gallery: { file: path.join(__dirname, 'gallery', 'index.html'), url: 'https://vexyl-ai.github.io/rekha/gallery/' },
 };
 const count = (s, re) => (s.match(re) || []).length;
 const attr = (s, name, key) => {
@@ -37,9 +38,19 @@ test('landing links to the playground and the demo links home', () => {
   assert.match(landing, /href="demo\/"/);
   assert.match(demo, /<a class="brand" href="\.\.\/"/);
 });
-test('landing titles differ from the demo title', () => {
+test('every page has its own title', () => {
   const t = (f) => fs.readFileSync(f, 'utf8').match(/<title>([^<]+)<\/title>/)[1];
-  assert.notEqual(t(pages.landing.file), t(pages.demo.file));
+  const titles = Object.values(pages).map((p) => t(p.file));
+  assert.equal(new Set(titles).size, titles.length, titles.join(' | '));
+});
+test('gallery lists every traced logo with its figures', () => {
+  const items = JSON.parse(fs.readFileSync(path.join(__dirname, 'gallery', 'gallery.json'), 'utf8'));
+  const html = fs.readFileSync(pages.gallery.file, 'utf8');
+  assert.ok(items.length >= 5, `${items.length} items`);
+  for (const it of items) {
+    assert.match(html, new RegExp(`src="${it.name}\\.svg"`), it.name);
+    assert.ok(it.paths > 0 && it.bytes > 0 && it.psnr > 0, JSON.stringify(it));
+  }
 });
 test('every local asset the pages reference exists', () => {
   for (const [name, page] of Object.entries(pages)) {

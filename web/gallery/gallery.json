@@ -1,0 +1,101 @@
+[
+ {
+  "name": "black-green-angular-geometric-logo",
+  "title": "Black green angular geometric",
+  "width": 2048,
+  "height": 2048,
+  "paths": 9,
+  "gradients": 0,
+  "bytes": 3269,
+  "psnr": 32.5,
+  "seconds": 1.9
+ },
+ {
+  "name": "black-red-circle-symmetric-logo",
+  "title": "Black red circle symmetric",
+  "width": 2048,
+  "height": 2045,
+  "paths": 5,
+  "gradients": 0,
+  "bytes": 3954,
+  "psnr": 33.3,
+  "seconds": 1.5
+ },
+ {
+  "name": "blue-green-letter-v-dots-stylized-logo",
+  "title": "Blue green letter V dots stylized",
+  "width": 2048,
+  "height": 2048,
+  "paths": 17,
+  "gradients": 10,
+  "bytes": 9394,
+  "psnr": 35.9,
+  "seconds": 2.9
+ },
+ {
+  "name": "blue-letter-u-shield-floral-logo",
+  "title": "Blue letter U shield floral",
+  "width": 2048,
+  "height": 2048,
+  "paths": 2,
+  "gradients": 0,
+  "bytes": 44322,
+  "psnr": 24.5,
+  "seconds": 2.2
+ },
+ {
+  "name": "blue-purple-letter-m-abstract-floral-logo",
+  "title": "Blue purple letter M abstract floral",
+  "width": 2048,
+  "height": 2048,
+  "paths": 49,
+  "gradients": 0,
+  "bytes": 83250,
+  "psnr": 23.7,
+  "seconds": 2.3
+ },
+ {
+  "name": "blue-purple-letter-q-ribbon-gradient-logo",
+  "title": "Blue purple letter Q ribbon gradient",
+  "width": 2048,
+  "height": 2048,
+  "paths": 6,
+  "gradients": 1,
+  "bytes": 5675,
+  "psnr": 37.0,
+  "seconds": 1.6
+ },
+ {
+  "name": "8_1sasa11",
+  "title": "Gradient bird",
+  "width": 2048,
+  "height": 2048,
+  "paths": 69,
+  "gradients": 23,
+  "bytes": 25139,
+  "psnr": 36.8,
+  "seconds": 3.5
+ },
+ {
+  "name": "red-yellow-letter-g-minimalistic-circular-logo",
+  "title": "Red yellow letter G minimalistic circular",
+  "width": 2048,
+  "height": 2048,
+  "paths": 16,
+  "gradients": 4,
+  "bytes": 13672,
+  "psnr": 32.6,
+  "seconds": 1.9
+ },
+ {
+  "name": "teal-blue-abstract-modern-logo",
+  "title": "Teal blue abstract modern",
+  "width": 2048,
+  "height": 2048,
+  "paths": 13,
+  "gradients": 0,
+  "bytes": 11480,
+  "psnr": 30.9,
+  "seconds": 1.9
+ }
+]

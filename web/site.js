@@ -1,7 +1,6 @@
-// Hero wipe: drag or use the arrow keys to move the cut between pixels and SVG.
-(() => {
-  const wipe = document.getElementById('wipe');
-  if (!wipe) return;
+// Wipes: drag, or focus the hidden range and use the arrow keys, to move
+// the cut between the left image and the right one.
+document.querySelectorAll('.wipe').forEach((wipe) => {
   const frame = wipe.querySelector('.frame');
   const range = wipe.querySelector('input[type=range]');
   const set = (pct) => {
@@ -21,4 +20,4 @@
   frame.addEventListener('pointercancel', () => { down = false; });
   range.addEventListener('input', () => set(Number(range.value)));
   set(50);
-})();
+});
