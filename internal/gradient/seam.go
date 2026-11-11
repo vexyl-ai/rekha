@@ -35,6 +35,16 @@ func smoothSeams(labels []uint8, rgb []uint8, w, h int, model []func(x, y float6
 	s := &seams{labels: labels, rgb: rgb, w: w, h: h, model: model, tol: tol}
 	s.queued = make([]bool, w*h)
 	s.votes = make([]int, len(model))
+	// Rescue: a seam pixel its own model misfits goes to a neighbouring
+	// label whose model paints it within tol, and the front follows.
+	for p := 0; p < w*h; p++ {
+		if soft, _ := s.look(p); soft {
+			s.enqueue(p)
+		}
+	}
+	for len(s.cand) > 0 {
+		s.rescue()
+	}
 	for _, radius := range seamRadii {
 		for p := 0; p < w*h; p++ {
 			if soft, strand := s.look(p); soft || strand {
@@ -170,6 +180,34 @@ func (s *seams) sweep(radius int) {
 		if best != a && (strand || s.fit(best, p) <= max(s.tol, s.fit(a, p)+seamSlack)) {
 			s.labels[p] = uint8(best)
 			s.enqueue(p)
+			s.neighbours(p, s.enqueue)
+		}
+	}
+}
+
+// rescue moves every queued pixel its own model misfits beyond tol to
+// the 4-neighbour label that paints it best, when that is within tol,
+// and queues the neighbourhood of each move.
+func (s *seams) rescue() {
+	cand := s.cand
+	s.cand = nil
+	for _, p := range cand {
+		s.queued[p] = false
+		a := int(s.labels[p])
+		if !s.hasModel(a) || s.fit(a, p) <= s.tol {
+			continue
+		}
+		best, bestFit := a, s.tol
+		s.neighbours(p, func(q int) {
+			b := int(s.labels[q])
+			if b != a && s.hasModel(b) {
+				if f := s.fit(b, p); f <= bestFit {
+					best, bestFit = b, f
+				}
+			}
+		})
+		if best != a {
+			s.labels[p] = uint8(best)
 			s.neighbours(p, s.enqueue)
 		}
 	}

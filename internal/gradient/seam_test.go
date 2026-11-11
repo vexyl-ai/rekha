@@ -239,3 +239,46 @@ func TestMergeSmoothsSoftSeam(t *testing.T) {
 	}
 	assertNoIslands(t, r.Labels, 64, 128)
 }
+
+// A seam drawn sixteen pixels into the steeper of two ramps that meet
+// smoothly: the gentle ramp's model misfits the pixels past the true
+// seam by more than tol, the steep ramp's model paints them, so they
+// change hands and the seam moves back to where the gentle model's
+// error passes tol (five counts, at x = 37).
+func TestSmoothSeamsRescuesMisfitPixels(t *testing.T) {
+	const w, h = 64, 128
+	rgb := make([]uint8, 3*w*h)
+	labels := make([]uint8, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			p := y*w + x
+			v := 100 + x
+			if x >= 32 {
+				v = 132 + 2*(x-32)
+			}
+			if x >= 48 {
+				labels[p] = 1
+			}
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = uint8(v), uint8(v), uint8(v)
+		}
+	}
+	gentle := func(x, _ float64) [3]float64 {
+		v := (100 + x - 0.5) / 255
+		return [3]float64{v, v, v}
+	}
+	steep := func(x, _ float64) [3]float64 {
+		v := (132 + 2*(x-32.5)) / 255
+		return [3]float64{v, v, v}
+	}
+	smoothSeams(labels, rgb, w, h, []func(x, y float64) [3]float64{gentle, steep}, 0.03)
+	for p, l := range labels {
+		x := p % w
+		if l == 0 && x >= 37 {
+			t.Fatalf("pixel at x=%d still under the gentle ramp, which misfits it", x)
+		}
+		if l == 1 && x < 32 {
+			t.Fatalf("pixel at x=%d handed to the steep ramp, which misfits it", x)
+		}
+	}
+	assertNoIslands(t, labels, w, h)
+}
