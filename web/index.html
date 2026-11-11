@@ -132,8 +132,10 @@
     <p class="prose">Open the <a href="demo/">playground</a>, drop an image, wipe between the source and the SVG, tune the controls and download. Everything runs in the page; nothing is uploaded.</p>
 
     <h3>On the command line</h3>
-    <p class="prose"><a href="https://github.com/vexyl-ai/rekha/releases/latest">Download a binary</a> for Linux, macOS, Windows or FreeBSD, a <code>.deb</code>, <code>.rpm</code> or <code>.apk</code> package, or install with Go 1.26 or later. Then point it at an image. Each preset seeds every other setting; any flag you give overrides it. Output goes next to the input unless you say otherwise.</p>
+    <p class="prose"><a href="https://github.com/vexyl-ai/rekha/releases/latest">Download a binary</a> for Linux, macOS, Windows or FreeBSD, install from the Homebrew tap, the Scoop bucket or the apt, dnf and apk repositories, or build with Go 1.26 or later. Then point it at an image. Each preset seeds every other setting; any flag you give overrides it. Output goes next to the input unless you say otherwise.</p>
 <pre><code>brew tap vexyl-ai/tap &amp;&amp; brew trust vexyl-ai/tap &amp;&amp; brew install --cask rekha   # macOS and Linux
+sudo apt install rekha                           # Debian and Ubuntu, after adding the Cloudsmith repo (see README)
+sudo dnf install rekha                           # Fedora and RHEL, same repo
 scoop install rekha                              # Windows, after adding the vexyl-ai bucket
 go install github.com/vexyl-ai/rekha/cmd/rekha@latest
 
