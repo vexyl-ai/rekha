@@ -118,8 +118,10 @@ section p + p { margin-top: 12px; }
 .strips figcaption { margin-top: 8px; color: var(--ink-soft); font-size: 15px; }
 .cite { margin-top: 20px; color: var(--ink-soft); font-size: 15px; }
 
-/* How + who */
-.how pre { margin-top: 24px; max-width: 64ch; }
+/* How + use + who */
+.use pre { margin-top: 14px; }
+.use h3 { margin-top: 32px; }
+.use h2 + h3 { margin-top: 24px; }
 .who .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin-top: 8px; }
 .who h3 { margin-top: 24px; }
 

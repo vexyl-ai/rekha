@@ -47,6 +47,7 @@
     <nav aria-label="Site">
       <a href="demo/">Playground</a>
       <a href="#compare" class="hide-sm">Comparison</a>
+      <a href="#use" class="hide-sm">Use it</a>
       <a href="#licence">Licence</a>
       <a href="https://github.com/vexyl-ai/rekha">GitHub</a>
     </nav>
@@ -118,9 +119,47 @@
   <div class="wrap">
     <h2>How it works</h2>
     <p class="prose">Rekha reduces the image to a few colours, finds the regions and fits each boundary with cubic curves that follow the anti-aliasing. Where neighbouring bands shade into each other it merges them and fits one gradient, linear or radial, with translucent layers on top for highlights and vignettes. The output is a small SVG that scales, edits and renders the same everywhere.</p>
-    <p class="prose">The same engine runs as a Go library, a command-line tool, a WebAssembly module and an HTTP service. Pure Go, no cgo, one dependency.</p>
+    <p class="prose">The same engine runs in the browser, on the command line, as a Go library and as an HTTP service. Pure Go, no cgo, one dependency.</p>
+  </div>
+</section>
+
+<section class="use" id="use">
+  <div class="wrap">
+    <h2>Ways to use it</h2>
+
+    <h3>In the browser</h3>
+    <p class="prose">Open the <a href="demo/">playground</a>, drop an image, wipe between the source and the SVG, tune the controls and download. Everything runs in the page; nothing is uploaded.</p>
+
+    <h3>On the command line</h3>
+    <p class="prose">Install with Go 1.26 or later, then point it at an image. Each preset seeds every other setting; any flag you give overrides it. Output goes next to the input unless you say otherwise.</p>
 <pre><code>go install github.com/vexyl-ai/rekha/cmd/rekha@latest
-rekha --preset photo --gradients artwork.png     # writes artwork.svg</code></pre>
+
+rekha logo.png                                   # black and white, writes logo.svg
+rekha --preset poster --refine logo.png          # flat colours, refined curves
+rekha --preset photo --gradients artwork.jpg     # smooth shading as gradient fills
+rekha --preset poster --hierarchical cutout --stroke 0.5 logo.png
+rekha -o out.svg --threshold auto scan.png       # automatic threshold, named output
+rekha --mode polygon - &lt; in.png &gt; out.svg         # stdin to stdout, straight lines
+rekha --help                                     # every flag, range and default</code></pre>
+
+    <h3>From Go</h3>
+    <p class="prose">One call traces an image into paths and gradients; a second writes the SVG. Segmentation and curve fitting are separate steps, so a cached segmentation can be re-fitted with new curve options.</p>
+<pre><code>import "github.com/vexyl-ai/rekha"
+
+o := rekha.PresetOptions(rekha.PresetPhoto)
+o.Gradients = true
+res, err := rekha.Trace(img, o)   // img is an image.Image
+if err != nil {
+    return err
+}
+err = res.WriteSVG(out, o)        // out is an io.Writer</code></pre>
+
+    <h3>As a service</h3>
+    <p class="prose">The same binary that serves this site answers <code>POST /v1/trace</code> with an image and the CLI's options as form fields, with caps on size and time so one client cannot exhaust the host.</p>
+<pre><code>go install github.com/vexyl-ai/rekha/cmd/rekha-serve@latest
+rekha-serve
+curl -F image=@logo.png -F preset=poster -F refine=true localhost:8080/v1/trace &gt; logo.svg</code></pre>
+    <p class="cite prose">Full flag table, library documentation and the HTTP API are in the <a href="https://github.com/vexyl-ai/rekha#readme">README</a> and <a href="https://pkg.go.dev/github.com/vexyl-ai/rekha">pkg.go.dev</a>.</p>
   </div>
 </section>
 
