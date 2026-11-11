@@ -2,7 +2,7 @@
 
 <h1 align="center">Rekha</h1>
 
-<p align="center"><strong>Raster to clean SVG. Pure Go. Your image never leaves your machine.</strong><br><a href="https://vexyl-ai.github.io/rekha/">Try it in your browser</a></p>
+<p align="center"><strong>Raster to clean SVG. Pure Go. Your image never leaves your machine.</strong><br><a href="https://vexyl-ai.github.io/rekha/demo/">Try it in your browser</a></p>
 
 <p align="center">
 <a href="https://github.com/vexyl-ai/rekha/actions/workflows/ci.yml"><img src="https://github.com/vexyl-ai/rekha/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -10,7 +10,7 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/licence-AGPL--3.0-blue.svg" alt="AGPL-3.0"></a>
 <a href="COMMERCIAL.md"><img src="https://img.shields.io/badge/commercial-licence%20available-green.svg" alt="Commercial licence available"></a>
 <img src="https://img.shields.io/badge/Go-1.26-00ADD8.svg" alt="Go 1.26">
-<a href="https://vexyl-ai.github.io/rekha/"><img src="https://img.shields.io/badge/playground-try%20it-orange.svg" alt="Playground"></a>
+<a href="https://vexyl-ai.github.io/rekha/demo/"><img src="https://img.shields.io/badge/playground-try%20it-orange.svg" alt="Playground"></a>
 </p>
 
 Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase provides a Go library, a command-line tool, an HTTP service and a WebAssembly build for the browser. It has no cgo and no dependency beyond `golang.org/x/image`, and it is a clean-room implementation, dual-licensed: AGPL-3.0 for open source, a [commercial licence](COMMERCIAL.md) for everything else.
@@ -150,10 +150,10 @@ func main() {
 
 ## Browser and WebAssembly
 
-The demo is hosted at [vexyl-ai.github.io/rekha](https://vexyl-ai.github.io/rekha/), rebuilt from `main` by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push. To run it locally:
+The playground is hosted at [vexyl-ai.github.io/rekha/demo](https://vexyl-ai.github.io/rekha/demo/) behind the product page at [vexyl-ai.github.io/rekha](https://vexyl-ai.github.io/rekha/), both rebuilt from `main` by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push. To run it locally:
 
 ```sh
-make serve      # builds web/rekha.wasm and serves the demo on http://localhost:8080/
+make serve      # builds web/demo/rekha.wasm and serves the site on http://localhost:8080/ (playground at /demo/)
 ```
 
 The demo page traces entirely in a Web Worker: drop, paste or choose an image, adjust the controls, compare source and SVG with a wipe, zoom and pan the canvas (ctrl/⌘ + wheel or pinch, drag, double-click, toolbar, keys `+` `-` `0` `1`), watch the progress bar, and download the SVG. Nothing is uploaded.

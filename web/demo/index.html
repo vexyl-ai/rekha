@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rekha playground: convert PNG or JPEG to SVG in your browser</title>
+<meta name="description" content="Drop a PNG or JPEG and trace it to SVG in your browser with Rekha. Gradient fills, curve refinement, presets for black and white, posters and photos.">
+<link rel="canonical" href="https://vexyl-ai.github.io/rekha/demo/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Rekha">
+<meta property="og:title" content="Rekha playground: raster to SVG in your browser">
+<meta property="og:description" content="Drop a PNG or JPEG and get a clean SVG with gradient fills. Runs locally, nothing is uploaded.">
+<meta property="og:url" content="https://vexyl-ai.github.io/rekha/demo/">
+<meta property="og:image" content="https://vexyl-ai.github.io/rekha/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Rekha playground: raster to SVG in your browser">
+<meta name="twitter:description" content="Drop a PNG or JPEG and get a clean SVG with gradient fills. Runs locally, nothing is uploaded.">
+<meta name="twitter:image" content="https://vexyl-ai.github.io/rekha/img/og.png">
+<meta name="theme-color" content="#014AED">
+<link rel="icon" href="../img/logo-mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="rekha.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../" title="Rekha home"><img src="../img/logo-mark.svg" alt="Rekha" width="30" height="30"></a>
+  <h1>Playground</h1>
+  <p class="tagline">Raster to SVG, traced in your browser. Nothing is uploaded.</p>
+  <div class="actions">
+    <button id="cancel" class="quiet" disabled>Cancel</button>
+    <button id="download" class="primary" disabled>Download SVG</button>
+  </div>
+</header>
+
+<aside class="rail">
+  <section>
+    <h2>Image</h2>
+    <label class="file">
+      <input type="file" id="file" accept="image/*">
+      <span>Choose a file</span>
+    </label>
+    <p class="hint">Or drop an image on the canvas, or paste one.</p>
+    <label class="row"><span>Pixel cap</span><input type="number" id="pixelCap" min="10000" step="100000" value="4300000"></label>
+    <p class="hint">Larger images are downscaled to fit. 4.3 million pixels takes a 2048-pixel-square logo at full size and keeps a trace under a minute.</p>
+  </section>
+
+  <section>
+    <h2>Colours <small>re-runs segmentation</small></h2>
+    <label class="row"><span>Preset</span><select id="preset"><option value="bw">Black and white</option><option value="poster">Poster</option><option value="photo" selected>Photo</option></select></label>
+    <label class="row"><span>Max colours</span><input type="number" id="maxColors" min="0" max="256" step="1"></label>
+    <label class="row"><span>Colour tolerance</span><input type="number" id="colorTolerance" min="0" max="1" step="0.01"></label>
+    <label class="row"><span>Threshold</span><span class="pair"><input type="number" id="threshold" min="0" max="1" step="0.05"><label class="check"><input type="checkbox" id="thresholdAuto"> auto</label></span></label>
+    <label class="row"><span>Drop specks below</span><span class="pair"><input type="number" id="filterSpeckle" min="0" max="1024" step="1"><span class="unit">px</span></span></label>
+    <label class="check wide"><input type="checkbox" id="gradients" checked> Smooth gradients</label>
+    <label class="row"><span>Gradient tolerance</span><input type="number" id="gradientTolerance" min="0" max="1" step="0.01"></label>
+    <p class="hint">Joins colour bands that shade smoothly into one gradient fill. Not for the black and white preset.</p>
+  </section>
+
+  <section>
+    <h2>Curves <small>re-runs the fit only</small></h2>
+    <label class="row"><span>Mode</span><select id="mode"><option value="spline">Curves</option><option value="polygon">Straight lines</option><option value="pixel">Pixel edges</option></select></label>
+    <label class="row"><span>Layers</span><select id="hierarchical"><option value="stacked">Stacked</option><option value="cutout">Cut out</option></select></label>
+    <label class="check wide"><input type="checkbox" id="refine"> Refine curves against the anti-aliasing</label>
+    <label class="row"><span>Refine passes</span><input type="number" id="refinePasses" min="1" max="10" step="1"></label>
+    <label class="row"><span>Seal seams</span><span class="pair"><input type="number" id="stroke" min="0" max="4" step="0.1"><span class="unit">px</span></span></label>
+    <label class="row"><span>Decimals</span><input type="number" id="pathPrecision" min="0" max="8" step="1"></label>
+  </section>
+</aside>
+
+<main class="stage" tabindex="0" aria-label="Canvas: drag to pan, ctrl and wheel to zoom">
+  <div class="compare" id="compare" hidden>
+    <img id="sourceImg" alt="Source image" draggable="false">
+    <div class="svgClip" id="svgClip"><img id="svgImg" alt="Traced SVG" draggable="false"></div>
+    <div class="divider" id="divider" role="slider" aria-label="Compare source and SVG" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0"><span></span></div>
+    <span class="tag left">Source</span><span class="tag right">SVG</span>
+  </div>
+  <div class="empty" id="drop">
+    <p class="big">Drop an image here</p>
+    <p>or paste one, or choose a file</p>
+  </div>
+  <div class="zoom" id="zoom" hidden>
+    <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+    <button id="zoomLevel" title="Actual pixels (1)">100%</button>
+    <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+    <button id="zoomFit" title="Fit to view (0)">Fit</button>
+  </div>
+</main>
+
+<footer class="status"><span id="status">Loading the tracer…</span></footer>
+
+<div class="busy" id="busy" hidden role="alert" aria-live="assertive">
+  <div class="card">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="busyText">Working…</p>
+    <div class="bar sweep" id="busyBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-labelledby="busyStage"><div class="fill" id="busyFill"></div></div>
+    <p class="stage" id="busyStage"></p>
+    <button id="busyCancel" class="quiet">Cancel</button>
+  </div>
+</div>
+
+<script src="protocol.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

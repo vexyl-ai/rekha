@@ -15,14 +15,14 @@ wasm-check:
 	GOOS=js GOARCH=wasm go build ./...
 
 wasm:
-	GOOS=js GOARCH=wasm go build -o web/rekha.wasm ./cmd/rekha-wasm
-	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" web/
+	GOOS=js GOARCH=wasm go build -o web/demo/rekha.wasm ./cmd/rekha-wasm
+	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" web/demo/
 
 wasm-test:
 	GOOS=js GOARCH=wasm go test -exec "$$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./cmd/rekha-wasm $(ARGS)
 
 web-test:
-	node --test web/
+	node --test web/site.test.js web/demo/protocol.test.js
 
 serve: wasm
 	go run ./cmd/rekha-serve -static web

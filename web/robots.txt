@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://vexyl-ai.github.io/rekha/sitemap.xml

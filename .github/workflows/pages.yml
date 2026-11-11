@@ -29,7 +29,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make wasm
-      - run: rm -f web/protocol.test.js
+      - run: rm -f web/demo/protocol.test.js web/site.test.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

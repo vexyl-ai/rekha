@@ -3,88 +3,179 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rekha</title>
+<title>Rekha: trace PNG and JPEG to SVG with gradient fills</title>
+<meta name="description" content="Rekha turns raster logos, icons and artwork into compact SVG with real gradient fills. Pure Go, runs in your browser, nothing is uploaded. Free under AGPL-3.0.">
+<link rel="canonical" href="https://vexyl-ai.github.io/rekha/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Rekha">
+<meta property="og:title" content="Rekha: raster to clean SVG, gradients included">
+<meta property="og:description" content="Trace PNG and JPEG into compact SVG with real gradient fills. Runs in your browser, nothing is uploaded. Open source, pure Go.">
+<meta property="og:url" content="https://vexyl-ai.github.io/rekha/">
+<meta property="og:image" content="https://vexyl-ai.github.io/rekha/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Rekha logo beside the words: raster to clean SVG, gradients included, runs in your browser">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Rekha: raster to clean SVG, gradients included">
+<meta name="twitter:description" content="Trace PNG and JPEG into compact SVG with real gradient fills. Runs in your browser, nothing is uploaded.">
+<meta name="twitter:image" content="https://vexyl-ai.github.io/rekha/img/og.png">
+<meta name="theme-color" content="#014AED">
+<link rel="icon" href="img/logo-mark.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="rekha.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap">
+<link rel="stylesheet" href="site.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Rekha",
+  "url": "https://vexyl-ai.github.io/rekha/",
+  "description": "Raster to SVG tracer with gradient fills. Pure Go, no cgo, runs as a library, a CLI, a WebAssembly module and an HTTP service.",
+  "applicationCategory": "DesignApplication",
+  "operatingSystem": "Web, Linux, macOS, Windows",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+  "codeRepository": "https://github.com/vexyl-ai/rekha",
+  "author": { "@type": "Person", "name": "Anil Mathew", "url": "https://www.linkedin.com/in/anilmathewm/" }
+}
+</script>
 </head>
 <body>
-<header class="top">
-  <h1>Rekha</h1>
-  <p class="tagline">Raster to SVG, traced in your browser. Nothing is uploaded.</p>
-  <div class="actions">
-    <button id="cancel" class="quiet" disabled>Cancel</button>
-    <button id="download" class="primary" disabled>Download SVG</button>
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="img/logo-mark.svg" alt="" width="34" height="34">Rekha</a>
+    <nav aria-label="Site">
+      <a href="demo/">Playground</a>
+      <a href="#compare" class="hide-sm">Comparison</a>
+      <a href="#licence">Licence</a>
+      <a href="https://github.com/vexyl-ai/rekha">GitHub</a>
+    </nav>
   </div>
 </header>
 
-<aside class="rail">
-  <section>
-    <h2>Image</h2>
-    <label class="file">
-      <input type="file" id="file" accept="image/*">
-      <span>Choose a file</span>
-    </label>
-    <p class="hint">Or drop an image on the canvas, or paste one.</p>
-    <label class="row"><span>Pixel cap</span><input type="number" id="pixelCap" min="10000" step="100000" value="4300000"></label>
-    <p class="hint">Larger images are downscaled to fit. 4.3 million pixels takes a 2048-pixel-square logo at full size and keeps a trace under a minute.</p>
-  </section>
-
-  <section>
-    <h2>Colours <small>re-runs segmentation</small></h2>
-    <label class="row"><span>Preset</span><select id="preset"><option value="bw">Black and white</option><option value="poster">Poster</option><option value="photo" selected>Photo</option></select></label>
-    <label class="row"><span>Max colours</span><input type="number" id="maxColors" min="0" max="256" step="1"></label>
-    <label class="row"><span>Colour tolerance</span><input type="number" id="colorTolerance" min="0" max="1" step="0.01"></label>
-    <label class="row"><span>Threshold</span><span class="pair"><input type="number" id="threshold" min="0" max="1" step="0.05"><label class="check"><input type="checkbox" id="thresholdAuto"> auto</label></span></label>
-    <label class="row"><span>Drop specks below</span><span class="pair"><input type="number" id="filterSpeckle" min="0" max="1024" step="1"><span class="unit">px</span></span></label>
-    <label class="check wide"><input type="checkbox" id="gradients" checked> Smooth gradients</label>
-    <label class="row"><span>Gradient tolerance</span><input type="number" id="gradientTolerance" min="0" max="1" step="0.01"></label>
-    <p class="hint">Joins colour bands that shade smoothly into one gradient fill. Not for the black and white preset.</p>
-  </section>
-
-  <section>
-    <h2>Curves <small>re-runs the fit only</small></h2>
-    <label class="row"><span>Mode</span><select id="mode"><option value="spline">Curves</option><option value="polygon">Straight lines</option><option value="pixel">Pixel edges</option></select></label>
-    <label class="row"><span>Layers</span><select id="hierarchical"><option value="stacked">Stacked</option><option value="cutout">Cut out</option></select></label>
-    <label class="check wide"><input type="checkbox" id="refine"> Refine curves against the anti-aliasing</label>
-    <label class="row"><span>Refine passes</span><input type="number" id="refinePasses" min="1" max="10" step="1"></label>
-    <label class="row"><span>Seal seams</span><span class="pair"><input type="number" id="stroke" min="0" max="4" step="0.1"><span class="unit">px</span></span></label>
-    <label class="row"><span>Decimals</span><input type="number" id="pathPrecision" min="0" max="8" step="1"></label>
-  </section>
-</aside>
-
-<main class="stage" tabindex="0" aria-label="Canvas: drag to pan, ctrl and wheel to zoom">
-  <div class="compare" id="compare" hidden>
-    <img id="sourceImg" alt="Source image" draggable="false">
-    <div class="svgClip" id="svgClip"><img id="svgImg" alt="Traced SVG" draggable="false"></div>
-    <div class="divider" id="divider" role="slider" aria-label="Compare source and SVG" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0"><span></span></div>
-    <span class="tag left">Source</span><span class="tag right">SVG</span>
-  </div>
-  <div class="empty" id="drop">
-    <p class="big">Drop an image here</p>
-    <p>or paste one, or choose a file</p>
-  </div>
-  <div class="zoom" id="zoom" hidden>
-    <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
-    <button id="zoomLevel" title="Actual pixels (1)">100%</button>
-    <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
-    <button id="zoomFit" title="Fit to view (0)">Fit</button>
-  </div>
-</main>
-
-<footer class="status"><span id="status">Loading the tracer…</span></footer>
-
-<div class="busy" id="busy" hidden role="alert" aria-live="assertive">
-  <div class="card">
-    <div class="spinner" aria-hidden="true"></div>
-    <p id="busyText">Working…</p>
-    <div class="bar sweep" id="busyBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-labelledby="busyStage"><div class="fill" id="busyFill"></div></div>
-    <p class="stage" id="busyStage"></p>
-    <button id="busyCancel" class="quiet">Cancel</button>
+<main>
+<div class="hero">
+  <div class="wrap">
+    <div>
+      <h1>Raster in. Clean SVG out.</h1>
+      <p class="lead">Rekha traces PNG and JPEG logos, icons and artwork into compact SVG, and fits shading as real gradient fills instead of flat tiles. It runs in your browser, so your image never leaves your machine.</p>
+      <div class="cta">
+        <a class="btn primary" href="demo/">Open the playground</a>
+        <a class="btn" href="https://github.com/vexyl-ai/rekha">Source on GitHub</a>
+      </div>
+      <p class="fine">Free for open source under AGPL-3.0. Commercial licences for closed products.</p>
+    </div>
+    <figure class="wipe" id="wipe">
+      <div class="frame">
+        <img class="px" src="img/hero-source.png" width="120" height="120" alt="A corner of the Rekha logo as pixels, enlarged eight times">
+        <div class="vec"><img src="img/hero-trace.svg" width="120" height="120" alt="The same corner traced by Rekha as smooth curves"></div>
+        <input type="range" min="0" max="100" value="50" aria-label="Move the divider between pixels and SVG">
+        <div class="handle" aria-hidden="true"></div>
+        <span class="tag l">Pixels</span><span class="tag r">SVG</span>
+      </div>
+      <figcaption>Rekha's own logo at 8×: the PNG on the left, the traced SVG on the right. Drag to compare.</figcaption>
+    </figure>
   </div>
 </div>
 
-<script src="protocol.js"></script>
-<script type="module" src="app.js"></script>
+<section id="compare">
+  <div class="wrap">
+    <h2>Side by side with other tracers</h2>
+    <p class="prose">Three logos, each a 2048-pixel PNG, traced with each tool's default settings and rendered back at source size. PSNR is measured over the logo's own pixels, so higher is closer to the source and the transparent background counts for nothing. Fewer paths and bytes mean an SVG that is easier to edit and faster to load.</p>
+    <table class="scores">
+      <thead><tr><th scope="col">Logo</th><th scope="col">Tool</th><th scope="col" class="n">Paths</th><th scope="col" class="n">Size</th><th scope="col" class="n">PSNR</th></tr></thead>
+      <tbody>
+        <tr class="us"><th scope="row" rowspan="3">Browser mark, radial shading and translucent layers</th><td class="tool">Rekha</td><td class="n">33</td><td class="n">32 kB</td><td class="n">34.8 dB</td></tr>
+        <tr><td>Adobe Express</td><td class="n">197</td><td class="n">325 kB</td><td class="n">28.7 dB</td></tr>
+        <tr><td>VTracer</td><td class="n">7</td><td class="n">30 kB</td><td class="n">17.2 dB</td></tr>
+        <tr class="us"><th scope="row" rowspan="3">Letter G, concentric ramps</th><td class="tool">Rekha</td><td class="n">16</td><td class="n">14 kB</td><td class="n">32.6 dB</td></tr>
+        <tr><td>Adobe Express</td><td class="n">49</td><td class="n">78 kB</td><td class="n">24.0 dB</td></tr>
+        <tr><td>VTracer</td><td class="n">15</td><td class="n">59 kB</td><td class="n">23.9 dB</td></tr>
+        <tr class="us"><th scope="row" rowspan="3">Ball, flat colours and one highlight</th><td class="tool">Rekha</td><td class="n">5</td><td class="n">4 kB</td><td class="n">33.3 dB</td></tr>
+        <tr><td>Adobe Express</td><td class="n">5</td><td class="n">12 kB</td><td class="n">26.6 dB</td></tr>
+        <tr><td>VTracer</td><td class="n">7</td><td class="n">20 kB</td><td class="n">30.5 dB</td></tr>
+      </tbody>
+    </table>
+    <p class="cite prose">Adobe Express is the commercial image-to-SVG tool, exported on 11 November 2026. VTracer 1.0.0-alpha.4 is the open-source colour tracer. Potrace, the classic open-source tracer, traces black and white only, so it has no result on colour art. Method and full figures: <a href="https://github.com/vexyl-ai/rekha/blob/main/bench/results/2026-11-11-adobe-express.md">bench/results</a>.</p>
+    <div class="strips">
+      <figure>
+        <img src="img/compare/firefox-globe.jpg" width="1200" height="416" alt="Browser mark globe, three panels: source, Rekha, Adobe Express. Rekha's shading is smooth; Adobe Express cuts it into flat cells." loading="lazy">
+        <figcaption>Radial shading with translucent layers. Rekha fits one region as a base ramp under two radial layers. Adobe Express cuts it into flat cells.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/compare/letter-g.jpg" width="1200" height="417" alt="Letter G logo, three panels: source, Rekha, Adobe Express. Rekha's rings shade smoothly; Adobe Express bands them." loading="lazy">
+        <figcaption>Concentric ramps. Rekha fits one gradient per ring, plateau included. Adobe Express bands each ring.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/compare/pokeball.jpg" width="1200" height="419" alt="Ball logo, three panels: source, Rekha, Adobe Express. The shapes agree." loading="lazy">
+        <figcaption>Flat colours. The shapes agree, and Rekha's curves take a third of the bytes.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="how" id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="prose">Rekha reduces the image to a few colours, finds the regions and fits each boundary with cubic curves that follow the anti-aliasing. Where neighbouring bands shade into each other it merges them and fits one gradient, linear or radial, with translucent layers on top for highlights and vignettes. The output is a small SVG that scales, edits and renders the same everywhere.</p>
+    <p class="prose">The same engine runs as a Go library, a command-line tool, a WebAssembly module and an HTTP service. Pure Go, no cgo, one dependency.</p>
+<pre><code>go install github.com/vexyl-ai/rekha/cmd/rekha@latest
+rekha --preset photo --gradients artwork.png     # writes artwork.svg</code></pre>
+  </div>
+</section>
+
+<section class="who" id="who">
+  <div class="wrap">
+    <h2>Who it's for</h2>
+    <div class="cols">
+      <div>
+        <h3>Designers</h3>
+        <p>Rebuild a logo from the only copy left, a PNG, and get editable paths and gradients rather than a bitmap wrapped in an SVG. Try it in the playground; nothing is uploaded.</p>
+      </div>
+      <div>
+        <h3>Developers</h3>
+        <p>Call it from Go, run the CLI in a build step, load the WebAssembly module in a page or post an image to the HTTP endpoint. Every output is deterministic and covered by tests.</p>
+      </div>
+      <div>
+        <h3>Companies</h3>
+        <p>Put tracing inside your own product or service. A commercial licence lets you do that without opening your source, and it funds Rekha's development.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="licence" id="licence">
+  <div class="wrap">
+    <h2>Free to use, paid to embed</h2>
+    <div class="cols">
+      <div>
+        <h3>Open source, AGPL-3.0</h3>
+        <p>Use Rekha, change it and ship it at no cost, as long as what you ship stays open under the same licence, including when it is offered over a network. The source, the tests and the benchmarks are all on GitHub.</p>
+        <div class="cta"><a class="btn" href="https://github.com/vexyl-ai/rekha">Get the source</a></div>
+      </div>
+      <div class="paid">
+        <h3>Commercial licence</h3>
+        <p>For a closed product or service, a commercial licence removes the AGPL obligations. Terms are simple and priced for the size of the deployment. Ask by <a href="https://github.com/vexyl-ai/rekha/issues/new">opening an issue</a> or by writing to the author on LinkedIn.</p>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/vexyl-ai/rekha/blob/main/COMMERCIAL.md">Read the terms</a>
+          <a class="btn" href="https://www.linkedin.com/in/anilmathewm/">Ask on LinkedIn</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Rekha is written by <a href="https://www.linkedin.com/in/anilmathewm/">Anil Mathew</a>.</span>
+    <span class="spacer"></span>
+    <a href="https://github.com/vexyl-ai/rekha">GitHub</a>
+    <a href="https://github.com/vexyl-ai/rekha/blob/main/LICENSE">AGPL-3.0</a>
+    <a href="https://github.com/vexyl-ai/rekha/blob/main/COMMERCIAL.md">Commercial licence</a>
+    <a href="demo/">Playground</a>
+  </div>
+</footer>
+<script src="site.js"></script>
 </body>
 </html>
