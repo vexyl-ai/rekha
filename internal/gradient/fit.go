@@ -42,16 +42,18 @@ type Ramp struct {
 	Stops          []Stop
 	// Overlays, when the region is shaded more than one way, are painted
 	// over the ramp in order, each as another path of the region's
-	// shape filled with its radial gradient.
+	// shape filled with its gradient.
 	Overlays []Overlay
 }
 
-// Overlay is a radial gradient of one colour whose stops' alpha fades
-// it from its centre outwards; the region shows through where it is
-// clear.
+// Overlay is a gradient of one colour whose stops' alpha fades it; the
+// region shows through where it is clear. Radial by default, from the
+// centre (CX,CY) out to R; Linear, from (X0,Y0) to (X1,Y1).
 type Overlay struct {
-	CX, CY, R float64
-	Stops     []Stop
+	CX, CY, R      float64
+	Linear         bool
+	X0, Y0, X1, Y1 float64
+	Stops          []Stop
 }
 
 // field is a one-dimensional parametrisation of the plane: t = u·p for a

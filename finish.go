@@ -163,26 +163,35 @@ func (s *Segmentation) Finish(o Options) (*Result, error) {
 	mergeable := false
 	gradientIDs := map[int]int{}     // palette index → gradient id
 	overlayIDs := map[int][]string{} // palette index → its overlays' fills
+	// gradientOf defines the gradients a ramp's region is painted with
+	// (once per palette index) and returns the base gradient's id.
+	gradientOf := func(c int) int {
+		if id, ok := gradientIDs[c]; ok {
+			return id
+		}
+		r := s.Ramps[c]
+		id := len(res.Gradients) + len(res.Radials)
+		gradientIDs[c] = id
+		if r.Radial {
+			res.Radials = append(res.Radials, radialGradient(fmt.Sprintf("g%d", id), r))
+		} else {
+			res.Gradients = append(res.Gradients, linearGradient(fmt.Sprintf("g%d", id), r))
+		}
+		for _, ov := range r.Overlays {
+			oid := len(res.Gradients) + len(res.Radials)
+			if ov.Linear {
+				res.Gradients = append(res.Gradients, svg.LinearGradient{ID: fmt.Sprintf("g%d", oid), X1: ov.X0, Y1: ov.Y0, X2: ov.X1, Y2: ov.Y1, Stops: svgStops(ov.Stops)})
+			} else {
+				res.Radials = append(res.Radials, svg.RadialGradient{ID: fmt.Sprintf("g%d", oid), CX: ov.CX, CY: ov.CY, R: ov.R, Stops: svgStops(ov.Stops)})
+			}
+			overlayIDs[c] = append(overlayIDs[c], fmt.Sprintf("url(#g%d)", oid))
+		}
+		return id
+	}
 	for i, l := range layers {
 		fill := colour.FromSRGB8(s.Palette[l.colour].R, s.Palette[l.colour].G, s.Palette[l.colour].B).Hex()
 		if s.hasRamp(l.colour) {
-			id, ok := gradientIDs[l.colour]
-			if !ok {
-				id = len(res.Gradients) + len(res.Radials)
-				gradientIDs[l.colour] = id
-				r := s.Ramps[l.colour]
-				if r.Radial {
-					res.Radials = append(res.Radials, radialGradient(fmt.Sprintf("g%d", id), r))
-				} else {
-					res.Gradients = append(res.Gradients, linearGradient(fmt.Sprintf("g%d", id), r))
-				}
-				for _, ov := range r.Overlays {
-					oid := len(res.Gradients) + len(res.Radials)
-					res.Radials = append(res.Radials, svg.RadialGradient{ID: fmt.Sprintf("g%d", oid), CX: ov.CX, CY: ov.CY, R: ov.R, Stops: svgStops(ov.Stops)})
-					overlayIDs[l.colour] = append(overlayIDs[l.colour], fmt.Sprintf("url(#g%d)", oid))
-				}
-			}
-			fill = fmt.Sprintf("url(#g%d)", id)
+			fill = fmt.Sprintf("url(#g%d)", gradientOf(l.colour))
 		}
 		// Stacked outers of one colour share a <path>; cutout keeps one
 		// path per shape, as Phase 1 did. A layer with holes (an extended

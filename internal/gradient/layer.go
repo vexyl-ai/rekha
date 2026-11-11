@@ -34,19 +34,34 @@ const (
 	refineSeeds  = 3   // seeds, best short fits first, that are refined
 )
 
-// overlay is one radial layer: colour over an opacity profile sampled
-// by distance from (cx, cy) between tmin and tmax.
+// overlay is one layer: colour over an opacity profile sampled along a
+// parameter between tmin and tmax, the distance from (cx, cy) or, for
+// a linear overlay, the projection on the unit direction (ux, uy). The
+// profile fades out along the parameter (a highlight, a rim light from
+// outside) or, for an outward overlay, fades in (a vignette, the
+// darkening of a body towards its rim, a shadow on one side).
 type overlay struct {
 	cx, cy     float64
+	linear     bool
+	ux, uy     float64
 	colour     [3]float64
 	tmin, tmax float64
-	alpha      []float64 // per bin, non-increasing from the centre
+	alpha      []float64 // per bin, monotone along the parameter
+	outward    bool      // the opacity rises along the parameter
+}
+
+// param is the overlay's parameter at (x, y).
+func (o *overlay) param(x, y float64) float64 {
+	if o.linear {
+		return float64(o.ux*x) + float64(o.uy*y)
+	}
+	return math.Hypot(x-o.cx, y-o.cy)
 }
 
 // at is the overlay's opacity at (x, y): the profile interpolated
 // between bin centres, held flat beyond the ends.
 func (o *overlay) at(x, y float64) float64 {
-	return o.alphaAt(math.Hypot(x-o.cx, y-o.cy))
+	return o.alphaAt(o.param(x, y))
 }
 
 func (o *overlay) alphaAt(r float64) float64 {
@@ -128,8 +143,14 @@ func (l *layered) ramp(m *moments, tol float64) *Ramp {
 		nb := len(o.alpha)
 		raw := []rawStop{{offset: 0, colour: [3]float64{o.alpha[0], o.alpha[0], o.alpha[0]}}}
 		for j, a := range o.alpha {
+			// A radial gradient's offsets run from the centre, a
+			// linear one's from the parameter's low end.
 			t := o.tmin + float64((float64(j)+0.5)/float64(nb)*(o.tmax-o.tmin))
-			raw = append(raw, rawStop{offset: t / o.tmax, colour: [3]float64{a, a, a}})
+			off := t / o.tmax
+			if o.linear {
+				off = (t - o.tmin) / (o.tmax - o.tmin)
+			}
+			raw = append(raw, rawStop{offset: off, colour: [3]float64{a, a, a}})
 		}
 		last := o.alpha[nb-1]
 		raw = append(raw, rawStop{offset: 1, colour: [3]float64{last, last, last}})
@@ -139,6 +160,16 @@ func (l *layered) ramp(m *moments, tol float64) *Ramp {
 			c := colour
 			c.A = uint8(math.Round(math.Max(0, math.Min(1, s.colour[0])) * 255))
 			os = append(os, Stop{Offset: s.offset, Colour: c})
+		}
+		if o.linear {
+			// The profile runs from tmin to tmax along the direction, on
+			// the line through the centroid.
+			t0 := o.param(cx, cy)
+			rp.Overlays = append(rp.Overlays, Overlay{Linear: true,
+				X0: cx + float64((o.tmin-t0)*o.ux), Y0: cy + float64((o.tmin-t0)*o.uy),
+				X1: cx + float64((o.tmax-t0)*o.ux), Y1: cy + float64((o.tmax-t0)*o.uy),
+				Stops: os})
+			continue
 		}
 		rp.Overlays = append(rp.Overlays, Overlay{CX: o.cx, CY: o.cy, R: o.tmax, Stops: os})
 	}
@@ -277,12 +308,15 @@ func (f *layerFit) refitBase() {
 	}
 }
 
-// seeds proposes centres for the next overlay from the residual: where
-// its gradients point through, the centroid of its peak (the pixels in
-// the top peakShare of residual magnitude), and that peak mirrored
-// beyond the region's far side (a rim light's centre lies outside the
-// region). The colour is seeded on the far side of the residual at the
-// peak, so the first least-squares round has something to lean on.
+// seeds proposes the next overlay from the residual: centred where its
+// gradients point through (fading either way), on the centroid of its
+// peak (the pixels in the top peakShare of residual magnitude), on
+// that peak mirrored beyond the region's far side (a rim light's
+// centre lies outside the region), on the region's own centre with the
+// opacity rising outwards (a vignette), and linear along the direction
+// of the residual's planes, fading either way (a shadow on one side).
+// The colour is seeded on the far side of the residual at the peak, so
+// the first least-squares round has something to lean on.
 func (f *layerFit) seeds(rgb []uint8, w, h int, member func(p int) bool) []overlay {
 	l := f.l
 	n := len(f.samp)
@@ -332,11 +366,19 @@ func (f *layerFit) seeds(rgb []uint8, w, h int, member func(p int) bool) []overl
 	cx, cy := sx/float64(n), sy/float64(n)
 	var out []overlay
 	if gx, gy, ok := m.centre(); ok {
-		out = append(out, overlay{cx: gx, cy: gy, colour: colour})
+		out = append(out, overlay{cx: gx, cy: gy, colour: colour}, overlay{cx: gx, cy: gy, colour: colour, outward: true})
 	}
 	out = append(out,
 		overlay{cx: px, cy: py, colour: colour},
-		overlay{cx: cx + mirror*(px-cx), cy: cy + mirror*(py-cy), colour: colour})
+		overlay{cx: cx + mirror*(px-cx), cy: cy + mirror*(py-cy), colour: colour},
+		// A vignette about the region's centre.
+		overlay{cx: cx, cy: cy, colour: colour, outward: true})
+	// A fade along the residual's own direction, either way.
+	if rf := m.fit(); rf.ok {
+		out = append(out,
+			overlay{cx: cx, cy: cy, linear: true, ux: rf.u[0], uy: rf.u[1], colour: colour},
+			overlay{cx: cx, cy: cy, linear: true, ux: rf.u[0], uy: rf.u[1], colour: colour, outward: true})
+	}
 	// A ring of centres outside the region, for a rim light whose
 	// residual the base ramp has mostly absorbed.
 	var sxx, syy float64
@@ -388,11 +430,11 @@ func (f *layerFit) snapshot() layered {
 	return saved
 }
 
-// span sets an overlay's distance range over the sample.
+// span sets an overlay's parameter range over the sample.
 func (f *layerFit) span(o *overlay) {
 	o.tmin, o.tmax = math.Inf(1), math.Inf(-1)
 	for _, s := range f.samp {
-		r := math.Hypot(s.x-o.cx, s.y-o.cy)
+		r := o.param(s.x, s.y)
 		o.tmin = math.Min(o.tmin, r)
 		o.tmax = math.Max(o.tmax, r)
 	}
@@ -438,10 +480,10 @@ func (f *layerFit) refitOverlay(j int) {
 			Y = mixColour(Y, l.over[k].colour, a)
 			F *= 1 - a
 		}
-		terms[i] = term{r: math.Hypot(s.x-o.cx, s.y-o.cy), d: scale(sub(o.colour, below), F), resid: sub(s.c, Y), below: below, f: F}
+		terms[i] = term{r: o.param(s.x, s.y), d: scale(sub(o.colour, below), F), resid: sub(s.c, Y), below: below, f: F}
 	}
-	// Opacity per bin: α = Σ resid·d / Σ d·d, clipped, then
-	// non-increasing from the centre.
+	// Opacity per bin: α = Σ resid·d / Σ d·d, clipped, then monotone
+	// from the centre.
 	num := make([]float64, opacityBins)
 	den := make([]float64, opacityBins)
 	binOf := func(r float64) int {
@@ -453,7 +495,11 @@ func (f *layerFit) refitOverlay(j int) {
 		num[i] += dot(t.resid, t.d)
 		den[i] += dot(t.d, t.d)
 	}
-	o.alpha = nonIncreasing(num, den)
+	if o.outward {
+		o.alpha = nonDecreasing(num, den)
+	} else {
+		o.alpha = nonIncreasing(num, den)
+	}
 	// Colour: resid = g·(H − below), g = α·F, so H = Σ g·(resid +
 	// g·below) / Σ g², clipped to the gamut.
 	var hn [3]float64
@@ -475,7 +521,8 @@ func (f *layerFit) refitOverlay(j int) {
 // refineCentre moves overlay j's centre by coordinate descent on the
 // sample RMS: a step of a quarter of the sample's radius, halved
 // whenever no direction improves, until it is under a pixel or the
-// trials run out. Each move is judged after a short alternating fit.
+// trials run out; a linear overlay turns instead. Each move is judged
+// after a short alternating fit.
 func (f *layerFit) refineCentre(j int) {
 	l := f.l
 	var sx, sy, sxx, syy float64
@@ -489,6 +536,34 @@ func (f *layerFit) refineCentre(j int) {
 	step := math.Sqrt(math.Max((sxx+syy)/n-float64(sx/n*sx/n)-float64(sy/n*sy/n), 1)) / 4
 	best := f.rms()
 	trials := 0
+	if l.over[j].linear {
+		// A linear overlay turns instead: by an eighth of a turn,
+		// halved whenever neither way improves, down to a degree.
+		for turn := math.Pi / 8; turn >= math.Pi/180 && trials < refineTrials; {
+			improved := false
+			for _, d := range [2]float64{turn, -turn} {
+				if trials >= refineTrials {
+					break
+				}
+				trials++
+				saved := f.snapshot()
+				o := &l.over[j]
+				o.ux, o.uy = float64(o.ux*math.Cos(d))-float64(o.uy*math.Sin(d)), float64(o.ux*math.Sin(d))+float64(o.uy*math.Cos(d))
+				f.span(o)
+				f.alternate(layerIters / 2)
+				if r := f.rms(); r < best {
+					best = r
+					improved = true
+					break
+				}
+				*l = saved
+			}
+			if !improved {
+				turn /= 2
+			}
+		}
+		return
+	}
 	for step >= 1 && trials < refineTrials {
 		improved := false
 		for _, d := range [4][2]float64{{step, 0}, {-step, 0}, {0, step}, {0, -step}} {
@@ -545,6 +620,20 @@ func nonIncreasing(num, den []float64) []float64 {
 		for range b.cnt {
 			out = append(out, v)
 		}
+	}
+	return out
+}
+
+// nonDecreasing is nonIncreasing read from the far end.
+func nonDecreasing(num, den []float64) []float64 {
+	n := len(num)
+	rn, rd := make([]float64, n), make([]float64, n)
+	for i := range num {
+		rn[n-1-i], rd[n-1-i] = num[i], den[i]
+	}
+	out := nonIncreasing(rn, rd)
+	for i := 0; i < n/2; i++ {
+		out[i], out[n-1-i] = out[n-1-i], out[i]
 	}
 	return out
 }

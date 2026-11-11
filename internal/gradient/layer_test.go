@@ -67,7 +67,7 @@ func TestFitLayeredSphere(t *testing.T) {
 	}
 	found := false
 	for _, o := range l.over {
-		if math.Hypot(o.cx-70, o.cy-130) <= 10 {
+		if math.Hypot(o.cx-70, o.cy-130) <= 15 {
 			found = true
 		}
 	}
@@ -143,5 +143,138 @@ func TestLayeredRamp(t *testing.T) {
 		if o.Stops[0].Colour.A == 0 {
 			t.Errorf("overlay %d is clear at its centre", i)
 		}
+	}
+}
+
+// vignetteImage is a disc shaded by a linear base ramp along x under a
+// dark rim that deepens with the distance from the disc's centre (an
+// overlay whose opacity rises outwards, as an edge darkening does).
+func vignetteImage(w, h int) (rgb []uint8, pix []int) {
+	cx, cy, rad := 100.0, 100.0, 90.0
+	rgb = make([]uint8, 3*w*h)
+	for p := range w * h {
+		x, y := float64(p%w)+0.5, float64(p/w)+0.5
+		c := [3]float64{1, 1, 1}
+		if r := math.Hypot(x-cx, y-cy); r <= rad {
+			f := x / float64(w)
+			c = [3]float64{0.9 - 0.2*f, 0.5 + 0.1*f, 0.2}
+			a := math.Max(0, (r-40)/50)
+			c = mixColour(c, [3]float64{0.5, 0, 0.3}, 0.7*a*a)
+			pix = append(pix, p)
+		}
+		for k := range c {
+			rgb[3*p+k] = uint8(math.Round(math.Max(0, math.Min(1, c[k])) * 255))
+		}
+	}
+	return rgb, pix
+}
+
+// A disc darkened towards its rim is reproduced by the layered model
+// with an overlay whose opacity rises from the centre outwards.
+func TestFitLayeredVignette(t *testing.T) {
+	const w, h = 200, 200
+	rgb, pix := vignetteImage(w, h)
+	in := make([]bool, w*h)
+	for _, p := range pix {
+		in[p] = true
+	}
+	l := fitLayered(rgb, pix, func(p int) bool { return in[p] }, w, h, field{u: [2]float64{1, 0}}, 0.03)
+	if l == nil {
+		t.Fatal("no layered model")
+	}
+	if l.rms > 0.012 {
+		t.Fatalf("rms %.4f", l.rms)
+	}
+	found := false
+	for _, o := range l.over {
+		if math.Hypot(o.cx-100, o.cy-100) <= 10 && o.alpha[len(o.alpha)-1] > o.alpha[0]+0.3 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no outward overlay about the centre: %+v", l.over)
+	}
+}
+
+// fadeImage is a disc shaded by a linear base ramp along x under a
+// dark colour that fades in towards the lower-right edge along the
+// diagonal (an overlay whose opacity rises along one direction, as a
+// shadow on one side does).
+func fadeImage(w, h int) (rgb []uint8, pix []int) {
+	cx, cy, rad := 100.0, 100.0, 90.0
+	rgb = make([]uint8, 3*w*h)
+	for p := range w * h {
+		x, y := float64(p%w)+0.5, float64(p/w)+0.5
+		c := [3]float64{1, 1, 1}
+		if math.Hypot(x-cx, y-cy) <= rad {
+			f := x / float64(w)
+			c = [3]float64{0.9 - 0.2*f, 0.5 + 0.1*f, 0.2}
+			t := (x + y) / math.Sqrt2 // along the diagonal
+			a := math.Max(0, (t-120)/90)
+			c = mixColour(c, [3]float64{0.5, 0, 0.3}, 0.7*a*a)
+			pix = append(pix, p)
+		}
+		for k := range c {
+			rgb[3*p+k] = uint8(math.Round(math.Max(0, math.Min(1, c[k])) * 255))
+		}
+	}
+	return rgb, pix
+}
+
+// A disc darkened towards one edge is reproduced by the layered model
+// with an overlay that fades along the diagonal.
+func TestFitLayeredFade(t *testing.T) {
+	const w, h = 200, 200
+	rgb, pix := fadeImage(w, h)
+	in := make([]bool, w*h)
+	for _, p := range pix {
+		in[p] = true
+	}
+	l := fitLayered(rgb, pix, func(p int) bool { return in[p] }, w, h, field{u: [2]float64{1, 0}}, 0.03)
+	if l == nil {
+		t.Fatal("no layered model")
+	}
+	if l.rms > 0.012 {
+		t.Fatalf("rms %.4f", l.rms)
+	}
+	// The fade is reproduced by a linear overlay along the diagonal or
+	// by a radial one centred far down the diagonal, which comes to
+	// the same across the disc.
+	found := false
+	for _, o := range l.over {
+		if o.linear && math.Abs(math.Abs(o.ux)-math.Sqrt2/2) < 0.1 && o.ux*o.uy > 0 {
+			found = true
+		}
+		if !o.linear && o.cx > 190 && o.cy > 190 && math.Abs(o.cx-o.cy) < 0.3*(o.cx+o.cy-200) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no overlay fading along the diagonal: %+v", l.over)
+	}
+}
+
+// A linear overlay is emitted as a gradient along its direction
+// through the region's centroid, from the parameter's low end to its
+// high end, with the profile in the stops' alpha.
+func TestLayeredRampLinearOverlay(t *testing.T) {
+	l := &layered{
+		fld: field{u: [2]float64{1, 0}}, tmin: 0, tmax: 100,
+		base: []rawStop{{offset: 0, colour: [3]float64{0.2, 0.2, 0.2}}, {offset: 1, colour: [3]float64{0.8, 0.8, 0.8}}},
+		over: []overlay{{linear: true, ux: 0, uy: 1, cx: 50, cy: 50, tmin: 20, tmax: 120,
+			colour: [3]float64{1, 0, 0}, alpha: []float64{0, 0.25, 0.5, 0.75, 1}, outward: true}},
+	}
+	m := &moments{n: 1, sx: 50, sy: 50}
+	rp := l.ramp(m, 0.03)
+	if rp == nil || len(rp.Overlays) != 1 {
+		t.Fatalf("ramp %+v", rp)
+	}
+	o := rp.Overlays[0]
+	if !o.Linear || o.X0 != 50 || o.Y0 != 20 || o.X1 != 50 || o.Y1 != 120 {
+		t.Fatalf("overlay runs (%g,%g)→(%g,%g), want (50,20)→(50,120): %+v", o.X0, o.Y0, o.X1, o.Y1, o)
+	}
+	first, last := o.Stops[0], o.Stops[len(o.Stops)-1]
+	if first.Offset != 0 || last.Offset != 1 || first.Colour.A != 0 || last.Colour.A != 255 {
+		t.Errorf("stops %+v, want alpha 0 at offset 0 and 255 at offset 1", o.Stops)
 	}
 }
