@@ -11,6 +11,9 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    env:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_REPO: vexyl-ai/rekha
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,3 +39,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+      # Linux package repositories: apt, dnf and apk users add the Cloudsmith
+      # repo once and get every release. Skipped when the key is not set.
+      - name: Publish packages to Cloudsmith
+        if: env.CLOUDSMITH_API_KEY != ''
+        run: |
+          pipx install cloudsmith-cli
+          for f in dist/*.deb; do cloudsmith push deb --republish "$CLOUDSMITH_REPO/any-distro/any-version" "$f"; done
+          for f in dist/*.rpm; do cloudsmith push rpm --republish "$CLOUDSMITH_REPO/any-distro/any-version" "$f"; done
+          for f in dist/*.apk; do cloudsmith push alpine --republish "$CLOUDSMITH_REPO/alpine/any-version" "$f"; done
