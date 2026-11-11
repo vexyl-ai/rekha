@@ -302,3 +302,21 @@ func TestFlagStrokeAlias(t *testing.T) {
 		t.Fatalf("the last of --cutout-stroke/--stroke wins: %.300q", out)
 	}
 }
+
+func TestNoMarkFlag(t *testing.T) {
+	in := starPNG
+	var out, errb bytes.Buffer
+	if code := run([]string{"-o", "-", in}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte("data-generator=\"rekha ")) {
+		t.Fatalf("default output lacks the mark: %s", out.String()[:80])
+	}
+	out.Reset()
+	if code := run([]string{"--no-mark", "-o", "-", in}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if bytes.Contains(out.Bytes(), []byte("generator")) {
+		t.Fatal("--no-mark output still marked")
+	}
+}

@@ -84,6 +84,11 @@ type Options struct {
 	Gradients         bool    // colour presets: merge adjacent bands that form one linear ramp into a gradient fill
 	GradientTolerance float64 // 0..1, default 0.03; RMS sRGB distance (channels 0..1) a ramp may leave
 
+	// NoMark leaves out the generator mark: by default the SVG root
+	// carries data-generator="rekha <version>" and a comment naming
+	// Rekha and its repository. Neither changes how the image renders.
+	NoMark bool
+
 	// Progress, when set, is told how far Segment and Finish have got:
 	// stage names quantise, label, ramps (Segment; no count) and
 	// outlines, nest, edges, refine, curves (Finish; done of total, total

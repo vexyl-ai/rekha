@@ -24,7 +24,7 @@ curl -H 'Content-Type: image/png' --data-binary @logo.png 'localhost:8080/v1/tra
 
 `GET /healthz` → `200 ok`.
 
-`POST /v1/trace`, either `multipart/form-data` with a file field `image` and one text field per option, or a raw body with `Content-Type: image/*` and options as query parameters. Option names are the CLI flags in camelCase (`preset`, `mode`, `hierarchical`, `maxColors`, `colorTolerance`, `threshold` = number or `auto`, `refine`, `refinePasses`, `gradients`, `gradientTolerance`, `palette` = `#rrggbb,#rrggbb`, …; the full list is `internal/apiopts.Params`). PNG, JPEG and GIF decode.
+`POST /v1/trace`, either `multipart/form-data` with a file field `image` and one text field per option, or a raw body with `Content-Type: image/*` and options as query parameters. Option names are the CLI flags in camelCase (`preset`, `mode`, `hierarchical`, `maxColors`, `colorTolerance`, `threshold` = number or `auto`, `refine`, `refinePasses`, `gradients`, `gradientTolerance`, `noMark`, `palette` = `#rrggbb,#rrggbb`, …; the full list is `internal/apiopts.Params`). PNG, JPEG and GIF decode.
 
 Success: `200`, `Content-Type: image/svg+xml; charset=utf-8`, headers `X-Rekha-Paths` and `X-Rekha-Millis`. Errors are JSON `{"error": "…"}`:
 

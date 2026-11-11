@@ -127,7 +127,14 @@ type Document struct {
 	Gradients     []LinearGradient
 	Radials       []RadialGradient
 	Paths         []Path
+	// Generator, when set, names the tool and version that produced the
+	// document: it goes on the root as data-generator and, with the
+	// project URL, in a comment on the first line inside the root.
+	Generator string
 }
+
+// Repository is the project URL the generator comment points at.
+const Repository = "https://github.com/vexyl-ai/rekha"
 
 // writeStop writes one <stop/> with its offset to prec decimals; the
 // opacity, when under 1, to three.
@@ -149,8 +156,17 @@ func Write(w io.Writer, width, height int, paths []Path, prec int) error {
 // decimals, four on a radial gradient (whose first stop may sit most of
 // the way out).
 func WriteDocument(w io.Writer, d Document, prec int) error {
-	if _, err := fmt.Fprintf(w, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\">\n", d.Width, d.Height, d.Width, d.Height); err != nil {
+	mark := ""
+	if d.Generator != "" {
+		mark = fmt.Sprintf(" data-generator=\"%s\"", d.Generator)
+	}
+	if _, err := fmt.Fprintf(w, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\"%s>\n", d.Width, d.Height, d.Width, d.Height, mark); err != nil {
 		return err
+	}
+	if d.Generator != "" {
+		if _, err := fmt.Fprintf(w, "<!-- Traced by %s, %s -->\n", strings.Replace(d.Generator, "rekha", "Rekha", 1), Repository); err != nil {
+			return err
+		}
 	}
 	if len(d.Gradients)+len(d.Radials) > 0 {
 		var b strings.Builder

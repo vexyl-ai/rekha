@@ -160,3 +160,25 @@ func TestWriteDocumentStopOpacity(t *testing.T) {
 		t.Errorf("got\n%s\nwant a defs line\n%s", b.String(), want)
 	}
 }
+
+func TestWriteDocumentGeneratorMark(t *testing.T) {
+	var buf bytes.Buffer
+	d := Document{Width: 4, Height: 4, Generator: "rekha v1.2.0"}
+	if err := WriteDocument(&buf, d, 2); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.HasPrefix(out, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\" viewBox=\"0 0 4 4\" data-generator=\"rekha v1.2.0\">\n") {
+		t.Fatalf("root tag lacks data-generator: %q", out)
+	}
+	if !strings.Contains(out, "<!-- Traced by Rekha v1.2.0, https://github.com/vexyl-ai/rekha -->\n") {
+		t.Fatalf("comment missing: %q", out)
+	}
+	buf.Reset()
+	if err := WriteDocument(&buf, Document{Width: 4, Height: 4}, 2); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "generator") || strings.Contains(buf.String(), "<!--") {
+		t.Fatalf("unmarked document carries a mark: %q", buf.String())
+	}
+}

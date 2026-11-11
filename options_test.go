@@ -1,10 +1,12 @@
 package rekha
 
 import (
+	"bytes"
 	"errors"
 	"image/color"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/refine"
@@ -165,5 +167,32 @@ func TestPresetCutoutStroke(t *testing.T) {
 		if err := o.Validate(); !errors.As(err, &ve) || ve.Field != "Stroke" {
 			t.Errorf("CutoutStroke %v: got %v", v, err)
 		}
+	}
+}
+
+func TestWriteSVGMarkedByDefault(t *testing.T) {
+	r := &Result{Width: 2, Height: 2}
+	var buf bytes.Buffer
+	o := DefaultOptions()
+	if err := r.WriteSVG(&buf, o); err != nil {
+		t.Fatal(err)
+	}
+	want := "data-generator=\"rekha " + Version() + "\""
+	if !strings.Contains(buf.String(), want) || !strings.Contains(buf.String(), "<!-- Traced by Rekha ") {
+		t.Fatalf("default output lacks the mark %q: %q", want, buf.String())
+	}
+	buf.Reset()
+	o.NoMark = true
+	if err := r.WriteSVG(&buf, o); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "generator") || strings.Contains(buf.String(), "<!--") {
+		t.Fatalf("NoMark output carries a mark: %q", buf.String())
+	}
+}
+
+func TestVersionNonEmpty(t *testing.T) {
+	if v := Version(); v == "" || strings.ContainsAny(v, " \n") {
+		t.Fatalf("Version() = %q", v)
 	}
 }

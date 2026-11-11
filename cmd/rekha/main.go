@@ -19,8 +19,6 @@ import (
 	_ "image/png"
 )
 
-const version = "dev"
-
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
@@ -58,6 +56,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Float64Var(&o.Stroke, "cutout-stroke", o.Stroke, "old name for --stroke")
 	fs.BoolVar(&o.Gradients, "gradients", o.Gradients, "merge adjacent colour bands that form one linear ramp into a gradient fill (colour presets)")
 	fs.Float64Var(&o.GradientTolerance, "gradient-tolerance", o.GradientTolerance, "RMS colour error 0..1 a gradient fill may leave, in sRGB units (0.03 ≈ 8/255)")
+	fs.BoolVar(&o.NoMark, "no-mark", o.NoMark, "leave out the data-generator attribute and the Rekha comment from the SVG")
 	fs.StringVar(&output, "output", "", "output path (single input only; - for stdout)")
 	fs.StringVar(&output, "o", "", "alias for --output")
 	fs.BoolVar(&showVersion, "version", false, "print version and exit")
@@ -66,7 +65,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	if showVersion {
-		fmt.Fprintln(stdout, "rekha "+version)
+		fmt.Fprintln(stdout, "rekha "+rekha.Version())
 		return cli.ExitOK
 	}
 	inputs := fs.Args()

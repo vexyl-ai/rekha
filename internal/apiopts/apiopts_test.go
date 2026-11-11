@@ -122,3 +122,20 @@ func TestParseStrokeAlias(t *testing.T) {
 		t.Errorf("stroke wins over the alias: %+v", o.Stroke)
 	}
 }
+
+func TestParseNoMark(t *testing.T) {
+	o, err := Parse([]byte(`{"noMark": true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !o.NoMark {
+		t.Fatal("noMark not applied")
+	}
+	o, err = FromStrings(map[string]string{"noMark": "true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !o.NoMark {
+		t.Fatal("noMark not applied from strings")
+	}
+}

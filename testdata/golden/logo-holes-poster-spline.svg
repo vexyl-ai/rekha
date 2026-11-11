@@ -1,4 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" data-generator="rekha dev">
+<!-- Traced by Rekha dev, https://github.com/vexyl-ai/rekha -->
 <path fill="#141e3c" d="M0 0H256V256H0Z"/>
 <path fill="#db1e1e" d="M59 64H101C106.78 64 120 77.22 120 83V173C120 178.78 106.78 192 101 192H59C53.22 192 40 178.78 40 173V83C40 77.22 53.22 64 59 64Z"/>
 <path fill="#1e3cdc" d="M156 64H212C215.28 64 224 72.72 224 76V180C224 183.28 215.28 192 212 192H156C152.72 192 144 183.28 144 180V76C144 72.72 152.72 64 156 64Z"/>

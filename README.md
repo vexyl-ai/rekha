@@ -112,6 +112,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 | `--hierarchical stacked\|cutout` | `cutout` / `stacked` | Shapes with holes sharing one boundary curve, or layered shapes (`bw` / colour presets) |
 | `--stroke px` | `0` | Stroke each shape in its own fill to seal hairline seams when viewed enlarged (0–4; `--cutout-stroke` is accepted as an alias) |
 | `--path-precision N` | `2` | Decimals in path data |
+| `--no-mark` | off | Leave out the generator mark: by default the root carries `data-generator="rekha <version>"` and a comment names Rekha and this repository; neither changes how the image renders |
 | `-o, --output` | `<input>.svg` | Output file, or `-` for stdout |
 
 In stacked output the white page is omitted (near-white shapes at depth 0 holding at least half the depth-0 area), so transparent input stays transparent.

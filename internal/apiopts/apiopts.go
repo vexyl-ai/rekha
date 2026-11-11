@@ -38,6 +38,7 @@ type Params struct {
 	Stroke            *float64   `json:"stroke"`
 	Gradients         *bool      `json:"gradients"`
 	GradientTolerance *float64   `json:"gradientTolerance"`
+	NoMark            *bool      `json:"noMark"` // leave out the data-generator mark and comment
 }
 
 // Threshold is a foreground threshold: a number in 0..1 or "auto" (Otsu).
@@ -171,6 +172,9 @@ func Parse(jsonText []byte) (rekha.Options, error) {
 		o.Gradients = *p.Gradients
 	}
 	setFloat(&o.GradientTolerance, p.GradientTolerance)
+	if p.NoMark != nil {
+		o.NoMark = *p.NoMark
+	}
 	if err := o.Validate(); err != nil {
 		return rekha.Options{}, err
 	}

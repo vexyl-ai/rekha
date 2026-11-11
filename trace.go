@@ -40,9 +40,14 @@ func Trace(img image.Image, o Options) (*Result, error) {
 	return s.Finish(o)
 }
 
-// WriteSVG writes r as an SVG document with o.PathPrecision decimals.
+// WriteSVG writes r as an SVG document with o.PathPrecision decimals,
+// marked with Rekha's name and version unless o.NoMark is set.
 func (r *Result) WriteSVG(w io.Writer, o Options) error {
-	return svg.WriteDocument(w, svg.Document{Width: r.Width, Height: r.Height, Gradients: r.Gradients, Radials: r.Radials, Paths: r.Paths}, o.PathPrecision)
+	d := svg.Document{Width: r.Width, Height: r.Height, Gradients: r.Gradients, Radials: r.Radials, Paths: r.Paths}
+	if !o.NoMark {
+		d.Generator = "rekha " + Version()
+	}
+	return svg.WriteDocument(w, d, o.PathPrecision)
 }
 
 // segments converts one closed crack loop into path segments for o.Mode.
