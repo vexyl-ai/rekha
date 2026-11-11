@@ -89,7 +89,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 | `--palette "#rrggbb,…"` | | Fixed palette, up to 256 entries |
 | `--color-precision N` | `6` | Bits per channel in the quantiser |
 | `--filter-speckle N` | `4` / `16` | Drop components below N pixels (`poster` / `photo`) |
-| `--gradients` | off | Colour presets: merge bands that follow one ramp into a `<linearGradient>` fill, a `<radialGradient>` when they run round a centre, or a base gradient under translucent radial layers when the region is shaded more than one way |
+| `--gradients` | off | Colour presets: merge bands that follow one ramp into a `<linearGradient>` fill, a `<radialGradient>` when they run round a centre, or a base gradient under translucent layers (radial or linear, fading either way) when the region is shaded more than one way |
 | `--gradient-tolerance 0..1` | `0.03` | RMS error a ramp may leave, in sRGB units (about 8/255) |
 
 ### Curves
@@ -175,7 +175,7 @@ All numbers in this file are produced by `make test` and `make bench`; fixtures 
 | Small glyphs | 32.26 dB, 86 nodes (Potrace: 32.22 dB, 107 nodes) |
 | 3.4-megapixel colour logo, `--preset poster` | 14 paths; PSNR level with VTracer (28.95 vs 28.98 dB), white counters kept white |
 | 16-megapixel illustration, `--preset photo --gradients` | 155 → 82 paths, 36.7 → 39.8 dB, 60 % fewer bytes |
-| 4-megapixel browser mark, `--preset photo --gradients` | 35 paths at 36.4 dB with layered gradients (flat bands: 31 paths at 34.5 dB), half the bytes; the globe one smooth region, seams between gradients smooth |
+| 4-megapixel browser mark, `--preset photo --gradients` | 33 paths at 36.3 dB with layered gradients (flat bands: 31 paths at 34.5 dB), half the bytes; the globe one smooth region, seams between gradients smooth |
 | WebAssembly | median 4.5× one-core native; 1.2 MB gzipped |
 
 Recorded baselines: [`bench/results/`](bench/results/). Methodology and reference-tool comparison: [`docs/benchmark.md`](docs/benchmark.md).
