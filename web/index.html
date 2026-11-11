@@ -133,7 +133,7 @@
 
     <h3>On the command line</h3>
     <p class="prose"><a href="https://github.com/vexyl-ai/rekha/releases/latest">Download a binary</a> for Linux, macOS, Windows or FreeBSD, a <code>.deb</code>, <code>.rpm</code> or <code>.apk</code> package, or install with Go 1.26 or later. Then point it at an image. Each preset seeds every other setting; any flag you give overrides it. Output goes next to the input unless you say otherwise.</p>
-<pre><code>brew install --cask vexyl-ai/tap/rekha           # macOS and Linux
+<pre><code>brew tap vexyl-ai/tap &amp;&amp; brew install --cask rekha   # macOS and Linux
 scoop install rekha                              # Windows, after adding the vexyl-ai bucket
 go install github.com/vexyl-ai/rekha/cmd/rekha@latest
 

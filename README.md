@@ -47,7 +47,7 @@ Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase pr
 ## Installation
 
 ```sh
-brew install --cask vexyl-ai/tap/rekha          # macOS and Linux, Homebrew
+brew tap vexyl-ai/tap && brew install --cask rekha   # macOS and Linux, Homebrew
 scoop bucket add vexyl-ai https://github.com/vexyl-ai/scoop-bucket && scoop install rekha   # Windows
 docker run --rm -p 8080:8080 ghcr.io/vexyl-ai/rekha   # HTTP API in a container
 ```
