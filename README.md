@@ -273,6 +273,6 @@ Package documentation: [pkg.go.dev/github.com/vexyl-ai/rekha](https://pkg.go.dev
 Dual-licensed.
 
 - **AGPL-3.0** for open source: free to use, change, ship and host, provided what you build with it is released under the AGPL-3.0 too. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
-- **Commercial licence** for products, services and internal tools that will not release their source. It funds the development of the open version. See [`COMMERCIAL.md`](COMMERCIAL.md).
+- **Commercial licence** for products, services and internal tools that will not release their source. It funds the development of the open version, and it is where the CAD and cutter exports (DXF, HPGL, G-code, Illustrator, layered PDF) will ship; the open build writes SVG, with PDF and EPS planned. See [`COMMERCIAL.md`](COMMERCIAL.md).
 
 Versions published before this change (up to commit `fe2e104`) remain under the Apache License 2.0 they were released with.

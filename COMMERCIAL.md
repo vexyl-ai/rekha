@@ -12,7 +12,24 @@ Rekha is dual-licensed.
   product, service or internal tool without the AGPL's obligations: no
   requirement to publish your own source, and the right to keep your
   changes private. The commercial licence covers the Go library, the
-  command-line tool, the HTTP service and the WebAssembly build.
+  command-line tool, the HTTP service and the WebAssembly build, and
+  it is the only way to get the commercial exports.
+
+## What is open and what is paid
+
+The tracer is whole in the open version: every quality feature, every
+preset, gradients, refinement. Output formats are where the line is.
+
+| | Open (AGPL-3.0) | Commercial |
+|---|---|---|
+| Output | SVG, PDF, EPS | SVG, PDF, EPS, plus DXF, HPGL/PLT, G-code, Illustrator (AI), layered PDF with named layers, Figma-ready grouping |
+| Source obligation | Your product's source under the AGPL-3.0 | None |
+| Where it runs | Your machine, CI, browser | Same, plus the hosted service when it ships |
+
+The paid exports are written from the tracer's own primitives (lines,
+arcs, circles kept as such, units from the image DPI), not converted
+from the SVG, which is what cutters, plotters and CAD tools need.
+PDF and EPS are not yet shipped in either version; see the roadmap.
 
 ## When you need the commercial licence
 
