@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   repositories:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     env:
       TAG: ${{ inputs.tag }}
       GPG_KEY_ID: B77BE8AB748189EA5E79101B8CA3421AD2087C2A
@@ -30,24 +30,14 @@ jobs:
         run: gh release download "$TAG" -R vexyl-ai/rekha -p '*.deb' -p '*.rpm' -D pkgs
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Runner network check
+      - name: Install createrepo_c
+        # apt-ftparchive, rpmsign and gpg ship with the runner image; the
+        # Ubuntu mirrors do not always resolve there, so createrepo_c
+        # comes from PyPI rather than apt.
         run: |
-          cat /etc/resolv.conf | grep -v '^#' | head -5
-          for h in archive.ubuntu.com azure.archive.ubuntu.com deb.debian.org dl-cdn.alpinelinux.org registry.fedoraproject.org proxy.golang.org pypi.org github.com; do
-            if getent hosts "$h" > /dev/null; then echo "ok   $h"; else echo "FAIL $h"; fi
-          done
-          which apt-ftparchive createrepo_c rpmsign rpm gpg || true
-      - name: Install repository tools
-        run: |
-          # The runner's Azure-internal Ubuntu mirror fails to resolve now and then; use the public archive.
-          for f in /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
-            [ -f "$f" ] && sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' "$f"
-          done
-          for try in 1 2 3 4 5; do
-            sudo apt-get update -q && break
-            echo "apt-get update failed, try $try"; sleep 20
-          done
-          sudo apt-get install -y --no-install-recommends apt-utils createrepo-c rpm gnupg
+          python3 -m pip install --quiet --user createrepo-c
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/createrepo_c" --version
       - name: Import the signing key
         run: printf '%s' "$PACKAGES_GPG_KEY" | gpg --batch --import
         env:
