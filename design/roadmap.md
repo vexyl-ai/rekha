@@ -37,6 +37,17 @@ Rules that keep the split clean:
 
 Phases 0–3 are sequential. Phase 4 can start once Phase 2 is stable. Phases 5, 5b and 6 are independent of each other and gated on benchmark evidence.
 
+## Phase 5c: film frames and scanned art (future, open)
+
+Found 2026-11-13 on a 1000×750 cartoon title card scanned from film: 26.7 dB, 768 paths, 257 kB with the photo preset and gradients, against 33–35 dB and 5–30 kB on clean logos. Not a tuning problem; four causes, in order of damage, each classical and open:
+
+1. **Film grain.** A flat red patch has a channel standard deviation of 10.7; the frame has 24,500 distinct colours after 6-bit quantisation. The quantiser reads grain as colour steps, bands split into blotches, and the speckle filter eats real detail of the same size as the noise. Fix: `--denoise`, an edge-preserving smooth (guided or bilateral filter) before quantisation, on by default for the photo preset when a grain measure crosses a threshold. A median-5 pre-smooth in an external tool already fixed the colours and the blotches in the experiment. 3–5 h.
+2. **Thin dark outlines.** Ink lines 1–2 px wide and blurred average into their neighbours; what survives falls under the speckle floor, so whiskers vanish and eye and fur lines break into dashes. Fix: an ink layer (thin, low-luminance regions exempt from the speckle filter, traced with their own tolerance), later true centerline strokes (Phase 5). 4–6 h for the exemption.
+3. **Soft focus.** Every edge is a 2 px blur, not antialiasing; refinement assumes a 1 px transition and wobbles (+0.5 dB for twice the bytes). Fix: estimate the edge width per image and scale the refine window. 2–3 h.
+4. **Continuous tone.** Spotlight vignette and highlights are real ramps, but grain fragments the bands so the gradient fit rarely merges them; 1 restores this without new code.
+
+Then colour tolerance 0.02 becomes usable without 6,000 paths. Expected ceiling on such input: about 30 dB at 100–200 kB. Real photographs (people, textures) still need Phase 6 segmentation. The test image is a studio still and stays out of the public corpus; the bench category gets synthetic grain and blur applied to corpus logos.
+
 ## Phase 6: AI layer
 
 ### Principle
