@@ -11,6 +11,7 @@ import (
 
 	"github.com/vexyl-ai/rekha/internal/bench"
 	"github.com/vexyl-ai/rekha/internal/metrics"
+	"github.com/vexyl-ai/rekha/internal/par"
 	"github.com/vexyl-ai/rekha/internal/render"
 )
 
@@ -88,6 +89,36 @@ func TestAutoPicksTheBestScore(t *testing.T) {
 		t.Errorf("chosen options: %+v", chosen)
 	}
 	t.Logf("auto: %s tolerance %.2f gradients %v, %.2f dB", chosen.Preset, chosen.ColorTolerance, chosen.Gradients, best)
+}
+
+func TestAutoWorkersFollowTheImageSize(t *testing.T) {
+	cases := []struct{ n, pixels, want int }{
+		{4, 1 << 20, 4}, {4, 4 << 20, 4}, {5, 4 << 20, 4}, {4, 8 << 20, 2}, {4, 16 << 20, 1}, {4, 64 << 20, 1}, {4, 0, 4},
+	}
+	for _, c := range cases {
+		if got := autoWorkers(c.n, c.pixels); got != min(c.want, par.Workers(c.n)) {
+			t.Errorf("autoWorkers(%d, %d) = %d, want %d", c.n, c.pixels, got, min(c.want, par.Workers(c.n)))
+		}
+	}
+}
+
+func TestAutoIsDeterministic(t *testing.T) {
+	img := synth(t, "gradient-shapes")
+	var svgs [2]string
+	for i := range svgs {
+		r, o, err := Auto(img, Options{NoMark: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := r.WriteSVG(&buf, o); err != nil {
+			t.Fatal(err)
+		}
+		svgs[i] = buf.String()
+	}
+	if svgs[0] != svgs[1] {
+		t.Error("two runs of Auto differ")
+	}
 }
 
 func TestTraceHonoursAuto(t *testing.T) {

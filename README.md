@@ -118,7 +118,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 
 `--preset bw|poster|photo` seeds every default; any flag given on the command line overrides it.
 
-`--auto` ignores the tracing flags and races four candidates instead: poster at tolerance 0.06, poster at 0.04 with gradients, photo with gradients and a speckle filter of 2, and bw with the automatic threshold, each with `--refine`. Every candidate is rendered by a rasteriser built in and scored against the image (PSNR over white, the benchmark's measure), and the closest wins; a `--palette` adds a fifth candidate fixed to it. On a mixed set of twenty logos, cartoons and renders the race scored 1.7 dB above a fixed poster-with-gradients setting on average and fell below it on one image, by half a decibel; it costs four traces. Output flags (`--path-precision`, `--stroke`, `--no-mark`, `--format`) still apply.
+`--auto` ignores the tracing flags and races four candidates instead: poster at tolerance 0.06, poster at 0.04 with gradients, photo with gradients and a speckle filter of 2, and bw with the automatic threshold, each with `--refine`. Every candidate is rendered by a rasteriser built in and scored against the image (PSNR over white, the benchmark's measure), and the closest wins; a `--palette` adds a fifth candidate fixed to it. On a mixed set of twenty logos, cartoons and renders the race scored 1.7 dB above a fixed poster-with-gradients setting on average and fell below it on one image, by half a decibel; it costs four traces, run at once when memory allows (all four up to about four megapixels, two at eight, one at sixteen). Output flags (`--path-precision`, `--stroke`, `--no-mark`, `--format`) still apply.
 
 ### Colour
 
