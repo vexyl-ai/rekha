@@ -89,6 +89,10 @@ type Options struct {
 	// Rekha and its repository. Neither changes how the image renders.
 	NoMark bool
 
+	// Format is the file format Write produces: SVG (the zero value),
+	// PDF or EPS. WriteSVG, WritePDF and WriteEPS ignore it.
+	Format Format
+
 	// Progress, when set, is told how far Segment and Finish have got:
 	// stage names quantise, label, ramps (Segment; no count) and
 	// outlines, nest, edges, refine, curves (Finish; done of total, total
@@ -198,6 +202,9 @@ func (o Options) Validate() error {
 	case ModePixel, ModePolygon, ModeSpline:
 	default:
 		return &ValidationError{"Mode", fmt.Sprintf("unknown value %q", string(o.Mode))}
+	}
+	if _, err := ParseFormat(string(o.Format)); err != nil {
+		return err
 	}
 	if err := inRange("FilterSpeckle", o.FilterSpeckle, 0, 1024); err != nil {
 		return err

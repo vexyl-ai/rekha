@@ -139,3 +139,17 @@ func TestParseNoMark(t *testing.T) {
 		t.Fatal("noMark not applied from strings")
 	}
 }
+
+func TestParseFormat(t *testing.T) {
+	o, err := Parse([]byte(`{"format": "pdf"}`))
+	if err != nil || o.Format != rekha.FormatPDF {
+		t.Fatalf("got %q, %v", o.Format, err)
+	}
+	o, err = FromStrings(map[string]string{"format": "eps"})
+	if err != nil || o.Format != rekha.FormatEPS {
+		t.Fatalf("got %q, %v", o.Format, err)
+	}
+	if _, err := Parse([]byte(`{"format": "dxf"}`)); err == nil {
+		t.Fatal("dxf accepted")
+	}
+}

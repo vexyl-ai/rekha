@@ -344,3 +344,18 @@ func TestServePanicIsolated(t *testing.T) {
 		t.Fatalf("after panic: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestServeFormats(t *testing.T) {
+	for format, want := range map[string][2]string{"pdf": {"application/pdf", "%PDF-1.4"}, "eps": {"application/postscript", "%!PS-Adobe-3.0 EPSF-3.0"}} {
+		rec := post(t, NewHandler(limits(), ""), "/v1/trace?preset=bw&format="+format, "image/png", bytes.NewReader(discPNG(t)))
+		if rec.Code != 200 {
+			t.Fatalf("%s: %d %s", format, rec.Code, rec.Body.String())
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != want[0] {
+			t.Errorf("%s: content-type %q", format, ct)
+		}
+		if !strings.HasPrefix(rec.Body.String(), want[1]) {
+			t.Errorf("%s: body starts %q", format, rec.Body.String()[:20])
+		}
+	}
+}

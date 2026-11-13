@@ -189,14 +189,14 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var buf bytes.Buffer
-		if err := out.res.WriteSVG(&buf, o); err != nil {
+		if err := out.res.Write(&buf, o); err != nil {
 			fail(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		// The server's write deadline started at the request header; the
 		// upload, the queue wait and the trace may have used it up.
 		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(writeGrace))
-		w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+		w.Header().Set("Content-Type", contentType(o.Format))
 		w.Header().Set("X-Rekha-Paths", strconv.Itoa(len(out.res.Paths)))
 		w.Header().Set("X-Rekha-Millis", strconv.FormatInt(time.Since(start).Milliseconds(), 10))
 		w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
@@ -258,4 +258,16 @@ func readRequest(r *http.Request) (img []byte, fields map[string]string, err err
 		return nil, nil, &httpError{http.StatusUnsupportedMediaType, "send multipart/form-data with an \"image\" file, or an image/* body"}
 	}
 	return img, fields, nil
+}
+
+// contentType is the media type of each output format.
+func contentType(f rekha.Format) string {
+	switch f {
+	case rekha.FormatPDF:
+		return "application/pdf"
+	case rekha.FormatEPS:
+		return "application/postscript"
+	default:
+		return "image/svg+xml; charset=utf-8"
+	}
 }

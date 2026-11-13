@@ -42,6 +42,7 @@ Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase pr
 - **Small text survives.** On the small-glyphs fixture Rekha reaches 32.26 dB with 86 nodes against Potrace's 32.22 dB with 107.
 - **Fast and deterministic.** 0.1–0.25 s per 256×256 image with refinement; 1.1 s plain or 4.6 s refined for a 3.4-megapixel logo on a laptop. The same input gives the same SVG on one core or eight, arm64 or amd64.
 - **Progress reporting.** The library reports each stage and its count through a callback; the WebAssembly API and the demo page expose the same.
+- **SVG, PDF and EPS.** One trace, three files, from the same curves and gradients: `--format pdf` or an output ending in `.pdf` or `.eps`. The PDF is one page at 0.75 pt per pixel with axial and radial shadings and soft masks for the translucent overlays; the EPS is Level 3 with `shfill`.
 - **Runs anywhere Go runs.** A single static binary, a capped HTTP service, or the browser via WebAssembly: images traced in the browser are never uploaded.
 
 ## Installation
@@ -105,6 +106,8 @@ rekha --preset photo --gradients artwork.jpg      # smooth shading as gradient f
 rekha --preset poster --palette "#000000,#ff0000,#ffffff" logo.png
 rekha --preset poster --hierarchical cutout --stroke 0.5 logo.png
 rekha --mode polygon - < in.png > out.svg         # stdin to stdout
+rekha -o logo.pdf --preset poster logo.png        # PDF from the extension
+rekha --format eps --preset photo --gradients artwork.jpg   # artwork.eps
 ```
 
 Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs are still processed).
@@ -145,6 +148,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 | `--hierarchical stacked\|cutout` | `cutout` / `stacked` | Shapes with holes sharing one boundary curve, or layered shapes (`bw` / colour presets) |
 | `--stroke px` | `0` | Stroke each shape in its own fill to seal hairline seams when viewed enlarged (0–4; `--cutout-stroke` is accepted as an alias) |
 | `--path-precision N` | `2` | Decimals in path data |
+| `--format` | from the output extension, else `svg` | Output format: `svg`, `pdf` or `eps`. PDF and EPS are written from the same paths and gradients at 0.75 pt per pixel; PDF keeps every gradient (translucent overlay layers through soft masks), EPS has no transparency and leaves those overlays out |
 | `--no-mark` | off | Leave out the generator mark: by default the root carries `data-generator="rekha <version>"` and a comment names Rekha and this repository; neither changes how the image renders |
 | `-o, --output` | `<input>.svg` | Output file, or `-` for stdout |
 
@@ -273,6 +277,6 @@ Package documentation: [pkg.go.dev/github.com/vexyl-ai/rekha](https://pkg.go.dev
 Dual-licensed.
 
 - **AGPL-3.0** for open source: free to use, change, ship and host, provided what you build with it is released under the AGPL-3.0 too. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
-- **Commercial licence** for products, services and internal tools that will not release their source. It funds the development of the open version, and it is where the CAD and cutter exports (DXF, HPGL, G-code, Illustrator, layered PDF) will ship; the open build writes SVG, with PDF and EPS planned. See [`COMMERCIAL.md`](COMMERCIAL.md).
+- **Commercial licence** for products, services and internal tools that will not release their source. It funds the development of the open version, and it is where the CAD and cutter exports (DXF, HPGL, G-code, Illustrator, layered PDF) will ship; the open build writes SVG, PDF and EPS. See [`COMMERCIAL.md`](COMMERCIAL.md).
 
 Versions published before this change (up to commit `fe2e104`) remain under the Apache License 2.0 they were released with.

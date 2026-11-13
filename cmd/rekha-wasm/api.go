@@ -234,6 +234,9 @@ func finish(h js.Value, o rekha.Options) (js.Value, error) {
 }
 
 func svgResult(res *rekha.Result, o rekha.Options) (js.Value, error) {
+	if o.Format != "" && o.Format != rekha.FormatSVG {
+		return js.Null(), fmt.Errorf("rekha: the wasm build writes SVG only, not %s", o.Format)
+	}
 	var buf bytes.Buffer
 	if err := res.WriteSVG(&buf, o); err != nil {
 		return js.Null(), err

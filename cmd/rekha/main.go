@@ -34,7 +34,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// The preset seeds every default, so it is read before the flags are
 	// defined; flags given on the command line then override it.
 	o := rekha.PresetOptions(presetArg(args))
-	var preset, mode, output, threshold, turnPolicy, palette, hierarchical string
+	var preset, mode, output, format, threshold, turnPolicy, palette, hierarchical string
 	var showVersion bool
 	fs.StringVar(&preset, "preset", string(o.Preset), "preset seeding the defaults: bw (cutout, 2 colours), poster (stacked, tolerance 0.08), photo (stacked, tolerance 0.04, speckle 16, fit 1.5)")
 	fs.StringVar(&mode, "mode", string(o.Mode), "mode: pixel, polygon, spline")
@@ -57,6 +57,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.BoolVar(&o.Gradients, "gradients", o.Gradients, "merge adjacent colour bands that form one linear ramp into a gradient fill (colour presets)")
 	fs.Float64Var(&o.GradientTolerance, "gradient-tolerance", o.GradientTolerance, "RMS colour error 0..1 a gradient fill may leave, in sRGB units (0.03 ≈ 8/255)")
 	fs.BoolVar(&o.NoMark, "no-mark", o.NoMark, "leave out the data-generator attribute and the Rekha comment from the SVG")
+	fs.StringVar(&format, "format", "", "output format: svg, pdf, eps (default from the output extension, else svg)")
 	fs.StringVar(&output, "output", "", "output path (single input only; - for stdout)")
 	fs.StringVar(&output, "o", "", "alias for --output")
 	fs.BoolVar(&showVersion, "version", false, "print version and exit")
@@ -73,6 +74,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return cli.ExitUsage
 	}
+	f, err := rekha.ParseFormat(cli.FormatOf(format, output))
+	if err != nil {
+		fmt.Fprintln(stderr, "rekha:", err)
+		return cli.ExitUsage
+	}
+	o.Format = f
 	if output != "" && len(inputs) > 1 {
 		fmt.Fprintln(stderr, "rekha: --output requires exactly one input")
 		return cli.ExitUsage
@@ -106,7 +113,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	code := cli.ExitOK
 	for _, in := range inputs {
-		if err := traceOne(in, cli.OutputPath(in, output), o, stdin, stdout); err != nil {
+		if err := traceOne(in, cli.OutputPath(in, output, string(o.Format)), o, stdin, stdout); err != nil {
 			fmt.Fprintf(stderr, "rekha: %s: %v\n", in, err)
 			code = cli.ExitError
 		}
@@ -134,7 +141,7 @@ func presetArg(args []string) rekha.Preset {
 	return rekha.PresetBW
 }
 
-// traceOne traces input ("-" for stdin) and writes the SVG to out ("-" for
+// traceOne traces input ("-" for stdin) and writes the output to out ("-" for
 // stdout). The output file is only created once tracing has succeeded.
 func traceOne(in, out string, o rekha.Options, stdin io.Reader, stdout io.Writer) error {
 	var r io.Reader = stdin
@@ -151,13 +158,13 @@ func traceOne(in, out string, o rekha.Options, stdin io.Reader, stdout io.Writer
 		return err
 	}
 	if out == "-" {
-		return res.WriteSVG(stdout, o)
+		return res.Write(stdout, o)
 	}
 	f, err := os.Create(out)
 	if err != nil {
 		return err
 	}
-	if err := res.WriteSVG(f, o); err != nil {
+	if err := res.Write(f, o); err != nil {
 		f.Close()
 		return err
 	}

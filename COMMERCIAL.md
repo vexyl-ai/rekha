@@ -29,7 +29,7 @@ preset, gradients, refinement. Output formats are where the line is.
 The paid exports are written from the tracer's own primitives (lines,
 arcs, circles kept as such, units from the image DPI), not converted
 from the SVG, which is what cutters, plotters and CAD tools need.
-PDF and EPS are not yet shipped in either version; see the roadmap.
+PDF and EPS shipped in the open build on 2026-11-13 (`--format pdf`, `--format eps`).
 
 ## When you need the commercial licence
 

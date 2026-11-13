@@ -320,3 +320,46 @@ func TestNoMarkFlag(t *testing.T) {
 		t.Fatal("--no-mark output still marked")
 	}
 }
+
+func TestFormatFlagAndExtension(t *testing.T) {
+	dir := t.TempDir()
+	var out, errb bytes.Buffer
+	// Extension picks the format; the file is a PDF.
+	pdf := filepath.Join(dir, "star.pdf")
+	if code := run([]string{"-o", pdf, starPNG}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	b, err := os.ReadFile(pdf)
+	if err != nil || !bytes.HasPrefix(b, []byte("%PDF-1.4")) {
+		t.Fatalf("pdf: %v %q", err, b[:min(len(b), 10)])
+	}
+	// --format names it for stdout and for the default output name.
+	if code := run([]string{"--format", "eps", "-o", "-", starPNG}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if !bytes.HasPrefix(out.Bytes(), []byte("%!PS-Adobe-3.0 EPSF-3.0")) {
+		t.Fatalf("eps on stdout: %q", out.String()[:30])
+	}
+	src := filepath.Join(dir, "copy.png")
+	if err := os.WriteFile(src, mustRead(t, starPNG), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := run([]string{"--format", "pdf", src}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "copy.pdf")); err != nil {
+		t.Fatal(err)
+	}
+	if code := run([]string{"--format", "dxf", "-o", "-", starPNG}, strings.NewReader(""), &out, &errb); code == 0 || !strings.Contains(errb.String(), "dxf") {
+		t.Fatalf("dxf accepted: exit %d, %s", code, errb.String())
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}

@@ -142,6 +142,7 @@ go install github.com/vexyl-ai/rekha/cmd/rekha@latest
 rekha logo.png                                   # black and white, writes logo.svg
 rekha --preset poster --refine logo.png          # flat colours, refined curves
 rekha --preset photo --gradients artwork.jpg     # smooth shading as gradient fills
+rekha -o logo.pdf --preset poster logo.png       # PDF or EPS from the extension
 rekha --preset poster --hierarchical cutout --stroke 0.5 logo.png
 rekha -o out.svg --threshold auto scan.png       # automatic threshold, named output
 rekha --mode polygon - &lt; in.png &gt; out.svg         # stdin to stdout, straight lines
