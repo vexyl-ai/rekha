@@ -190,7 +190,7 @@ The playground is hosted at [vexyl-ai.github.io/rekha/demo](https://vexyl-ai.git
 make serve      # builds web/demo/rekha.wasm and serves the site on http://localhost:8080/ (playground at /demo/)
 ```
 
-The demo page traces entirely in a Web Worker: drop, paste or choose an image, adjust the controls, compare source and SVG with a wipe, zoom and pan the canvas (ctrl/⌘ + wheel or pinch, drag, double-click, toolbar, keys `+` `-` `0` `1`), watch the progress bar, and download the SVG. Nothing is uploaded.
+The demo page traces entirely in a Web Worker: drop, paste or choose an image, adjust the controls, compare source and SVG with a wipe, zoom and pan the canvas (ctrl/⌘ + wheel or pinch, drag, double-click, toolbar, keys `+` `-` `0` `1`), watch the progress bar, tidy the result (click a shape to select it, shift-click to add, double-click to take every shape of that colour; Delete removes it, the colour swatch repaints it with its gradient shading kept, Remove background drops the page behind the art, ⌘Z and ⇧⌘Z undo and redo), and download the SVG. Nothing is uploaded.
 
 The WebAssembly module exposes `segment`, `finish`, `trace` and `free` on a global `rekha` object, each with an optional progress callback. The API, worker protocol and embedding notes are in [`docs/wasm.md`](docs/wasm.md).
 

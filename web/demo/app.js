@@ -1,8 +1,11 @@
 // Demo page: decodes the image in the browser (file, drop or paste), runs
 // rekha.wasm in a worker, re-segments only when a segmentation option
 // changed, drops stale replies, frees replaced handles, and cancels by
-// terminating the worker. The result is shown as a wipe over the source.
+// terminating the worker. The result is shown as a wipe over the source,
+// inline, so a shape can be picked and deleted or recoloured before the
+// download.
 const { needsResegment, Requests, Handles, imageFileFromItems, progressText, Viewport } = self.RekhaProtocol;
+const { groupShapes, backgroundShapes, pruneDefs, History, tintStops, selectionText } = self.RekhaEdit;
 
 const $ = (id) => document.getElementById(id);
 const status = $('status');
@@ -25,6 +28,11 @@ let cachedOptions = null;        // options the handle was segmented with
 let segmentMs = null;
 let svgURL = '';
 let sourceURL = '';
+let svgEl = null;                // the inline result
+let svgSize = ['', ''];          // its width and height attributes, for the download
+let history = null;              // History of serialised states
+let selected = new Set();        // path data of the selected shapes
+let tintBase = null;             // gradient id → original stop colours, while the colour input drags
 
 function applyPreset(name) {
   const p = { ...COMMON, ...PRESETS[name] };
@@ -199,23 +207,155 @@ function showSource(file) {
   if (sourceURL) URL.revokeObjectURL(sourceURL);
   sourceURL = URL.createObjectURL(file);
   $('sourceImg').src = sourceURL;
-  $('svgImg').removeAttribute('src');
+  clip.replaceChildren();
+  svgEl = null; history = null; selected = new Set();
   $('compare').hidden = false;
   $('zoom').hidden = false;
+  $('tools').hidden = true;
   $('drop').hidden = true;
   $('download').disabled = true;
 }
 
+// showSVG puts a fresh trace on the stage and starts its edit history.
 function showSVG(svg) {
-  if (svgURL) URL.revokeObjectURL(svgURL);
-  svgURL = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-  $('svgImg').src = svgURL;
-  $('download').disabled = false;
+  history = new History(svg);
+  mount(svg);
+  $('tools').hidden = false;
 }
 
-function report(fin) {
+// mount replaces the inline SVG with the given state; the download is
+// rebuilt from it with unused gradients dropped.
+function mount(svg) {
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  svgEl = doc.documentElement;
+  svgSize = [svgEl.getAttribute('width'), svgEl.getAttribute('height')];
+  svgEl.setAttribute('width', '100%');
+  svgEl.setAttribute('height', '100%');
+  clip.replaceChildren(svgEl);
+  selected = new Set();
+  tintBase = null;
+  refreshSelection();
+  if (svgURL) URL.revokeObjectURL(svgURL);
+  svgURL = URL.createObjectURL(new Blob([serialise()], { type: 'image/svg+xml' }));
+  $('download').disabled = false;
+  $('undo').disabled = !history.canUndo;
+  $('redo').disabled = !history.canRedo;
+}
+
+// serialise returns the drawing as the file to download: the writer's
+// size restored, the selection marks dropped, orphaned gradients pruned.
+function serialise() {
+  const copy = svgEl.cloneNode(true);
+  copy.setAttribute('width', svgSize[0]);
+  copy.setAttribute('height', svgSize[1]);
+  for (const el of copy.querySelectorAll('[class]')) el.removeAttribute('class');
+  return pruneDefs(new XMLSerializer().serializeToString(copy));
+}
+
+// commit records the current drawing as a new state after an edit and
+// reports it.
+function commit(note) {
+  const svg = serialise();
+  history.push(svg);
+  mount(svg);
+  report({ paths: svgEl.querySelectorAll('path').length, bytes: new Blob([svg]).size }, note);
+}
+
+function report(fin, note) {
   const kb = (fin.bytes / 1024).toFixed(1);
-  setStatus(`${image.width}×${image.height}${image.note}. Segmented in ${segmentMs.toFixed(0)} ms, fitted in ${fin.millis.toFixed(0)} ms. ${fin.paths} paths, ${kb} KB.`);
+  const timing = fin.millis != null ? ` Segmented in ${segmentMs.toFixed(0)} ms, fitted in ${fin.millis.toFixed(0)} ms.` : '';
+  setStatus(`${note ? note + ' ' : ''}${image.width}×${image.height}${image.note}.${timing} ${fin.paths} paths, ${kb} KB.`);
+}
+
+// Shapes: every path with the same data is one shape (a layered gradient
+// is a base path under translucent overlays). Selection is a set of path
+// data; the classes on the paths follow it.
+function paths() { return svgEl ? [...svgEl.querySelectorAll('path')] : []; }
+function shapes() {
+  const ps = paths();
+  return groupShapes(ps.map((p) => ({ d: p.getAttribute('d') }))).map((idx) => ({ d: ps[idx[0]].getAttribute('d'), paths: idx.map((i) => ps[i]) }));
+}
+function refreshSelection() {
+  const ps = paths();
+  for (const p of ps) p.classList.toggle('sel', selected.has(p.getAttribute('d')));
+  const any = selected.size > 0;
+  $('deleteSel').disabled = !any;
+  $('colour').disabled = !any;
+  if (any) {
+    const first = ps.find((p) => selected.has(p.getAttribute('d')));
+    $('colour').value = fillColour(first);
+    let area = 0;
+    for (const s of shapes()) if (selected.has(s.d)) { const b = s.paths[0].getBBox(); area += b.width * b.height; }
+    const vb = svgEl.viewBox.baseVal;
+    setStatus(selectionText(selected.size, Math.min(1, area / (vb.width * vb.height))));
+  }
+}
+function select(d, extend) {
+  if (!extend) selected = new Set();
+  if (selected.has(d)) selected.delete(d); else selected.add(d);
+  tintBase = null;
+  refreshSelection();
+}
+function clearSelection() {
+  if (!selected.size) return;
+  selected = new Set();
+  tintBase = null;
+  refreshSelection();
+}
+// fillColour is the hex colour of a path for the colour input: its fill,
+// or the first stop of its gradient.
+function fillColour(p) {
+  const fill = p.getAttribute('fill') || '#000000';
+  const m = /^url\(#([^)]+)\)$/.exec(fill);
+  if (!m) return fill.length === 4 ? '#' + [...fill.slice(1)].map((c) => c + c).join('') : fill;
+  const stop = svgEl.querySelector(`#${CSS.escape(m[1])} stop`);
+  return stop ? stop.getAttribute('stop-color') : '#000000';
+}
+
+function deleteSelected() {
+  if (!selected.size) return;
+  const n = selected.size;
+  for (const p of paths()) if (selected.has(p.getAttribute('d'))) p.remove();
+  commit(`Deleted ${n} shape${n === 1 ? '' : 's'}.`);
+}
+
+function removeBackground() {
+  if (!svgEl) return;
+  const all = shapes();
+  const vb = svgEl.viewBox.baseVal;
+  const idx = backgroundShapes(all.map((s) => ({ bbox: s.paths[0].getBBox(), fill: s.paths[0].getAttribute('fill') })), vb.width, vb.height);
+  if (!idx.length) {
+    setStatus('No background found. Click the background and press Delete.', 'error');
+    return;
+  }
+  for (const i of idx) for (const p of all[i].paths) p.remove();
+  commit(`Removed ${idx.length} background shape${idx.length === 1 ? '' : 's'}.`);
+}
+
+// recolour paints the selected shapes with the colour input's value: a
+// solid fill is replaced, a gradient is tinted from the stops it had
+// when the drag began, so dragging the picker does not compound.
+function recolour(to) {
+  if (!tintBase) {
+    tintBase = new Map();
+    for (const p of paths()) {
+      if (!selected.has(p.getAttribute('d'))) continue;
+      const m = /^url\(#([^)]+)\)$/.exec(p.getAttribute('fill') || '');
+      if (m && !tintBase.has(m[1])) {
+        tintBase.set(m[1], [...svgEl.querySelectorAll(`#${CSS.escape(m[1])} stop`)].map((st) => st.getAttribute('stop-color')));
+      }
+    }
+  }
+  const tinted = new Set();
+  for (const p of paths()) {
+    if (!selected.has(p.getAttribute('d'))) continue;
+    const m = /^url\(#([^)]+)\)$/.exec(p.getAttribute('fill') || '');
+    if (!m) { p.setAttribute('fill', to); continue; }
+    if (tinted.has(m[1])) continue;
+    tinted.add(m[1]);
+    const stops = svgEl.querySelectorAll(`#${CSS.escape(m[1])} stop`);
+    tintStops(tintBase.get(m[1]), to).forEach((c, i) => stops[i].setAttribute('stop-color', c));
+  }
 }
 
 async function run() {
@@ -288,6 +428,49 @@ $('download').addEventListener('click', () => {
   a.href = svgURL; a.download = 'rekha.svg'; a.click();
 });
 
+// Edits: click a shape on the SVG side of the wipe to select it (shift
+// adds), double-click to select every shape of its colour, Delete
+// removes the selection, the colour input repaints it, and undo and
+// redo walk the history. A click that moved the pointer was a pan.
+let pressAt = null;
+stage.addEventListener('pointerdown', (e) => { pressAt = [e.clientX, e.clientY, e.target]; });
+stage.addEventListener('pointerup', (e) => {
+  if (!pressAt) return;
+  const [x, y, target] = pressAt;
+  pressAt = null;
+  if (Math.hypot(e.clientX - x, e.clientY - y) > 4 || e.button !== 0) return;
+  const path = target.closest && target.closest('#svgClip path');
+  if (path) select(path.getAttribute('d'), e.shiftKey || e.metaKey || e.ctrlKey);
+  else if (!target.closest('.divider, .zoom, .tools')) clearSelection();
+});
+stage.addEventListener('dblclick', (e) => {
+  const path = e.target.closest && e.target.closest('#svgClip path');
+  if (!path) return;
+  e.stopImmediatePropagation();
+  const fill = path.getAttribute('fill');
+  selected = new Set(paths().filter((p) => p.getAttribute('fill') === fill).map((p) => p.getAttribute('d')));
+  tintBase = null;
+  refreshSelection();
+}, true);
+$('deleteSel').addEventListener('click', deleteSelected);
+$('removeBg').addEventListener('click', removeBackground);
+$('colour').addEventListener('input', (e) => recolour(e.target.value));
+$('colour').addEventListener('change', () => { if (tintBase || selected.size) { const keep = selected; commit('Recoloured.'); selected = keep; refreshSelection(); } });
+function undo() { if (history && history.canUndo) { mount(history.undo()); report({ paths: paths().length, bytes: new Blob([history.current]).size }, 'Undone.'); } }
+function redo() { if (history && history.canRedo) { mount(history.redo()); report({ paths: paths().length, bytes: new Blob([history.current]).size }, 'Redone.'); } }
+$('undo').addEventListener('click', undo);
+$('redo').addEventListener('click', redo);
+document.addEventListener('keydown', (e) => {
+  if (!svgEl || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === 'z') { if (e.shiftKey) redo(); else undo(); }
+  else if (mod && e.key.toLowerCase() === 'y') redo();
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && selected.size) deleteSelected();
+  else if (e.key === 'Escape') clearSelection();
+  else return;
+  e.preventDefault();
+});
+
 // Zoom and pan: ctrl/cmd + wheel or a pinch zooms about the cursor,
 // a plain wheel pans, dragging the image pans, double-click zooms in;
 // the toolbar and the keys + - 0 1 do the same from the keyboard.
@@ -303,7 +486,7 @@ stage.addEventListener('wheel', (e) => {
 }, { passive: false });
 let panFrom = null;
 stage.addEventListener('pointerdown', (e) => {
-  if (!vp.image.w || e.button !== 0 || e.target.closest('.divider, .zoom')) return;
+  if (!vp.image.w || e.button !== 0 || e.target.closest('.divider, .zoom, .tools')) return;
   panFrom = [e.clientX, e.clientY];
   stage.setPointerCapture(e.pointerId);
   stage.classList.add('panning');
@@ -317,7 +500,7 @@ stage.addEventListener('pointermove', (e) => {
 const endPan = () => { panFrom = null; stage.classList.remove('panning'); };
 stage.addEventListener('pointerup', endPan);
 stage.addEventListener('pointercancel', endPan);
-stage.addEventListener('dblclick', (e) => { if (!e.target.closest('.divider, .zoom')) zoomBy(2, stagePoint(e)); });
+stage.addEventListener('dblclick', (e) => { if (!e.target.closest('.divider, .zoom, .tools')) zoomBy(2, stagePoint(e)); });
 stage.addEventListener('keydown', (e) => {
   if (e.target !== stage) return;
   if (e.key === '+' || e.key === '=') zoomBy(1.25);

@@ -97,7 +97,30 @@ input[type=number], select {
 .compare { position: absolute; left: 20px; top: 20px; line-height: 0; user-select: none; }
 .compare img { display: block; width: 100%; height: 100%; }
 .compare .svgClip { position: absolute; inset: 0; overflow: hidden; }
-.compare .svgClip img { position: absolute; inset: 0; }
+.compare .svgClip svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Shapes are picked on the SVG side of the wipe: a hovered shape shows a
+   thin outline, a selected one a dashed accent outline, both at screen
+   width whatever the zoom. */
+.compare .svgClip path { cursor: pointer; }
+.compare .svgClip path:hover { stroke: var(--accent); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.compare .svgClip path.sel { stroke: var(--accent); stroke-width: 2px; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; }
+.stage.panning .svgClip path { cursor: grabbing; }
+.tools {
+  position: absolute; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; padding: 4px;
+  border: 1px solid var(--rule); border-radius: 8px; background: rgba(255,255,255,0.92);
+  box-shadow: 0 2px 8px rgba(28, 34, 48, 0.1); cursor: default; max-width: calc(100% - 260px); flex-wrap: wrap;
+}
+.tools[hidden] { display: none; }
+.tools button { padding: 4px 10px; border-color: transparent; }
+.tools button:hover:not(:disabled) { background: var(--check); }
+.tools .sep { width: 1px; height: 20px; background: var(--rule); margin: 0 4px; }
+.tools .colour { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 4px; border-radius: 6px; font-weight: 500; cursor: pointer; }
+.tools .colour:hover { background: var(--check); }
+.tools .colour input { width: 26px; height: 26px; padding: 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--pane); cursor: pointer; }
+.tools .colour input:disabled { opacity: 0.4; cursor: default; }
+.tools .colour input:disabled + span { opacity: 0.4; }
+.tools .colour input::-webkit-color-swatch-wrapper { padding: 2px; }
+.tools .colour input::-webkit-color-swatch { border: 0; border-radius: 4px; }
 .divider {
   position: absolute; top: 0; bottom: 0; width: 0; left: 50%; border-left: 2px solid var(--ink); cursor: ew-resize;
 }

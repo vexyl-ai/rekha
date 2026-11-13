@@ -73,13 +73,21 @@
 <main class="stage" tabindex="0" aria-label="Canvas: drag to pan, ctrl and wheel to zoom">
   <div class="compare" id="compare" hidden>
     <img id="sourceImg" alt="Source image" draggable="false">
-    <div class="svgClip" id="svgClip"><img id="svgImg" alt="Traced SVG" draggable="false"></div>
+    <div class="svgClip" id="svgClip" aria-label="Traced SVG: click a shape to select it, double-click to select its colour"></div>
     <div class="divider" id="divider" role="slider" aria-label="Compare source and SVG" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0"><span></span></div>
     <span class="tag left">Source</span><span class="tag right">SVG</span>
   </div>
   <div class="empty" id="drop">
     <p class="big">Drop an image here</p>
     <p>or paste one, or choose a file</p>
+  </div>
+  <div class="tools" id="tools" hidden role="toolbar" aria-label="Edit the trace">
+    <button id="removeBg" title="Remove the background: the big shape behind everything, and its colour along the edges">Remove background</button>
+    <button id="deleteSel" title="Delete the selected shapes (Delete)" disabled>Delete</button>
+    <label class="colour" id="colourWrap" title="Recolour the selected shapes"><input type="color" id="colour" disabled aria-label="Colour of the selected shapes"><span>Colour</span></label>
+    <span class="sep" aria-hidden="true"></span>
+    <button id="undo" title="Undo (⌘Z)" aria-label="Undo" disabled>↶</button>
+    <button id="redo" title="Redo (⇧⌘Z)" aria-label="Redo" disabled>↷</button>
   </div>
   <div class="zoom" id="zoom" hidden>
     <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
@@ -102,6 +110,7 @@
 </div>
 
 <script src="protocol.js"></script>
+<script src="edit.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

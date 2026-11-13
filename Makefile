@@ -22,7 +22,7 @@ wasm-test:
 	GOOS=js GOARCH=wasm go test -exec "$$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./cmd/rekha-wasm $(ARGS)
 
 web-test:
-	node --test web/site.test.js web/demo/protocol.test.js
+	node --test web/site.test.js web/demo/protocol.test.js web/demo/edit.test.js
 
 serve: wasm
 	go run ./cmd/rekha-serve -static web
