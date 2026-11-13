@@ -209,3 +209,49 @@ func TestCleanupAbsorbsSliverPixelsToNearerNeighbour(t *testing.T) {
 		}
 	}
 }
+
+// TestCleanupSpeckTieGoesToNearerColour: a one-pixel speck of a third
+// colour with the same border to each of two neighbours is the
+// anti-aliased pixel between them, and goes to the one its colour is
+// nearer, whichever order the palette lists them in. A tie broken by
+// label index follows the palette order, which the quantiser can change
+// with a one-level change in the input.
+func TestCleanupSpeckTieGoesToNearerColour(t *testing.T) {
+	white := colour.FromSRGB8(255, 255, 255)
+	navy := colour.FromSRGB8(6, 47, 130)
+	teal := colour.FromSRGB8(27, 147, 175)
+	for _, order := range [][]colour.OKLab{{white, navy, teal}, {navy, white, teal}} {
+		idx := func(c colour.OKLab) uint8 {
+			for i, p := range order {
+				if p == c {
+					return uint8(i)
+				}
+			}
+			t.Fatal("colour not in palette")
+			return 0
+		}
+		labels := grid(3, 3, func(x, y int) uint8 {
+			switch {
+			case x == 0 || (x == 1 && y == 0):
+				return idx(white)
+			case x == 1 && y == 1:
+				return idx(teal)
+			default:
+				return idx(navy)
+			}
+		})
+		rgb := make([]uint8, 0, 27)
+		for _, l := range labels {
+			r, g, b := order[l].ToSRGB8()
+			if l == idx(teal) {
+				r, g, b = 105, 130, 180 // 60% navy over white
+			}
+			rgb = append(rgb, r, g, b)
+		}
+		pal := Cleanup(labels, rgb, 3, 3, order, 4, 0.08)
+		got := pal[labels[4]]
+		if got != navy {
+			t.Errorf("palette order %s first: speck went to %s, want navy", order[0].Hex(), got.Hex())
+		}
+	}
+}

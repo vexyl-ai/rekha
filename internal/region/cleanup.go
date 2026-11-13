@@ -18,7 +18,9 @@ const maxPasses = 4
 // the compacted palette:
 //
 //   - despeckle: a component with fewer than minArea pixels joins the
-//     neighbouring label sharing the longest border (ties: lower label);
+//     neighbouring label sharing the longest border (ties: the one its
+//     mean colour leans to past their sRGB midpoint, or without rgb the
+//     lower label);
 //   - slivers: a component thinner than 1.5 px on average is an
 //     anti-aliasing band, and joins the longest-border neighbour, when
 //     its colour lies within tol of the OKLab segment between its two
@@ -31,7 +33,30 @@ const maxPasses = 4
 //   - compaction: unused palette entries are dropped and labels renumbered
 //     by first appearance in scan order.
 func Cleanup(labels, rgb []uint8, w, h int, palette []colour.OKLab, minArea int, tol float64) []colour.OKLab {
-	pass(labels, w, h, func(c *component) bool { return len(c.pixels) < minArea }, nil)
+	// A speck with the same border to its two longest neighbours is,
+	// as often as not, the anti-aliased pixel between them: it goes to
+	// the one its mean colour leans to. The label-order tie-break
+	// follows the palette order, which the quantiser can change with a
+	// one-level change in the input.
+	var tied func(c *component, p int32) uint8
+	if rgb != nil {
+		choice := map[*component]uint8{}
+		tied = func(c *component, p int32) uint8 {
+			if to, ok := choice[c]; ok {
+				return to
+			}
+			to := c.neighbours[0].label
+			if len(c.neighbours) > 1 && c.neighbours[1].border == c.neighbours[0].border {
+				a, b := c.neighbours[0].label, c.neighbours[1].label
+				if leans(meanColour(rgb, c.pixels), palette[a], palette[b]) {
+					to = b
+				}
+			}
+			choice[c] = to
+			return to
+		}
+	}
+	pass(labels, w, h, func(c *component) bool { return len(c.pixels) < minArea }, tied)
 	// A sliver's pixels go to whichever of the two neighbours each is
 	// nearer: it is the anti-aliased edge between them, and every pixel
 	// of it leans one way or the other. (Specks keep the wholesale rule:
@@ -59,6 +84,18 @@ func Cleanup(labels, rgb []uint8, w, h int, palette []colour.OKLab, minArea int,
 		return rgb != nil && colour.MixDist(meanColour(rgb, c.pixels), a, b) <= tol
 	}, nearer)
 	return compact(labels, palette)
+}
+
+// leans reports whether c lies past the sRGB midpoint of a and b, on
+// b's side: anti-aliasing mixes in sRGB, so that midpoint, not OKLab's,
+// is where a mixed pixel stops being mostly a.
+func leans(c, a, b colour.OKLab) bool {
+	ar, ag, ab := a.ToSRGB8()
+	br, bg, bb := b.ToSRGB8()
+	cr, cg, cb := c.ToSRGB8()
+	dr, dg, db := float64(br)-float64(ar), float64(bg)-float64(ag), float64(bb)-float64(ab)
+	num := (float64(cr)-float64(ar))*dr + (float64(cg)-float64(ag))*dg + (float64(cb)-float64(ab))*db
+	return num > (dr*dr+dg*dg+db*db)/2
 }
 
 // meanColour is the OKLab of the mean sRGB of the pixels.
