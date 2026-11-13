@@ -187,6 +187,15 @@ func main() {
 
 `Segment` and `Finish` split the work so a cached segmentation can be re-fitted with new curve options; `TraceReader` decodes PNG, JPEG or GIF from an `io.Reader`. See the [package documentation](https://pkg.go.dev/github.com/vexyl-ai/rekha).
 
+Regions decided elsewhere, by a segmentation model, a matte or a hand selection, go in through `Options.ExternalMasks`. Each `Mask` carries one coverage byte per pixel and replaces the quantiser's verdict where it covers the image: a flat fill of its own, the mean of its pixels when `Fill` is left zero, or nothing at all with `Cut`, which drops the region as if it were a transparent page. Soft edges in the coverage reach the refinement as anti-aliasing, so a matte's feathered outline is traced as a clean curve through it.
+
+```go
+o.ExternalMasks = []rekha.Mask{
+	{Coverage: background, Cut: true},       // from a matting model
+	{Coverage: subject, Fill: color.NRGBA{}}, // mean colour of the subject
+}
+```
+
 ## Browser and WebAssembly
 
 The playground is hosted at [vexyl-ai.github.io/rekha/demo](https://vexyl-ai.github.io/rekha/demo/) behind the product page at [vexyl-ai.github.io/rekha](https://vexyl-ai.github.io/rekha/), both rebuilt from `main` by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push. To run it locally:

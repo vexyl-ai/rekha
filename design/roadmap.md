@@ -58,7 +58,7 @@ AI never touches geometry. Classical pipeline plus Phase 3 refinement already ex
 
 - Separate service, private repo, Python + ONNX Runtime (or PyTorch), CPU first, GPU only if latency demands.
 - Contract: image in, image or mask stack out. Nothing else crosses the boundary. No model code, model weights or Python in the Go module.
-- Server calls AI service, then calls the public tracer library with the processed image and optional external mask stack. The library gains one new input: `Options.ExternalMasks []Mask` so a caller can supply segmentation instead of the built-in quantiser. That hook is public and documented so the open CLI can also consume masks from any external tool, which keeps the open product honest and the hook tested.
+- Server calls AI service, then calls the public tracer library with the processed image and optional external mask stack. The library gains one new input: `Options.ExternalMasks []Mask` so a caller can supply segmentation instead of the built-in quantiser. That hook is public and documented so the open CLI can also consume masks from any external tool, which keeps the open product honest and the hook tested. Shipped 2026-11-13: `Mask{Coverage, Fill, Cut}`, applied after quantisation, soft coverage feeds the refinement as Second and Blend.
 - Open CLI gets `--masks dir/` to read a mask stack from disk. No network calls from the CLI, ever.
 - WASM build never includes any of this.
 

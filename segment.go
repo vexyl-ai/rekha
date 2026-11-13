@@ -47,12 +47,21 @@ func Segment(img image.Image, o Options) (*Segmentation, error) {
 	if err := o.Validate(); err != nil {
 		return nil, err
 	}
+	if err := checkMasks(img, o.ExternalMasks); err != nil {
+		return nil, err
+	}
+	var s *Segmentation
 	if o.Preset == PresetBW {
 		o.report("label")
-		return segmentBW(img, o), nil
+		s = segmentBW(img, o)
+	} else {
+		s = segmentColour(img, o)
+		s.countClear(bitmap.Transparent(img))
 	}
-	s := segmentColour(img, o)
-	s.countClear(bitmap.Transparent(img))
+	if len(o.ExternalMasks) > 0 {
+		o.report("masks")
+		s.applyMasks(img, o.ExternalMasks)
+	}
 	return s, nil
 }
 

@@ -75,6 +75,10 @@ type Options struct {
 	ColorTolerance float64       // OKLab distance 0..1 at which colours merge (white to black is 1)
 	Palette        []color.NRGBA // fixed palette, at most 256 distinct entries; empty = quantise
 	Hierarchical   Hierarchical
+	// ExternalMasks are regions the caller has already decided on (a
+	// segmentation model's objects, a matte, a selection) that replace
+	// the quantiser's verdict where they cover the image. See Mask.
+	ExternalMasks []Mask
 
 	Refine RefineOptions // spline mode only
 	Stroke float64       // px, 0..4, default 0; polygon/spline colour shapes are stroked in their fill to hide hairline seams between fitted edges when viewed enlarged
@@ -153,6 +157,20 @@ func PresetOptions(p Preset) Options {
 		o.Hierarchical = HierarchicalStacked
 	}
 	return o
+}
+
+// Mask is one region supplied through Options.ExternalMasks. Coverage
+// holds one value per pixel of the image, row-major: 0 outside, 255
+// inside, between on a soft edge. A pixel covered by half or more takes
+// the mask's colour; a softer edge is kept as the pixel's second colour
+// and blend, which the refinement reads as coverage. Fill is the region's
+// colour; the zero value takes the mean of the pixels it covers. Cut
+// drops the region instead: its pixels become the page and are not
+// drawn. Masks apply in order, so a later one wins where two overlap.
+type Mask struct {
+	Coverage []uint8
+	Fill     color.NRGBA
+	Cut      bool
 }
 
 // ValidationError reports the first invalid field.
