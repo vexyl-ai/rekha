@@ -1,7 +1,13 @@
-package main
+// Package server puts the tracer behind HTTP with caps so one client
+// cannot exhaust the host: POST /v1/trace returns an SVG, PDF or EPS.
+// Command rekha-serve is a thin main over it; another module wraps it
+// with WithTrace to run its own work round the trace and WithFields to
+// accept request fields of its own. See docs/server.md.
+package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,12 +40,41 @@ type Limits struct {
 // maxFieldBytes bounds one multipart option field.
 const maxFieldBytes = 4096
 
+// TraceFunc traces a decoded image. extra holds the request fields named
+// by WithFields, already taken out of the options. The options returned
+// are the ones the result is written with (a wrapper may set Scale or
+// Format); the header's entries are added to the response.
+type TraceFunc func(ctx context.Context, img image.Image, o rekha.Options, extra map[string]string) (*rekha.Result, rekha.Options, http.Header, error)
+
+// Option configures New.
+type Option func(*handler)
+
+// WithTrace replaces the trace: by default rekha.Trace on the decoded
+// image, the options unchanged, no extra headers.
+func WithTrace(f TraceFunc) Option { return func(h *handler) { h.traceFn = f } }
+
+// WithFields names request fields that are not tracer options: they are
+// passed to the TraceFunc in extra instead of being rejected as unknown.
+func WithFields(names ...string) Option {
+	return func(h *handler) {
+		for _, n := range names {
+			h.fields[n] = true
+		}
+	}
+}
+
+func defaultTrace(_ context.Context, img image.Image, o rekha.Options, _ map[string]string) (*rekha.Result, rekha.Options, http.Header, error) {
+	r, err := rekha.Trace(img, o)
+	return r, o, nil, err
+}
+
 type handler struct {
 	l        Limits
 	sem      chan struct{}
 	waiting  atomic.Int64 // requests waiting for a slot
 	inflight atomic.Int64 // requests admitted: reading, waiting or tracing
-	traceFn  func(io.Reader, rekha.Options) (*rekha.Result, error)
+	traceFn  TraceFunc
+	fields   map[string]bool // extra request fields passed to traceFn
 	mux      *http.ServeMux
 }
 
@@ -48,13 +83,17 @@ type panicError struct{ v any }
 
 func (e *panicError) Error() string { return fmt.Sprintf("rekha: internal error: %v", e.v) }
 
-// writeGrace is how long the response write may take after the trace.
-const writeGrace = 10 * time.Second
+// WriteGrace is how long the response write may take after the trace;
+// a server's shutdown grace should allow it on top of Limits.Timeout.
+const WriteGrace = 10 * time.Second
 
-// NewHandler routes /healthz, POST /v1/trace and, when static is a
-// directory, files under / for the demo page.
-func NewHandler(l Limits, static string) http.Handler {
-	h := &handler{l: l, sem: make(chan struct{}, max(l.Concurrency, 1)), traceFn: rekha.TraceReader, mux: http.NewServeMux()}
+// New routes /healthz, POST /v1/trace and, when static is a directory,
+// files under / for the demo page.
+func New(l Limits, static string, opts ...Option) http.Handler {
+	h := &handler{l: l, sem: make(chan struct{}, max(l.Concurrency, 1)), traceFn: defaultTrace, fields: map[string]bool{}, mux: http.NewServeMux()}
+	for _, opt := range opts {
+		opt(h)
+	}
 	h.mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, "ok\n")
@@ -121,6 +160,13 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	extra := map[string]string{}
+	for k := range h.fields {
+		if v, ok := fields[k]; ok {
+			extra[k] = v
+			delete(fields, k)
+		}
+	}
 	o, err := apiopts.FromStrings(fields)
 	if err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
@@ -161,6 +207,8 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 
 	type outcome struct {
 		res *rekha.Result
+		o   rekha.Options
+		hdr http.Header
 		err error
 	}
 	done := make(chan outcome, 1)
@@ -174,8 +222,13 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 				done <- outcome{err: &panicError{v}}
 			}
 		}()
-		res, err := h.traceFn(bytes.NewReader(img), o)
-		done <- outcome{res, err}
+		decoded, _, err := image.Decode(bytes.NewReader(img))
+		if err != nil {
+			done <- outcome{err: fmt.Errorf("rekha: decode: %w", err)}
+			return
+		}
+		res, o2, hdr, err := h.traceFn(ctx, decoded, o, extra)
+		done <- outcome{res, o2, hdr, err}
 	}()
 	select {
 	case out := <-done:
@@ -188,6 +241,7 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusBadRequest, out.err.Error())
 			return
 		}
+		o = out.o
 		var buf bytes.Buffer
 		if err := out.res.Write(&buf, o); err != nil {
 			fail(w, http.StatusInternalServerError, err.Error())
@@ -195,7 +249,12 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 		}
 		// The server's write deadline started at the request header; the
 		// upload, the queue wait and the trace may have used it up.
-		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(writeGrace))
+		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(WriteGrace))
+		for k, vs := range out.hdr {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
 		w.Header().Set("Content-Type", contentType(o.Format))
 		w.Header().Set("X-Rekha-Paths", strconv.Itoa(len(out.res.Paths)))
 		w.Header().Set("X-Rekha-Millis", strconv.FormatInt(time.Since(start).Milliseconds(), 10))

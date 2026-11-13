@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bytes"
@@ -89,7 +89,7 @@ func post(t testing.TB, h http.Handler, url, contentType string, body io.Reader)
 }
 
 func TestServeHealthz(t *testing.T) {
-	h := NewHandler(limits(), "")
+	h := New(limits(), "")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != "ok" {
@@ -99,7 +99,7 @@ func TestServeHealthz(t *testing.T) {
 
 func TestServeMultipartTrace(t *testing.T) {
 	body, ct := multipartBody(t, "image", discPNG(t), map[string]string{"preset": "bw", "mode": "polygon"})
-	rec := post(t, NewHandler(limits(), ""), "/v1/trace", ct, body)
+	rec := post(t, New(limits(), ""), "/v1/trace", ct, body)
 	if rec.Code != 200 {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -112,35 +112,35 @@ func TestServeMultipartTrace(t *testing.T) {
 }
 
 func TestServeRawBodyTrace(t *testing.T) {
-	rec := post(t, NewHandler(limits(), ""), "/v1/trace?preset=poster&refine=true", "image/png", bytes.NewReader(discPNG(t)))
+	rec := post(t, New(limits(), ""), "/v1/trace?preset=poster&refine=true", "image/png", bytes.NewReader(discPNG(t)))
 	if rec.Code != 200 || !strings.HasPrefix(rec.Body.String(), "<svg") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestServeBadOption(t *testing.T) {
-	rec := post(t, NewHandler(limits(), ""), "/v1/trace?fitTolerance=99", "image/png", bytes.NewReader(discPNG(t)))
+	rec := post(t, New(limits(), ""), "/v1/trace?fitTolerance=99", "image/png", bytes.NewReader(discPNG(t)))
 	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "FitTolerance") || !strings.Contains(rec.Body.String(), `"error"`) {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestServeUnknownOption(t *testing.T) {
-	rec := post(t, NewHandler(limits(), ""), "/v1/trace?colour=1", "image/png", bytes.NewReader(discPNG(t)))
+	rec := post(t, New(limits(), ""), "/v1/trace?colour=1", "image/png", bytes.NewReader(discPNG(t)))
 	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "colour") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestServeUndecodable(t *testing.T) {
-	rec := post(t, NewHandler(limits(), ""), "/v1/trace", "image/png", strings.NewReader("hello"))
+	rec := post(t, New(limits(), ""), "/v1/trace", "image/png", strings.NewReader("hello"))
 	if rec.Code != 400 {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestServeUnsupportedMedia(t *testing.T) {
-	rec := post(t, NewHandler(limits(), ""), "/v1/trace", "text/plain", strings.NewReader("hello"))
+	rec := post(t, New(limits(), ""), "/v1/trace", "text/plain", strings.NewReader("hello"))
 	if rec.Code != 415 {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -149,7 +149,7 @@ func TestServeUnsupportedMedia(t *testing.T) {
 func TestServeTooManyBytes(t *testing.T) {
 	l := limits()
 	l.MaxBytes = 100
-	rec := post(t, NewHandler(l, ""), "/v1/trace", "image/png", bytes.NewReader(make([]byte, 200)))
+	rec := post(t, New(l, ""), "/v1/trace", "image/png", bytes.NewReader(make([]byte, 200)))
 	if rec.Code != 413 {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -158,7 +158,7 @@ func TestServeTooManyBytes(t *testing.T) {
 func TestServeHugeHeader413(t *testing.T) {
 	l := limits()
 	l.MaxPixels = 16_000_000
-	rec := post(t, NewHandler(l, ""), "/v1/trace", "image/png", bytes.NewReader(hugeHeaderPNG(100000, 100000)))
+	rec := post(t, New(l, ""), "/v1/trace", "image/png", bytes.NewReader(hugeHeaderPNG(100000, 100000)))
 	if rec.Code != 413 || !strings.Contains(rec.Body.String(), "pixels") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -166,27 +166,26 @@ func TestServeHugeHeader413(t *testing.T) {
 
 func TestServeMethodNotAllowed(t *testing.T) {
 	rec := httptest.NewRecorder()
-	NewHandler(limits(), "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/trace", nil))
+	New(limits(), "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/trace", nil))
 	if rec.Code != 405 {
 		t.Fatalf("%d", rec.Code)
 	}
 }
 
-// blocking installs a trace hook that blocks until release is closed.
-func blocking(h http.Handler) (release chan struct{}) {
-	release = make(chan struct{})
-	h.(*handler).traceFn = func(r io.Reader, o rekha.Options) (*rekha.Result, error) {
+// blocking is a trace hook that blocks until release is closed.
+func blocking() (Option, chan struct{}) {
+	release := make(chan struct{})
+	return WithTrace(func(ctx context.Context, img image.Image, o rekha.Options, extra map[string]string) (*rekha.Result, rekha.Options, http.Header, error) {
 		<-release
-		return rekha.TraceReader(r, o)
-	}
-	return release
+		return defaultTrace(ctx, img, o, extra)
+	}), release
 }
 
 func TestServeQueueFull503(t *testing.T) {
 	l := limits()
 	l.Concurrency, l.Queue = 1, 0
-	h := NewHandler(l, "")
-	release := blocking(h)
+	block, release := blocking()
+	h := New(l, "", block)
 	first := make(chan *httptest.ResponseRecorder)
 	go func() { first <- post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t))) }()
 	time.Sleep(50 * time.Millisecond)
@@ -203,8 +202,8 @@ func TestServeQueueFull503(t *testing.T) {
 func TestServeTimeout504(t *testing.T) {
 	l := limits()
 	l.Timeout = 50 * time.Millisecond
-	h := NewHandler(l, "")
-	release := blocking(h)
+	block, release := blocking()
+	h := New(l, "", block)
 	defer close(release)
 	rec := post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t)))
 	if rec.Code != 504 {
@@ -215,8 +214,8 @@ func TestServeTimeout504(t *testing.T) {
 func TestServeDisconnectReleasesToken(t *testing.T) {
 	l := limits()
 	l.Concurrency, l.Queue = 1, 0
-	h := NewHandler(l, "")
-	release := blocking(h)
+	block, release := blocking()
+	h := New(l, "", block)
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/v1/trace", bytes.NewReader(discPNG(t))).WithContext(ctx)
 	req.Header.Set("Content-Type", "image/png")
@@ -243,7 +242,7 @@ func TestServeStatic(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "index.html"), []byte("<h1>demo</h1>"), 0o644)
 	rec := httptest.NewRecorder()
-	NewHandler(limits(), dir).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	New(limits(), dir).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "demo") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -251,7 +250,7 @@ func TestServeStatic(t *testing.T) {
 		t.Fatalf("Cache-Control %q, want no-cache so a rebuilt page or wasm is picked up on reload", cc)
 	}
 	rec = httptest.NewRecorder()
-	NewHandler(limits(), "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	New(limits(), "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != 404 {
 		t.Fatalf("no static dir: %d", rec.Code)
 	}
@@ -265,7 +264,7 @@ func FuzzTraceHandler(f *testing.F) {
 		}
 	}
 	l := Limits{MaxBytes: 1 << 16, MaxPixels: 1 << 14, Timeout: 2 * time.Second, Concurrency: 2, Queue: 2}
-	h := NewHandler(l, "")
+	h := New(l, "")
 	f.Fuzz(func(t *testing.T, body []byte, ct string) {
 		var rec *httptest.ResponseRecorder
 		switch ct {
@@ -299,8 +298,8 @@ func (r readFails) Read([]byte) (int, error) {
 func TestServeAdmissionBeforeBodyRead(t *testing.T) {
 	l := limits()
 	l.Concurrency, l.Queue = 1, 0
-	h := NewHandler(l, "")
-	release := blocking(h)
+	block, release := blocking()
+	h := New(l, "", block)
 	defer close(release)
 	go post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t)))
 	time.Sleep(50 * time.Millisecond)
@@ -317,8 +316,8 @@ func TestServeAdmissionBeforeBodyRead(t *testing.T) {
 func TestServeQueueWaitTimesOut(t *testing.T) {
 	l := limits()
 	l.Concurrency, l.Queue, l.Timeout = 1, 1, 50*time.Millisecond
-	h := NewHandler(l, "")
-	release := blocking(h)
+	block, release := blocking()
+	h := New(l, "", block)
 	defer close(release)
 	go post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t)))
 	time.Sleep(20 * time.Millisecond)
@@ -333,13 +332,14 @@ func TestServeQueueWaitTimesOut(t *testing.T) {
 func TestServePanicIsolated(t *testing.T) {
 	l := limits()
 	l.Concurrency = 1
-	h := NewHandler(l, "")
-	h.(*handler).traceFn = func(io.Reader, rekha.Options) (*rekha.Result, error) { panic("boom") }
+	h := New(l, "", WithTrace(func(context.Context, image.Image, rekha.Options, map[string]string) (*rekha.Result, rekha.Options, http.Header, error) {
+		panic("boom")
+	}))
 	rec := post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t)))
 	if rec.Code != 500 || !strings.Contains(rec.Body.String(), "boom") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
-	h.(*handler).traceFn = rekha.TraceReader
+	h.(*handler).traceFn = defaultTrace
 	if rec := post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t))); rec.Code != 200 {
 		t.Fatalf("after panic: %d %s", rec.Code, rec.Body.String())
 	}
@@ -347,7 +347,7 @@ func TestServePanicIsolated(t *testing.T) {
 
 func TestServeFormats(t *testing.T) {
 	for format, want := range map[string][2]string{"pdf": {"application/pdf", "%PDF-1.4"}, "eps": {"application/postscript", "%!PS-Adobe-3.0 EPSF-3.0"}} {
-		rec := post(t, NewHandler(limits(), ""), "/v1/trace?preset=bw&format="+format, "image/png", bytes.NewReader(discPNG(t)))
+		rec := post(t, New(limits(), ""), "/v1/trace?preset=bw&format="+format, "image/png", bytes.NewReader(discPNG(t)))
 		if rec.Code != 200 {
 			t.Fatalf("%s: %d %s", format, rec.Code, rec.Body.String())
 		}
@@ -357,5 +357,51 @@ func TestServeFormats(t *testing.T) {
 		if !strings.HasPrefix(rec.Body.String(), want[1]) {
 			t.Errorf("%s: body starts %q", format, rec.Body.String()[:20])
 		}
+	}
+}
+
+// A field named by WithFields reaches the hook in extra, not the
+// options; one not named is still an unknown option.
+func TestServeHookSeesExtraFields(t *testing.T) {
+	var got map[string]string
+	var gotOpts rekha.Options
+	h := New(limits(), "", WithFields("cleanup"), WithTrace(func(ctx context.Context, img image.Image, o rekha.Options, extra map[string]string) (*rekha.Result, rekha.Options, http.Header, error) {
+		got, gotOpts = extra, o
+		return defaultTrace(ctx, img, o, extra)
+	}))
+	body, ct := multipartBody(t, "image", discPNG(t), map[string]string{"cleanup": "auto", "mode": "pixel"})
+	rec := post(t, h, "/v1/trace", ct, body)
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if got["cleanup"] != "auto" || len(got) != 1 || gotOpts.Mode != rekha.ModePixel {
+		t.Fatalf("extra %v, mode %v", got, gotOpts.Mode)
+	}
+	rec = post(t, New(limits(), ""), "/v1/trace?cleanup=auto", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "cleanup") {
+		t.Fatalf("without WithFields: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// The options and headers the hook returns drive the write: a hook that
+// switches the format gets that format's body and content type.
+func TestServeHookOptionsDriveTheWrite(t *testing.T) {
+	h := New(limits(), "", WithTrace(func(ctx context.Context, img image.Image, o rekha.Options, extra map[string]string) (*rekha.Result, rekha.Options, http.Header, error) {
+		o.Format = rekha.FormatPDF
+		r, o, _, err := defaultTrace(ctx, img, o, extra)
+		return r, o, http.Header{"X-Rekha-Cleanup": {"off"}}, err
+	}))
+	rec := post(t, h, "/v1/trace", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/pdf" {
+		t.Fatalf("content type %q", ct)
+	}
+	if !bytes.HasPrefix(rec.Body.Bytes(), []byte("%PDF")) {
+		t.Fatalf("body starts %q", rec.Body.Bytes()[:8])
+	}
+	if v := rec.Header().Get("X-Rekha-Cleanup"); v != "off" {
+		t.Fatalf("X-Rekha-Cleanup %q", v)
 	}
 }

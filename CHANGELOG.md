@@ -12,6 +12,10 @@ pipeline builds every artefact from the tag.
   and height are the image size divided by it with the viewBox at image
   size; PDF and EPS pages follow. Convert keeps it. For an image
   upscaled before tracing to keep thin lines.
+- `server` package: the HTTP handler behind `rekha-serve`, importable
+  with `server.New`, a `WithTrace` hook that sees the decoded image,
+  options and extra request fields and decides what is written, and
+  `WithFields` naming those fields. `rekha-serve` behaves as before.
 
 ## v0.2.0
 

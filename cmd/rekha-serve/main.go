@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+
+	"github.com/vexyl-ai/rekha/server"
 )
 
 const version = "dev"
@@ -24,7 +26,7 @@ const version = "dev"
 type config struct {
 	addr    string
 	static  string
-	limits  Limits
+	limits  server.Limits
 	version bool
 }
 
@@ -60,7 +62,7 @@ func main() {
 	}
 	srv := &http.Server{
 		Addr:              c.addr,
-		Handler:           NewHandler(c.limits, c.static),
+		Handler:           server.New(c.limits, c.static),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       c.limits.Timeout + 10*time.Second,
 		WriteTimeout:      c.limits.Timeout + 10*time.Second,
@@ -73,7 +75,7 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("rekha-serve %s listening on %s (max %d bytes, %d pixels, %s, %d concurrent, queue %d)", version, ln.Addr(), c.limits.MaxBytes, c.limits.MaxPixels, c.limits.Timeout, c.limits.Concurrency, c.limits.Queue)
-	if err := serve(ctx, srv, ln, c.limits.Timeout+writeGrace); err != nil {
+	if err := serve(ctx, srv, ln, c.limits.Timeout+server.WriteGrace); err != nil {
 		log.Fatal(err)
 	}
 }
