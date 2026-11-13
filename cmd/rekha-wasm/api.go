@@ -54,6 +54,18 @@ func install() {
 			return finish(args[0], o)
 		})
 	}))
+	obj.Set("convert", js.FuncOf(func(_ js.Value, args []js.Value) any {
+		return guard(func() (js.Value, error) {
+			if len(args) < 2 || args[0].Type() != js.TypeString {
+				return js.Null(), errors.New("rekha: convert(svgText, options)")
+			}
+			o, err := parseOptions(args[1])
+			if err != nil {
+				return js.Null(), err
+			}
+			return convert(args[0].String(), o)
+		})
+	}))
 	obj.Set("trace", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		return guard(func() (js.Value, error) {
 			img, o, err := imageAndOptions(args)
@@ -230,6 +242,22 @@ func finish(h js.Value, o rekha.Options) (js.Value, error) {
 		return js.Null(), err
 	}
 	out.Set("millis", ms(start))
+	return out, nil
+}
+
+// convert rewrites an SVG Rekha wrote (edited in the page or not) in
+// o.Format and returns {bytes: Uint8Array, format}.
+func convert(svgText string, o rekha.Options) (js.Value, error) {
+	var buf bytes.Buffer
+	if err := rekha.Convert(strings.NewReader(svgText), &buf, o); err != nil {
+		return js.Null(), err
+	}
+	f, _ := rekha.ParseFormat(string(o.Format))
+	data := js.Global().Get("Uint8Array").New(buf.Len())
+	js.CopyBytesToJS(data, buf.Bytes())
+	out := js.Global().Get("Object").New()
+	out.Set("bytes", data)
+	out.Set("format", string(f))
 	return out, nil
 }
 

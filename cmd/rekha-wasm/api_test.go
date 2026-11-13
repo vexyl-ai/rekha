@@ -193,3 +193,26 @@ func TestProgressCallback(t *testing.T) {
 		t.Fatalf("trace without a callback: %s", r.Get("error").String())
 	}
 }
+
+func TestWasmConvert(t *testing.T) {
+	svg := nativeSVG(t, disc(false), "")
+	r := api().Call("convert", svg, `{"format":"pdf"}`)
+	if !r.Get("ok").Bool() {
+		t.Fatalf("convert: %s", r.Get("error").String())
+	}
+	bytes := r.Get("bytes")
+	head := make([]byte, 8)
+	js.CopyBytesToGo(head, bytes.Call("subarray", 0, 8))
+	if string(head) != "%PDF-1.4" || r.Get("format").String() != "pdf" || r.Get("bytes").Length() < 100 {
+		t.Fatalf("head %q format %s length %d", head, r.Get("format").String(), bytes.Length())
+	}
+	again := api().Call("convert", svg, `{}`)
+	out := make([]byte, again.Get("bytes").Length())
+	js.CopyBytesToGo(out, again.Get("bytes"))
+	if string(out) != svg {
+		t.Error("svg round trip changed the document")
+	}
+	if bad := api().Call("convert", "<svg><rect/></svg>", `{"format":"eps"}`); bad.Get("ok").Bool() {
+		t.Error("foreign svg accepted")
+	}
+}

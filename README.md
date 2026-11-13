@@ -42,7 +42,7 @@ Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase pr
 - **Small text survives.** On the small-glyphs fixture Rekha reaches 32.26 dB with 86 nodes against Potrace's 32.22 dB with 107.
 - **Fast and deterministic.** 0.1–0.25 s per 256×256 image with refinement; 1.1 s plain or 4.6 s refined for a 3.4-megapixel logo on a laptop. The same input gives the same SVG on one core or eight, arm64 or amd64.
 - **Progress reporting.** The library reports each stage and its count through a callback; the WebAssembly API and the demo page expose the same.
-- **SVG, PDF and EPS.** One trace, three files, from the same curves and gradients: `--format pdf` or an output ending in `.pdf` or `.eps`. The PDF is one page at 0.75 pt per pixel with axial and radial shadings and soft masks for the translucent overlays; the EPS is Level 3 with `shfill`.
+- **SVG, PDF and EPS.** One trace, three files, from the same curves and gradients: `--format pdf` or an output ending in `.pdf` or `.eps`, in the playground too, and from an SVG Rekha wrote earlier (`rekha.Convert`). The PDF is one page at 0.75 pt per pixel with axial and radial shadings and soft masks for the translucent overlays; the EPS is Level 3 with `shfill`.
 - **Runs anywhere Go runs.** A single static binary, a capped HTTP service, or the browser via WebAssembly: images traced in the browser are never uploaded.
 
 ## Installation
@@ -108,6 +108,7 @@ rekha --preset poster --hierarchical cutout --stroke 0.5 logo.png
 rekha --mode polygon - < in.png > out.svg         # stdin to stdout
 rekha -o logo.pdf --preset poster logo.png        # PDF from the extension
 rekha --format eps --preset photo --gradients artwork.jpg   # artwork.eps
+rekha -o logo.pdf logo.svg                        # an SVG Rekha wrote, edited or not, to PDF
 ```
 
 Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs are still processed).
@@ -148,7 +149,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 | `--hierarchical stacked\|cutout` | `cutout` / `stacked` | Shapes with holes sharing one boundary curve, or layered shapes (`bw` / colour presets) |
 | `--stroke px` | `0` | Stroke each shape in its own fill to seal hairline seams when viewed enlarged (0–4; `--cutout-stroke` is accepted as an alias) |
 | `--path-precision N` | `2` | Decimals in path data |
-| `--format` | from the output extension, else `svg` | Output format: `svg`, `pdf` or `eps`. PDF and EPS are written from the same paths and gradients at 0.75 pt per pixel; PDF keeps every gradient (translucent overlay layers through soft masks), EPS has no transparency and leaves those overlays out |
+| `--format` | from the output extension, else `svg` | Output format: `svg`, `pdf` or `eps`. An input ending in `.svg` must be one Rekha wrote; it is converted rather than traced, so a file edited in the playground can still become a PDF. PDF and EPS are written from the same paths and gradients at 0.75 pt per pixel; PDF keeps every gradient (translucent overlay layers through soft masks), EPS has no transparency and leaves those overlays out |
 | `--no-mark` | off | Leave out the generator mark: by default the root carries `data-generator="rekha <version>"` and a comment names Rekha and this repository; neither changes how the image renders |
 | `-o, --output` | `<input>.svg` | Output file, or `-` for stdout |
 
@@ -194,7 +195,7 @@ The playground is hosted at [vexyl-ai.github.io/rekha/demo](https://vexyl-ai.git
 make serve      # builds web/demo/rekha.wasm and serves the site on http://localhost:8080/ (playground at /demo/)
 ```
 
-The demo page traces entirely in a Web Worker: drop, paste or choose an image, adjust the controls, compare source and SVG with a wipe, zoom and pan the canvas (ctrl/⌘ + wheel or pinch, drag, double-click, toolbar, keys `+` `-` `0` `1`), watch the progress bar, tidy the result (click a shape to select it, shift-click to add, double-click to take every shape of that colour; Delete removes it, the colour swatch repaints it with its gradient shading kept, Remove background drops the page behind the art, ⌘Z and ⇧⌘Z undo and redo), and download the SVG. Nothing is uploaded.
+The demo page traces entirely in a Web Worker: drop, paste or choose an image, adjust the controls, compare source and SVG with a wipe, zoom and pan the canvas (ctrl/⌘ + wheel or pinch, drag, double-click, toolbar, keys `+` `-` `0` `1`), watch the progress bar, tidy the result (click a shape to select it, shift-click to add, double-click to take every shape of that colour; Delete removes it, the colour swatch repaints it with its gradient shading kept, Remove background drops the page behind the art, ⌘Z and ⇧⌘Z undo and redo), and download the result as SVG, PDF or EPS. Nothing is uploaded.
 
 The WebAssembly module exposes `segment`, `finish`, `trace` and `free` on a global `rekha` object, each with an optional progress callback. The API, worker protocol and embedding notes are in [`docs/wasm.md`](docs/wasm.md).
 

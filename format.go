@@ -70,3 +70,33 @@ func (r *Result) WritePDF(w io.Writer, o Options) error {
 func (r *Result) WriteEPS(w io.Writer, o Options) error {
 	return export.WriteEPS(w, r.document(o), o.PathPrecision)
 }
+
+// Convert reads an SVG Rekha wrote, edited or not (paths removed,
+// fills changed, gradients dropped), and writes it in o.Format with the
+// precision the file carries. The mark follows the SVG's own, or
+// Rekha's current version when it has none; o.NoMark removes it. SVG
+// from other tools is refused: the reader knows only Rekha's dialect.
+func Convert(r io.Reader, w io.Writer, o Options) error {
+	d, prec, err := svg.Parse(r)
+	if err != nil {
+		return err
+	}
+	switch {
+	case o.NoMark:
+		d.Generator = ""
+	case d.Generator == "":
+		d.Generator = "rekha " + Version()
+	}
+	f, err := ParseFormat(string(o.Format))
+	if err != nil {
+		return err
+	}
+	switch f {
+	case FormatPDF:
+		return export.WritePDF(w, d, prec)
+	case FormatEPS:
+		return export.WriteEPS(w, d, prec)
+	default:
+		return svg.WriteDocument(w, d, prec)
+	}
+}

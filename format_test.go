@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -158,4 +159,48 @@ func psnr(a, b image.Image) float64 {
 		return math.Inf(1)
 	}
 	return 10 * math.Log10(255*255/(sum/float64(n)))
+}
+
+func TestConvertSVGToPDFKeepsMarkAndEdits(t *testing.T) {
+	o := PresetOptions(PresetPhoto)
+	o.Gradients = true
+	r, err := Trace(synth(t, "gradient-shapes"), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var svgText bytes.Buffer
+	if err := r.WriteSVG(&svgText, o); err != nil {
+		t.Fatal(err)
+	}
+	// An edit in the playground: the first path removed.
+	edited := strings.Replace(svgText.String(), "<path", "<!-- gone --><path", 1)
+	edited = regexp.MustCompile(`(?s)<!-- gone --><path[^>]*/>\n`).ReplaceAllString(edited, "")
+	for _, c := range []struct {
+		format Format
+		prefix string
+		mark   string
+	}{{FormatPDF, "%PDF-1.4", "/Producer (Rekha "}, {FormatEPS, "%!PS-Adobe-3.0", "%%Creator: Rekha "}, {FormatSVG, "<svg", "data-generator=\"rekha "}} {
+		o.Format = c.format
+		var out bytes.Buffer
+		if err := Convert(strings.NewReader(edited), &out, o); err != nil {
+			t.Fatalf("%s: %v", c.format, err)
+		}
+		if !strings.HasPrefix(out.String(), c.prefix) || !strings.Contains(out.String(), c.mark) {
+			t.Errorf("%s: %q", c.format, out.String()[:60])
+		}
+	}
+	o.Format = FormatSVG
+	var again bytes.Buffer
+	if err := Convert(strings.NewReader(edited), &again, o); err != nil || again.String() != edited {
+		t.Errorf("svg round trip changed the document: %v", err)
+	}
+	o.NoMark = true
+	again.Reset()
+	Convert(strings.NewReader(edited), &again, o)
+	if strings.Contains(again.String(), "generator") {
+		t.Error("NoMark left the mark in place")
+	}
+	if err := Convert(strings.NewReader("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"), &again, o); err == nil {
+		t.Error("foreign SVG accepted")
+	}
 }

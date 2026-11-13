@@ -30,7 +30,9 @@ h1, h2, p { margin: 0; }
 .top .brand img { display: block; width: 30px; height: 30px; }
 .top h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
 .top .tagline { color: var(--ink-soft); flex: 1; }
-.actions { display: flex; gap: 8px; }
+.actions { display: flex; gap: 8px; align-items: center; }
+.actions .format select { width: auto; padding: 6px 28px 6px 10px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 button {
   font: inherit; font-weight: 500; padding: 7px 14px; border-radius: 6px;

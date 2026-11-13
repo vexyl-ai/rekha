@@ -363,3 +363,28 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 	return b
 }
+
+func TestSVGInputIsConverted(t *testing.T) {
+	dir := t.TempDir()
+	var out, errb bytes.Buffer
+	svgPath := filepath.Join(dir, "star.svg")
+	if code := run([]string{"-o", svgPath, starPNG}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if code := run([]string{"-o", filepath.Join(dir, "star.pdf"), svgPath}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if b := mustRead(t, filepath.Join(dir, "star.pdf")); !bytes.HasPrefix(b, []byte("%PDF-1.4")) {
+		t.Fatalf("pdf: %q", b[:10])
+	}
+	// Without a format or an output the SVG would be written over itself.
+	if code := run([]string{svgPath}, strings.NewReader(""), &out, &errb); code == 0 || !strings.Contains(errb.String(), "overwrite") {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if code := run([]string{"--format", "eps", svgPath}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "star.eps")); err != nil {
+		t.Fatal(err)
+	}
+}

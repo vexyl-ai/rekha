@@ -143,6 +143,8 @@ func presetArg(args []string) rekha.Preset {
 
 // traceOne traces input ("-" for stdin) and writes the output to out ("-" for
 // stdout). The output file is only created once tracing has succeeded.
+// An input ending in .svg is one Rekha wrote: it is converted to the
+// output format instead of traced, and never written over itself.
 func traceOne(in, out string, o rekha.Options, stdin io.Reader, stdout io.Writer) error {
 	var r io.Reader = stdin
 	if in != "-" {
@@ -153,20 +155,34 @@ func traceOne(in, out string, o rekha.Options, stdin io.Reader, stdout io.Writer
 		defer f.Close()
 		r = f
 	}
-	res, err := rekha.TraceReader(r, o)
-	if err != nil {
-		return err
+	write := func(w io.Writer) error {
+		if isSVG(in) {
+			if in == out {
+				return fmt.Errorf("%s would overwrite the input; give --format pdf or eps, or -o", in)
+			}
+			return rekha.Convert(r, w, o)
+		}
+		res, err := rekha.TraceReader(r, o)
+		if err != nil {
+			return err
+		}
+		return res.Write(w, o)
 	}
 	if out == "-" {
-		return res.Write(stdout, o)
+		return write(stdout)
+	}
+	if isSVG(in) && in == out {
+		return fmt.Errorf("%s would overwrite the input; give --format pdf or eps, or -o", in)
 	}
 	f, err := os.Create(out)
 	if err != nil {
 		return err
 	}
-	if err := res.Write(f, o); err != nil {
+	if err := write(f); err != nil {
 		f.Close()
 		return err
 	}
 	return f.Close()
 }
+
+func isSVG(path string) bool { return strings.HasSuffix(strings.ToLower(path), ".svg") }

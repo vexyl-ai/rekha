@@ -214,6 +214,7 @@ function showSource(file) {
   $('tools').hidden = true;
   $('drop').hidden = true;
   $('download').disabled = true;
+  $('format').disabled = true;
 }
 
 // showSVG puts a fresh trace on the stage and starts its edit history.
@@ -238,6 +239,7 @@ function mount(svg) {
   if (svgURL) URL.revokeObjectURL(svgURL);
   svgURL = URL.createObjectURL(new Blob([serialise()], { type: 'image/svg+xml' }));
   $('download').disabled = false;
+  $('format').disabled = false;
   $('undo').disabled = !history.canUndo;
   $('redo').disabled = !history.canRedo;
 }
@@ -423,9 +425,39 @@ for (const id of ['mode', 'hierarchical', 'maxColors', 'colorTolerance', 'thresh
 function cancel() { startWorker(); setStatus('Cancelled. Change a setting to trace again.'); }
 $('cancel').addEventListener('click', cancel);
 $('busyCancel').addEventListener('click', cancel);
-$('download').addEventListener('click', () => {
+// Download: the SVG as edited; PDF and EPS by handing that SVG to the
+// wasm, which reads its own dialect back and writes the other format.
+// The conversion has its own ids so it never supersedes a trace.
+const MIME = { svg: 'image/svg+xml', pdf: 'application/pdf', eps: 'application/postscript' };
+let convertID = 0;
+function convert(svg, format) {
+  const id = --convertID;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    worker.postMessage({ id, op: 'convert', svg, options: { ...readOptions(), format } });
+  });
+}
+function save(blob, name) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = svgURL; a.download = 'rekha.svg'; a.click();
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+$('download').addEventListener('click', async () => {
+  const format = $('format').value;
+  if (format === 'svg') { save(new Blob([serialise()], { type: MIME.svg }), 'rekha.svg'); return; }
+  $('download').disabled = true;
+  try {
+    const svg = serialise();
+    const r = await convert(svg, format);
+    save(new Blob([r.bytes], { type: MIME[format] }), 'rekha.' + format);
+    const note = format === 'eps' && svg.includes('stop-opacity') ? ' EPS has no transparency: translucent overlay layers are left out.' : '';
+    setStatus(`${format.toUpperCase()} written, ${(r.bytes.length / 1024).toFixed(1)} KB.${note}`);
+  } catch (e) {
+    setStatus('Could not write the ' + format.toUpperCase() + ': ' + e.message, 'error');
+  } finally {
+    $('download').disabled = false;
+  }
 });
 
 // Edits: click a shape on the SVG side of the wipe to select it (shift

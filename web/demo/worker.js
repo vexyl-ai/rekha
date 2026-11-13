@@ -1,5 +1,5 @@
 // Classic worker: loads the Go wasm runtime and rekha.wasm, then serves
-// segment / finish / free requests from the page one at a time.
+// segment / finish / free / convert requests from the page one at a time.
 'use strict';
 importScripts('wasm_exec.js', 'protocol.js');
 
@@ -42,6 +42,9 @@ self.onmessage = async (ev) => {
       case 'free':
         self.rekha.free(msg.handle);
         r = { ok: true };
+        break;
+      case 'convert':
+        r = self.rekha.convert(msg.svg, msg.options);
         break;
       default:
         r = { ok: false, error: 'unknown op ' + msg.op };
