@@ -164,8 +164,9 @@ func Otsu(gray []uint8) uint8 {
 
 // Flatten composites img onto white and returns 3 bytes (R, G, B) per
 // pixel, row-major, with the width and height. Opaque NRGBA, RGBA, Gray
-// and Paletted images are read directly; anything else is composited
-// through the generic draw path first. Transparent pixels become white.
+// and Paletted images are read directly, YCbCr (decoded JPEG) with its
+// chroma interpolated; anything else is composited through the generic
+// draw path first. Transparent pixels become white.
 func Flatten(img image.Image) ([]uint8, int, int) {
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
@@ -190,6 +191,9 @@ func Flatten(img image.Image) ([]uint8, int, int) {
 			rgbRows(out, src.Pix, src.Stride, b)
 			return out, w, h
 		}
+	case *image.YCbCr:
+		flattenYCbCr(out, src, b)
+		return out, w, h
 	case *image.Paletted:
 		lut := make([][3]uint8, len(src.Palette))
 		for i, c := range src.Palette {
