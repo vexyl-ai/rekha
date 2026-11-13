@@ -36,6 +36,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	o := rekha.PresetOptions(presetArg(args))
 	var preset, mode, output, format, threshold, turnPolicy, palette, hierarchical string
 	var showVersion bool
+	fs.BoolVar(&o.Auto, "auto", false, "trace under four candidate settings (poster, poster with gradients, photo with gradients, bw) and keep the closest to the image; a --palette adds a fifth; other tracing flags are ignored")
 	fs.StringVar(&preset, "preset", string(o.Preset), "preset seeding the defaults: bw (cutout, 2 colours), poster (stacked, tolerance 0.08), photo (stacked, tolerance 0.04, speckle 16, fit 1.5)")
 	fs.StringVar(&mode, "mode", string(o.Mode), "mode: pixel, polygon, spline")
 	fs.IntVar(&o.FilterSpeckle, "filter-speckle", o.FilterSpeckle, "discard regions smaller than N pixels")

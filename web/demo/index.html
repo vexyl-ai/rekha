@@ -49,6 +49,11 @@
   </section>
 
   <section>
+    <label class="check wide"><input type="checkbox" id="auto"> Auto</label>
+    <p class="hint">Traces under four settings (poster, poster with gradients, photo with gradients, black and white) and keeps the one closest to the image. Four times the wait; the settings below are ignored.</p>
+  </section>
+
+  <section class="manual">
     <h2>Colours <small>re-runs segmentation</small></h2>
     <label class="row"><span>Preset</span><select id="preset"><option value="bw">Black and white</option><option value="poster">Poster</option><option value="photo" selected>Photo</option></select></label>
     <label class="row"><span>Max colours</span><input type="number" id="maxColors" min="0" max="256" step="1"></label>
@@ -60,7 +65,7 @@
     <p class="hint">Joins colour bands that shade smoothly into one gradient fill. Not for the black and white preset.</p>
   </section>
 
-  <section>
+  <section class="manual">
     <h2>Curves <small>re-runs the fit only</small></h2>
     <label class="row"><span>Mode</span><select id="mode"><option value="spline">Curves</option><option value="polygon">Straight lines</option><option value="pixel">Pixel edges</option></select></label>
     <label class="row"><span>Layers</span><select id="hierarchical"><option value="stacked">Stacked</option><option value="cutout">Cut out</option></select></label>

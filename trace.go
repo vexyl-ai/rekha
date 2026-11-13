@@ -31,8 +31,13 @@ func TraceReader(r io.Reader, o Options) (*Result, error) {
 	return Trace(img, o)
 }
 
-// Trace vectorises img according to o.
+// Trace vectorises img according to o, or, when o.Auto is set, under
+// the candidate Auto picks.
 func Trace(img image.Image, o Options) (*Result, error) {
+	if o.Auto {
+		r, _, err := Auto(img, o)
+		return r, err
+	}
 	s, err := Segment(img, o)
 	if err != nil {
 		return nil, err

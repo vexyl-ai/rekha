@@ -102,6 +102,7 @@ rekha image.png                                   # writes image.svg
 rekha -o out.svg --threshold auto scan.png        # black and white, automatic threshold
 rekha --preset poster logo.png                    # flat colours, stacked layers
 rekha --preset poster --refine logo.png           # plus curve refinement and primitives
+rekha --auto logo.png                             # try four settings, keep the closest to the image
 rekha --preset photo --gradients artwork.jpg      # smooth shading as gradient fills
 rekha --preset poster --palette "#000000,#ff0000,#ffffff" logo.png
 rekha --preset poster --hierarchical cutout --stroke 0.5 logo.png
@@ -116,6 +117,8 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 ## Options
 
 `--preset bw|poster|photo` seeds every default; any flag given on the command line overrides it.
+
+`--auto` ignores the tracing flags and races four candidates instead: poster at tolerance 0.06, poster at 0.04 with gradients, photo with gradients and a speckle filter of 2, and bw with the automatic threshold, each with `--refine`. Every candidate is rendered by a rasteriser built in and scored against the image (PSNR over white, the benchmark's measure), and the closest wins; a `--palette` adds a fifth candidate fixed to it. On a mixed set of twenty logos, cartoons and renders the race scored 1.7 dB above a fixed poster-with-gradients setting on average and fell below it on one image, by half a decibel; it costs four traces. Output flags (`--path-precision`, `--stroke`, `--no-mark`, `--format`) still apply.
 
 ### Colour
 

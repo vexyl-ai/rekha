@@ -1,5 +1,5 @@
 // Classic worker: loads the Go wasm runtime and rekha.wasm, then serves
-// segment / finish / free / convert requests from the page one at a time.
+// trace / segment / finish / free / convert requests from the page one at a time.
 'use strict';
 importScripts('wasm_exec.js', 'protocol.js');
 
@@ -33,6 +33,9 @@ self.onmessage = async (ev) => {
     await ready;
     let r;
     switch (msg.op) {
+      case 'trace':
+        r = self.rekha.trace({ width: msg.width, height: msg.height, data: new Uint8ClampedArray(msg.data) }, msg.options, progress(msg.id));
+        break;
       case 'segment':
         r = self.rekha.segment({ width: msg.width, height: msg.height, data: new Uint8ClampedArray(msg.data) }, msg.options, progress(msg.id));
         break;

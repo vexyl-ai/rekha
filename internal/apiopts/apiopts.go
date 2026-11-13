@@ -18,6 +18,7 @@ import (
 // Params is the JSON shape shared by the wasm and HTTP entry points. Every
 // field is optional; the preset seeds the rest exactly as the CLI.
 type Params struct {
+	Auto              *bool      `json:"auto"` // race the candidates of rekha.Auto, ignoring the tracing fields
 	Preset            *string    `json:"preset"`
 	Mode              *string    `json:"mode"`
 	FilterSpeckle     *int       `json:"filterSpeckle"`
@@ -143,6 +144,9 @@ func Parse(jsonText []byte) (rekha.Options, error) {
 			*dst = *v
 		}
 	}
+	if p.Auto != nil {
+		o.Auto = *p.Auto
+	}
 	setString((*string)(&o.Mode), p.Mode)
 	setInt(&o.FilterSpeckle, p.FilterSpeckle)
 	setInt(&o.ColorPrecision, p.ColorPrecision)
@@ -229,5 +233,5 @@ func rewriteFieldError(err error, kv map[string]string) error {
 // SegmentKeys lists the Params keys that change the segmentation (and so
 // need Segment to run again); every other key only changes Finish.
 func SegmentKeys() []string {
-	return []string{"preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance"}
+	return []string{"auto", "preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance"}
 }

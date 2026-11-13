@@ -52,6 +52,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, .divider:focus-
 .rail h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
 .rail h2 small { font-weight: 400; color: var(--ink-soft); font-size: 13px; margin-left: 6px; }
 .hint { color: var(--ink-soft); font-size: 13px; margin: 4px 0 8px; }
+/* With Auto on, the manual settings are read but ignored: shown dimmed, left usable so a value can be set up for when it is off. */
+.auto .manual { opacity: 0.45; }
 .row { display: grid; grid-template-columns: 1fr 132px; align-items: center; gap: 8px; margin: 6px 0; }
 .row > span:first-child { color: var(--ink); }
 .pair { display: flex; align-items: center; gap: 6px; }

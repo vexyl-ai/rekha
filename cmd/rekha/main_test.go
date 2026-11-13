@@ -40,6 +40,20 @@ func TestRunTracesPNGToSVG(t *testing.T) {
 	}
 }
 
+func TestRunAuto(t *testing.T) {
+	data, err := os.ReadFile(starPNG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := run([]string{"--auto", "--no-mark", "-"}, bytes.NewReader(data), &out, &errb); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb.String())
+	}
+	if !strings.HasPrefix(out.String(), "<svg") || !strings.Contains(out.String(), "<path") {
+		t.Fatalf("stdout = %.80q", out.String())
+	}
+}
+
 func TestRunStdinStdout(t *testing.T) {
 	data, err := os.ReadFile(starPNG)
 	if err != nil {

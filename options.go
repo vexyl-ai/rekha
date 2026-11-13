@@ -97,6 +97,12 @@ type Options struct {
 	// PDF or EPS. WriteSVG, WritePDF and WriteEPS ignore it.
 	Format Format
 
+	// Auto makes Trace and TraceReader race the candidate option sets
+	// of Auto and keep the one closest to the image, ignoring every
+	// field of these options but the output ones Auto lists. Segment
+	// does not read it.
+	Auto bool
+
 	// Progress, when set, is told how far Segment and Finish have got:
 	// stage names quantise, label, ramps (Segment; no count) and
 	// outlines, nest, edges, refine, curves (Finish; done of total, total

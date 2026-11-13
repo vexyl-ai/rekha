@@ -45,6 +45,7 @@ function applyPreset(name) {
 
 function readOptions() {
   return {
+    auto: $('auto').checked,
     preset: $('preset').value,
     mode: $('mode').value,
     hierarchical: $('hierarchical').value,
@@ -265,7 +266,7 @@ function commit(note) {
 
 function report(fin, note) {
   const kb = (fin.bytes / 1024).toFixed(1);
-  const timing = fin.millis != null ? ` Segmented in ${segmentMs.toFixed(0)} ms, fitted in ${fin.millis.toFixed(0)} ms.` : '';
+  const timing = fin.auto ? ` Auto chose ${fin.auto}, ${fin.millis.toFixed(0)} ms.` : fin.millis != null ? ` Segmented in ${segmentMs.toFixed(0)} ms, fitted in ${fin.millis.toFixed(0)} ms.` : '';
   setStatus(`${note ? note + ' ' : ''}${image.width}×${image.height}${image.note}.${timing} ${fin.paths} paths, ${kb} KB.`);
 }
 
@@ -365,6 +366,17 @@ async function run() {
   const options = readOptions();
   $('cancel').disabled = false;
   try {
+    if (options.auto) {
+      // The race traces whole; nothing of it is a segmentation to keep.
+      setStatus('Tracing under four settings…', 'working');
+      free(handles.release());
+      cachedOptions = null;
+      const copy = image.data.slice();
+      const fin = await call({ op: 'trace', width: image.width, height: image.height, data: copy.buffer, options }, [copy.buffer]);
+      showSVG(fin.svg);
+      report(fin);
+      return;
+    }
     if (needsResegment(cachedOptions, options) || handles.current === null) {
       setStatus('Segmenting colours…', 'working');
       const copy = image.data.slice(); // keep ours; the worker gets a transferred copy
@@ -419,6 +431,7 @@ document.addEventListener('paste', (e) => {
 
 // Controls.
 $('preset').addEventListener('change', () => { applyPreset($('preset').value); run(); });
+$('auto').addEventListener('change', () => { document.body.classList.toggle('auto', $('auto').checked); run(); });
 for (const id of ['mode', 'hierarchical', 'maxColors', 'colorTolerance', 'threshold', 'thresholdAuto', 'filterSpeckle', 'gradients', 'gradientTolerance', 'refine', 'refinePasses', 'stroke', 'pathPrecision']) {
   $(id).addEventListener('change', () => run());
 }

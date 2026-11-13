@@ -74,6 +74,9 @@ func install() {
 			}
 			o.Progress = progressOf(args, 2)
 			start := time.Now()
+			if o.Auto {
+				return auto(img, o, start)
+			}
 			s, err := rekha.Segment(img, o)
 			if err != nil {
 				return js.Null(), err
@@ -202,7 +205,64 @@ func imageFromJS(v js.Value) (*image.NRGBA, error) {
 	return img, nil
 }
 
+// auto is the trace op under Options.Auto: the race of rekha.Auto, its
+// result as trace returns one, the palette read off the fills, and
+// "auto" naming the candidate that won.
+func auto(img *image.NRGBA, o rekha.Options, start time.Time) (js.Value, error) {
+	res, chosen, err := rekha.Auto(img, o)
+	if err != nil {
+		return js.Null(), err
+	}
+	out, err := svgResult(res, chosen)
+	if err != nil {
+		return js.Null(), err
+	}
+	out.Set("width", res.Width)
+	out.Set("height", res.Height)
+	out.Set("palette", fillsJS(res))
+	out.Set("auto", describe(chosen))
+	out.Set("millis", ms(start))
+	return out, nil
+}
+
+// describe names the candidate chosen: the preset, its colour tolerance
+// for a colour preset, and gradients when on.
+func describe(o rekha.Options) string {
+	s := string(o.Preset)
+	if o.Preset != rekha.PresetBW {
+		s += fmt.Sprintf(" at tolerance %.2g", o.ColorTolerance)
+	}
+	if o.Gradients {
+		s += " with gradients"
+	}
+	if len(o.Palette) > 0 {
+		s += " on the given palette"
+	}
+	return s
+}
+
+// fillsJS lists the distinct flat fills of res in paint order, as
+// paletteJS does the quantiser's palette.
+func fillsJS(res *rekha.Result) js.Value {
+	var fills []string
+	seen := map[string]bool{}
+	for _, p := range res.Paths {
+		if strings.HasPrefix(p.Fill, "#") && !seen[p.Fill] {
+			seen[p.Fill] = true
+			fills = append(fills, p.Fill)
+		}
+	}
+	arr := js.Global().Get("Array").New(len(fills))
+	for i, f := range fills {
+		arr.SetIndex(i, f)
+	}
+	return arr
+}
+
 func segment(img *image.NRGBA, o rekha.Options) (js.Value, error) {
+	if o.Auto {
+		return js.Null(), errors.New("rekha: auto needs trace, not segment and finish")
+	}
 	start := time.Now()
 	s, err := rekha.Segment(img, o)
 	if err != nil {

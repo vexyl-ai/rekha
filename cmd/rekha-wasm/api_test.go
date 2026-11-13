@@ -86,6 +86,24 @@ func TestWasmTraceMatchesNative(t *testing.T) {
 	}
 }
 
+func TestWasmTraceAutoNamesTheWinner(t *testing.T) {
+	img := disc(false)
+	r := api().Call("trace", jsImage(img), `{"auto":true,"noMark":true}`)
+	if !r.Get("ok").Bool() {
+		t.Fatalf("trace failed: %s", r.Get("error").String())
+	}
+	if r.Get("auto").Type() != js.TypeString || r.Get("auto").String() == "" || r.Get("paths").Int() < 1 {
+		t.Fatalf("result fields: %v", js.Global().Get("JSON").Call("stringify", r).String())
+	}
+	if n := r.Get("palette").Length(); n < 1 {
+		t.Fatalf("palette has %d fills", n)
+	}
+	seg := api().Call("segment", jsImage(img), `{"auto":true}`)
+	if seg.Get("ok").Bool() || !strings.Contains(seg.Get("error").String(), "auto") {
+		t.Fatalf("segment with auto: %v", js.Global().Get("JSON").Call("stringify", seg).String())
+	}
+}
+
 func TestWasmAlphaMatchesTrace(t *testing.T) {
 	img := disc(true)
 	r := api().Call("trace", jsImage(img), `{"preset":"poster"}`)

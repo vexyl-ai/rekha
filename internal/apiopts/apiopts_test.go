@@ -35,6 +35,15 @@ func TestParseOverrides(t *testing.T) {
 	}
 }
 
+func TestParseAuto(t *testing.T) {
+	if o := mustParse(t, `{"auto":true,"preset":"poster"}`); !o.Auto || o.Preset != rekha.PresetPoster {
+		t.Fatalf("auto not applied: %+v", o)
+	}
+	if o := mustParse(t, `{"preset":"poster"}`); o.Auto {
+		t.Fatal("auto on by default")
+	}
+}
+
 func TestParseThresholdNumber(t *testing.T) {
 	o := mustParse(t, `{"threshold":0.3}`)
 	if o.Threshold != 0.3 || o.AutoThreshold {
@@ -87,7 +96,7 @@ func TestFromStringsBadNumber(t *testing.T) {
 }
 
 func TestSegmentKeys(t *testing.T) {
-	want := []string{"preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance"}
+	want := []string{"auto", "preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance"}
 	if got := SegmentKeys(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}
