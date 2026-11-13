@@ -207,3 +207,13 @@ func TestGradientStrokeUsesTheGradient(t *testing.T) {
 		t.Errorf("%d shfill, want 2 (fill and stroke)", n)
 	}
 }
+
+func TestPDFPageIsDisplaySize(t *testing.T) {
+	d := square()
+	d.Width, d.Height, d.Scale = 200, 100, 2
+	pdf := pdfOf(t, d)
+	want(t, pdf, "/MediaBox [0 0 75 37.5]")
+	want(t, content(t, pdf), "0.375 0 0 -0.375 0 37.5 cm")
+	eps := epsOf(t, d)
+	want(t, eps, "%%BoundingBox: 0 0 75 38", "%%HiResBoundingBox: 0 0 75 37.5")
+}

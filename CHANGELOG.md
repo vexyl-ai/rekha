@@ -3,6 +3,16 @@
 Notable changes to Rekha. Versions are tags on `main`; the release
 pipeline builds every artefact from the tag.
 
+## Unreleased
+
+### Added
+
+- `--scale` (library `Options.Scale`, API and wasm key `scale`): the
+  image is this many times the size the output is for. The SVG's width
+  and height are the image size divided by it with the viewBox at image
+  size; PDF and EPS pages follow. Convert keeps it. For an image
+  upscaled before tracing to keep thin lines.
+
 ## v0.2.0
 
 ### Added

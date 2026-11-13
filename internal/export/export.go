@@ -55,10 +55,15 @@ func rgbStr(hex string) string {
 	return nums(3, c[0], c[1], c[2])
 }
 
+// pageScale is points per path unit: Scale, over the document's own
+// scale when its paths are drawn larger than the page is for.
+func pageScale(d svg.Document) float64 { return Scale / d.DisplayScale() }
+
 // matrix is the pixel-to-page transform: scale, and flip y about the
 // page height.
 func matrix(d svg.Document) string {
-	return nums(2, Scale, 0, 0, -Scale, 0, float64(d.Height)*Scale)
+	s := pageScale(d)
+	return nums(4, s, 0, 0, -s, 0, float64(d.Height)*s)
 }
 
 // pathOps renders p's subpaths with the operators given for moveto,

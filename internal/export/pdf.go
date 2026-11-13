@@ -23,7 +23,7 @@ func WritePDF(w io.Writer, d svg.Document, prec int) error {
 
 	catalog, pages, page, contents := alloc(), alloc(), alloc(), alloc()
 	byID, grads := gradients(d, prec)
-	pageW, pageH := num(float64(d.Width)*Scale, 2), num(float64(d.Height)*Scale, 2)
+	pageW, pageH := num(float64(d.Width)*pageScale(d), 2), num(float64(d.Height)*pageScale(d), 2)
 	bbox := "[0 0 " + pageW + " " + pageH + "]"
 
 	// One pattern per gradient, plus a mask pattern, a form and an

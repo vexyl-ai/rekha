@@ -152,6 +152,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 | `--hierarchical stacked\|cutout` | `cutout` / `stacked` | Shapes with holes sharing one boundary curve, or layered shapes (`bw` / colour presets) |
 | `--stroke px` | `0` | Stroke each shape in its own fill to seal hairline seams when viewed enlarged (0–4; `--cutout-stroke` is accepted as an alias) |
 | `--path-precision N` | `2` | Decimals in path data |
+| `--scale 0.25..8` | `1` | The image is this many times the size the output is for: the SVG's `width` and `height` are the image size divided by it with the `viewBox` at image size, and a PDF or EPS page is sized the same way. For an image upscaled before tracing to keep thin lines |
 | `--format` | from the output extension, else `svg` | Output format: `svg`, `pdf` or `eps`. An input ending in `.svg` must be one Rekha wrote; it is converted rather than traced, so a file edited in the playground can still become a PDF. PDF and EPS are written from the same paths and gradients at 0.75 pt per pixel; PDF keeps every gradient (translucent overlay layers through soft masks), EPS has no transparency and leaves those overlays out |
 | `--no-mark` | off | Leave out the generator mark: by default the root carries `data-generator="rekha <version>"` and a comment names Rekha and this repository; neither changes how the image renders |
 | `-o, --output` | `<input>.svg` | Output file, or `-` for stdout |

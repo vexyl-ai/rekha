@@ -44,6 +44,15 @@ func TestParseAuto(t *testing.T) {
 	}
 }
 
+func TestParseScale(t *testing.T) {
+	if o := mustParse(t, `{"scale":2}`); o.Scale != 2 {
+		t.Fatalf("scale not applied: %+v", o)
+	}
+	if _, err := Parse([]byte(`{"scale":16}`)); err == nil || !strings.Contains(err.Error(), "Scale") {
+		t.Fatalf("err %v", err)
+	}
+}
+
 func TestParseThresholdNumber(t *testing.T) {
 	o := mustParse(t, `{"threshold":0.3}`)
 	if o.Threshold != 0.3 || o.AutoThreshold {

@@ -97,6 +97,13 @@ type Options struct {
 	// PDF or EPS. WriteSVG, WritePDF and WriteEPS ignore it.
 	Format Format
 
+	// Scale says the image is this many times the size the output is
+	// for: the SVG is written at image size ÷ Scale with the viewBox at
+	// image size, and a PDF or EPS page is sized the same way. Zero
+	// means 1; otherwise 0.25 to 8. A caller that upscales an image
+	// before tracing (to keep thin lines) sets the factor here.
+	Scale float64
+
 	// Auto makes Trace and TraceReader race the candidate option sets
 	// of Auto and keep the one closest to the image, ignoring every
 	// field of these options but the output ones Auto lists. Segment
@@ -290,6 +297,11 @@ func (o Options) Validate() error {
 	}
 	if err := inRangeF("GradientTolerance", o.GradientTolerance, 0, 1); err != nil {
 		return err
+	}
+	if o.Scale != 0 {
+		if err := inRangeF("Scale", o.Scale, 0.25, 8); err != nil {
+			return err
+		}
 	}
 	return nil
 }

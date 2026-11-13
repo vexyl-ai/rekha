@@ -127,10 +127,22 @@ type Document struct {
 	Gradients     []LinearGradient
 	Radials       []RadialGradient
 	Paths         []Path
+	// Scale says the paths are drawn at Scale times the size the
+	// document is for: width and height are written at Width/Scale and
+	// Height/Scale with the viewBox at Width and Height. Zero means 1.
+	Scale float64
 	// Generator, when set, names the tool and version that produced the
 	// document: it goes on the root as data-generator and, with the
 	// project URL, in a comment on the first line inside the root.
 	Generator string
+}
+
+// DisplayScale is d.Scale with zero read as 1.
+func (d Document) DisplayScale() float64 {
+	if d.Scale == 0 {
+		return 1
+	}
+	return d.Scale
 }
 
 // Repository is the project URL the generator comment points at.
@@ -160,7 +172,11 @@ func WriteDocument(w io.Writer, d Document, prec int) error {
 	if d.Generator != "" {
 		mark = fmt.Sprintf(" data-generator=\"%s\"", d.Generator)
 	}
-	if _, err := fmt.Fprintf(w, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\"%s>\n", d.Width, d.Height, d.Width, d.Height, mark); err != nil {
+	width, height := strconv.Itoa(d.Width), strconv.Itoa(d.Height)
+	if s := d.DisplayScale(); s != 1 {
+		width, height = FormatNum(float64(d.Width)/s, 2), FormatNum(float64(d.Height)/s, 2)
+	}
+	if _, err := fmt.Fprintf(w, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%s\" height=\"%s\" viewBox=\"0 0 %d %d\"%s>\n", width, height, d.Width, d.Height, mark); err != nil {
 		return err
 	}
 	if d.Generator != "" {

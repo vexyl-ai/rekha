@@ -2,6 +2,7 @@ package svg
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 
@@ -180,5 +181,39 @@ func TestWriteDocumentGeneratorMark(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "generator") || strings.Contains(buf.String(), "<!--") {
 		t.Fatalf("unmarked document carries a mark: %q", buf.String())
+	}
+}
+
+func TestWriteDocumentScaleSetsDisplaySize(t *testing.T) {
+	d := Document{Width: 200, Height: 100, Scale: 2, Paths: []Path{{Fill: "#000000", Subpaths: []Subpath{{Segs: square4()}}}}}
+	var b strings.Builder
+	if err := WriteDocument(&b, d, 2); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), `width="100" height="50" viewBox="0 0 200 100"`) {
+		t.Fatal(b.String())
+	}
+	d.Scale = 0
+	b.Reset()
+	if err := WriteDocument(&b, d, 2); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), `width="200" height="100" viewBox="0 0 200 100"`) {
+		t.Fatal(b.String())
+	}
+}
+
+func TestScaleFractionalSizeRoundTrips(t *testing.T) {
+	d := Document{Width: 1000, Height: 10, Scale: 3, Paths: []Path{{Fill: "#000000", Subpaths: []Subpath{{Segs: square4()}}}}}
+	var b strings.Builder
+	if err := WriteDocument(&b, d, 2); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), `width="333.33"`) {
+		t.Fatal(b.String())
+	}
+	got, _, err := Parse(strings.NewReader(b.String()))
+	if err != nil || got.Width != 1000 || got.Height != 10 || math.Abs(got.Scale-3) > 1e-4 {
+		t.Fatalf("%+v %v", got, err)
 	}
 }

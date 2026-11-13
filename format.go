@@ -37,7 +37,7 @@ func ParseFormat(s string) (Format, error) {
 
 // document assembles the writer's view of r, marked unless o.NoMark.
 func (r *Result) document(o Options) svg.Document {
-	d := svg.Document{Width: r.Width, Height: r.Height, Gradients: r.Gradients, Radials: r.Radials, Paths: r.Paths}
+	d := svg.Document{Width: r.Width, Height: r.Height, Gradients: r.Gradients, Radials: r.Radials, Paths: r.Paths, Scale: o.Scale}
 	if !o.NoMark {
 		d.Generator = "rekha " + Version()
 	}

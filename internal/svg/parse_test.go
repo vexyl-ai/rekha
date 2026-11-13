@@ -88,3 +88,13 @@ func TestParseRejectsWhatRekhaNeverWrites(t *testing.T) {
 		}
 	}
 }
+
+func TestParseWithoutViewBox(t *testing.T) {
+	d, _, err := Parse(strings.NewReader(`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><path fill="#000000" d="M0 0H20V10H0Z"/></svg>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Width != 20 || d.Height != 10 || d.Scale != 1 {
+		t.Fatalf("%+v", d)
+	}
+}

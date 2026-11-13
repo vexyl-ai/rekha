@@ -204,3 +204,28 @@ func TestConvertSVGToPDFKeepsMarkAndEdits(t *testing.T) {
 		t.Error("foreign SVG accepted")
 	}
 }
+
+func TestConvertKeepsScale(t *testing.T) {
+	img := synth(t, "star-5")
+	o := PresetOptions(PresetBW)
+	o.Scale = 2
+	o.NoMark = true
+	r, err := Trace(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var svgBuf, pdf bytes.Buffer
+	if err := r.WriteSVG(&svgBuf, o); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(svgBuf.String(), `width="128" height="128" viewBox="0 0 256 256"`) {
+		t.Fatalf("svg root: %.120s", svgBuf.String())
+	}
+	o.Format = FormatPDF
+	if err := Convert(bytes.NewReader(svgBuf.Bytes()), &pdf, o); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pdf.String(), "/MediaBox [0 0 96 96]") {
+		t.Fatalf("pdf has no 96 pt page: %.300s", pdf.String())
+	}
+}

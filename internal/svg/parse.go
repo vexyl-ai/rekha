@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 
@@ -49,11 +50,24 @@ func Parse(r io.Reader) (Document, int, error) {
 				if w == "" || h == "" {
 					return Document{}, 0, errors.New("svg: root without width and height")
 				}
-				if d.Width, err = strconv.Atoi(w); err != nil {
+				fw, err := strconv.ParseFloat(w, 64)
+				if err != nil || fw <= 0 {
 					return Document{}, 0, fmt.Errorf("svg: width %q", w)
 				}
-				if d.Height, err = strconv.Atoi(h); err != nil {
+				fh, err := strconv.ParseFloat(h, 64)
+				if err != nil || fh <= 0 {
 					return Document{}, 0, fmt.Errorf("svg: height %q", h)
+				}
+				// The viewBox is the size the paths are drawn at; width
+				// and height the size the document is for. Without a
+				// viewBox they are the same.
+				d.Width, d.Height, d.Scale = int(math.Round(fw)), int(math.Round(fh)), 1
+				if vb := attr(t, "viewBox"); vb != "" {
+					var x0, y0, vw, vh float64
+					if n, _ := fmt.Sscanf(vb, "%g %g %g %g", &x0, &y0, &vw, &vh); n != 4 || x0 != 0 || y0 != 0 || vw <= 0 || vh <= 0 {
+						return Document{}, 0, fmt.Errorf("svg: viewBox %q", vb)
+					}
+					d.Width, d.Height, d.Scale = int(math.Round(vw)), int(math.Round(vh)), vw/fw
 				}
 				d.Generator = attr(t, "data-generator")
 			case name == "defs":

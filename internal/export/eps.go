@@ -16,7 +16,7 @@ import (
 // gradient and stroke is written as in the PDF.
 func WriteEPS(w io.Writer, d svg.Document, prec int) error {
 	byID, grads := gradients(d, prec)
-	pageW, pageH := float64(d.Width)*Scale, float64(d.Height)*Scale
+	pageW, pageH := float64(d.Width)*pageScale(d), float64(d.Height)*pageScale(d)
 	var b strings.Builder
 	b.WriteString("%!PS-Adobe-3.0 EPSF-3.0\n")
 	fmt.Fprintf(&b, "%%%%BoundingBox: 0 0 %d %d\n", int(math.Ceil(pageW)), int(math.Ceil(pageH)))

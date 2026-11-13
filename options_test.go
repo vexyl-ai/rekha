@@ -196,3 +196,21 @@ func TestVersionNonEmpty(t *testing.T) {
 		t.Fatalf("Version() = %q", v)
 	}
 }
+
+func TestValidateScale(t *testing.T) {
+	for _, v := range []float64{0, 0.25, 8} {
+		o := DefaultOptions()
+		o.Scale = v
+		if err := o.Validate(); err != nil {
+			t.Errorf("Scale %v: %v", v, err)
+		}
+	}
+	for _, v := range []float64{0.2, 9, -1} {
+		o := DefaultOptions()
+		o.Scale = v
+		var ve *ValidationError
+		if err := o.Validate(); !errors.As(err, &ve) || ve.Field != "Scale" {
+			t.Errorf("Scale %v: %v", v, err)
+		}
+	}
+}

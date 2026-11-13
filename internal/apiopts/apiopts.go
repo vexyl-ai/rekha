@@ -41,6 +41,7 @@ type Params struct {
 	GradientTolerance *float64   `json:"gradientTolerance"`
 	NoMark            *bool      `json:"noMark"` // leave out the data-generator mark and comment
 	Format            *string    `json:"format"` // svg (default), pdf, eps
+	Scale             *float64   `json:"scale"`  // the image is this many times the size the output is for
 }
 
 // Threshold is a foreground threshold: a number in 0..1 or "auto" (Otsu).
@@ -183,6 +184,7 @@ func Parse(jsonText []byte) (rekha.Options, error) {
 	if p.Format != nil {
 		o.Format = rekha.Format(*p.Format)
 	}
+	setFloat(&o.Scale, p.Scale)
 	if err := o.Validate(); err != nil {
 		return rekha.Options{}, err
 	}

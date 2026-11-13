@@ -54,6 +54,20 @@ func TestRunAuto(t *testing.T) {
 	}
 }
 
+func TestRunScale(t *testing.T) {
+	data, err := os.ReadFile(starPNG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := run([]string{"--scale", "2", "--no-mark", "-"}, bytes.NewReader(data), &out, &errb); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), `width="128" height="128" viewBox="0 0 256 256"`) {
+		t.Fatalf("stdout = %.120q", out.String())
+	}
+}
+
 func TestRunStdinStdout(t *testing.T) {
 	data, err := os.ReadFile(starPNG)
 	if err != nil {
