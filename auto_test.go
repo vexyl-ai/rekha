@@ -58,11 +58,11 @@ func TestAutoCandidatesCoverTheRace(t *testing.T) {
 
 func TestAutoCandidatesCarryOutputOptions(t *testing.T) {
 	seen := 0
-	o := Options{PathPrecision: 4, NoMark: true, Stroke: 1.5, Format: FormatPDF,
+	o := Options{PathPrecision: 4, NoMark: true, Stroke: 1.5, Format: FormatPDF, Scale: 2,
 		ExternalMasks: []Mask{{Coverage: []uint8{255}}},
 		Progress:      func(string, int, int) { seen++ }}
 	for i, c := range autoCandidates(o) {
-		if c.PathPrecision != 4 || !c.NoMark || c.Stroke != 1.5 || c.Format != FormatPDF || len(c.ExternalMasks) != 1 || c.Progress == nil {
+		if c.PathPrecision != 4 || !c.NoMark || c.Stroke != 1.5 || c.Format != FormatPDF || c.Scale != 2 || len(c.ExternalMasks) != 1 || c.Progress == nil {
 			t.Errorf("candidate %d lost output options: %+v", i, c)
 		}
 	}

@@ -18,8 +18,8 @@ import (
 // at 0.04 with gradients; photo with gradients, speckle filter 2; and
 // bw with the automatic threshold. A palette in o adds a fifth, poster
 // at 0.06 fixed to that palette. The candidates take o's output
-// options (PathPrecision, Stroke, NoMark, Format, ExternalMasks,
-// Progress) and nothing else of it. Auto costs the four or five traces
+// options (PathPrecision, Stroke, NoMark, Format, Scale,
+// ExternalMasks, Progress) and nothing else of it. Auto costs the four or five traces
 // and their renderings. They run at once as far as memory allows (a
 // trace keeps about a hundred bytes a pixel: all of them on an image up
 // to four megapixels, two on eight, one on sixteen) and never more than
@@ -86,6 +86,7 @@ func autoCandidates(o Options) []Options {
 		c.CutoutStroke = o.CutoutStroke
 		c.NoMark = o.NoMark
 		c.Format = o.Format
+		c.Scale = o.Scale
 		c.ExternalMasks = o.ExternalMasks
 		c.Progress = o.Progress
 		set(&c)
