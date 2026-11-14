@@ -3,6 +3,18 @@
 Notable changes to Rekha. Versions are tags on `main`; the release
 pipeline builds every artefact from the tag.
 
+## Unreleased
+
+### Fixed
+
+- PDF: a translucent gradient overlay (a layered gradient's soft-masked
+  layer) painted far too strong, since the soft mask's ExtGState was
+  set after the page matrix and the mask's form went through that
+  matrix twice. The state is now set first, inside each path's own
+  `q … Q`. On a 1200×2198 render with 14 overlays the PDF now matches
+  the SVG at 42 dB (poppler) where it was 37 dB, with the hair no
+  longer darkened.
+
 ## v0.2.0
 
 ### Added

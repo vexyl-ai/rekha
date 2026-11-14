@@ -142,7 +142,15 @@ func TestPDFRadialTranslucentUsesSoftMask(t *testing.T) {
 		"/ShadingType 3", "/Coords [5 5 0 5 5 4]",
 		"/SMask << /S /Luminosity /G ", "/CS /DeviceGray", "/ColorSpace /DeviceGray", "/C0 [0.5] /C1 [0]",
 		"/ExtGState << /GS1 ")
-	want(t, content(t, pdf), "/GS1 gs\n/Pattern cs /P1 scn\n")
+	// The soft mask's coordinate system is the CTM when the ExtGState
+	// is set, so the state is set before the page matrix, inside each
+	// path's own q … Q; a global cm first would place the mask's form
+	// and its pattern through the matrix twice.
+	c := content(t, pdf)
+	want(t, c, "q\n/GS1 gs\n0.75 0 0 -0.75 0 7.5 cm\n/Pattern cs /P1 scn\n")
+	if strings.HasPrefix(c, "0.75 0 0 -0.75 0 7.5 cm\n") {
+		t.Error("the page matrix is applied before the soft-mask state")
+	}
 }
 
 func TestPDFStroke(t *testing.T) {

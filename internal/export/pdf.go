@@ -46,16 +46,25 @@ func WritePDF(w io.Writer, d svg.Document, prec int) error {
 		states = append(states, fmt.Sprintf("/GS%d %d 0 R", i, gs))
 	}
 
+	// Each path paints in its own q … Q: the soft-mask state first,
+	// while the CTM is still the page's default space (a soft mask's
+	// coordinate system is the CTM when its ExtGState is set, and its
+	// form paints the page rectangle in points through the mask
+	// pattern's own matrix), then the pixel-to-page matrix, then the
+	// fill. With the matrix applied once for the whole stream the mask
+	// went through it twice and the overlays painted far too strong.
 	var c strings.Builder
-	c.WriteString(matrix(d) + " cm\n")
+	cm := matrix(d) + " cm\n"
 	for _, p := range d.Paths {
 		c.WriteString("q\n")
 		if gi := fillGradient(p.Fill, byID); gi >= 0 {
 			if grads[gi].translucent() {
 				fmt.Fprintf(&c, "/GS%d gs\n", gi)
 			}
+			c.WriteString(cm)
 			fmt.Fprintf(&c, "/Pattern cs /P%d scn\n", gi)
 		} else {
+			c.WriteString(cm)
 			c.WriteString(rgbStr(p.Fill) + " rg\n")
 		}
 		paint := "f"
