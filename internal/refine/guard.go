@@ -10,20 +10,24 @@ const (
 	// primAbs is the absolute floor of the primitive guard: a snap may
 	// add this much data energy, scaled to the loop, per pixel of the
 	// boundary it touches, however small the energy already was. In
-	// coverage terms it is primAbs/DataScale² ≈ 0.016 of squared
-	// coverage error per boundary pixel. The Pokéball's rings (r = 880
-	// and 170 px, every sample within 0.3 px of a circle) cost 0.26 and
-	// 0.13 per pixel to snap, which the relative clause alone (2 % of an
-	// already tiny energy) refused; the wrong candidates that clause
-	// rightly rejects cost 4 to 9.
-	primAbs = 1.0
+	// coverage terms it is primAbs/DataScale² ≈ 0.008 of squared
+	// coverage error per boundary pixel. The Pokéball's inner disc
+	// (r = 170 px, every sample within 0.3 px of a circle) costs 0.16 per
+	// pixel to snap, which the relative clause alone (2 % of an already
+	// tiny energy) refused; the wrong candidates that clause rightly
+	// rejects cost 4 to 9. The spec started at 1.0; the bench moved it to
+	// 0.5 because at 1.0 a snap on a photographic logo (8_1sasa11) stood
+	// at 0.95 dB of whole-image loss and at 0.5 it is refused
+	// (bench/results/2026-11-14-primitives-v2.md).
+	primAbs = 0.5
 	// primRelMax caps what the floor may admit: a snap that makes the
 	// fit more than this much worse is the wrong model, however little
 	// it costs in absolute terms. On a noise-free mask the energies are
 	// tiny and a quarter ellipse snapped to a circle costs only 0.13 per
-	// pixel while raising the energy tenfold; the Pokéball rings raise
-	// theirs by 6 to 9.5 %.
-	primRelMax = 0.25
+	// pixel while raising the energy tenfold; the Pokéball's rings raise
+	// theirs by 5 to 8 %. The spec started at 0.25; the bench moved it to
+	// 0.15 with the floor.
+	primRelMax = 0.15
 )
 
 // withinBudget reports whether a snap that takes the data energy over

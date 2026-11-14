@@ -25,6 +25,27 @@ pipeline builds every artefact from the tag.
 
 ### Changed
 
+- Geometric primitives, second pass. `--refine` now cuts each outline
+  into line, arc and free pieces by split-and-fit before it snaps, types
+  each arc's ends by the joint they meet (tangent to a line, a point on a
+  corner, free), and sharpens the fillet the refinement leaves at a sharp
+  corner into one node. Half-discs, pie wedges and concentric bands come
+  out as exact arcs ending on their straight edges; a quarter circle
+  beside a line is one arc cubic tangent to it; a corner between a
+  straight edge and a curve is placed where the line meets the circle at
+  trace time too. The guard that admits a snap gains an absolute floor
+  under a relative cap, so a near-perfect circle may be snapped although
+  the free cubics fitted the image's 0.1 px imperfections a little
+  better. Half-disc refined goes from 8 nodes at 44.1 dB to 3 at 51.1,
+  annular-sector 11 to 6 (49.6 to 51.9 dB), the Pokéball logo 105 to 53
+  nodes with 73 % of its curves exact arcs; the 21-image bench is in
+  `bench/results/2026-11-14-primitives-v2.md` (mean −0.04 dB; the
+  Pokéball loses 0.78 dB at 42 dB because its rings are 0.15 px off
+  circular in the source and an exact circle cannot follow that).
+  Refined goldens are now compared as quality (same paths and fills,
+  node count within a fifth, rendering within 1 dB of the source), since
+  the primitive pass's inputs differ in the last bits between arm64 and
+  amd64.
 - The Wu quantiser judges a colour group, not only a single cell, when
   it asks whether a box hides a subject, so a small object shaded over
   several cells keeps a palette entry at the poster tolerance (a
