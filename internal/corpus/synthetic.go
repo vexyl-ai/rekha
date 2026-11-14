@@ -110,6 +110,24 @@ func All() []Synthetic {
 			fill(img, polygon(p), black, 4)
 		}},
 		{Name: "big-poster", Size: 2048, Draw: bigPoster},
+		{Name: "half-disc", Draw: func(img *image.NRGBA) {
+			d := disc(128, 128, 80)
+			fill(img, func(x, y float64) bool { return x >= 128 && d(x, y) }, black, 4)
+		}},
+		{Name: "annular-sector", Draw: func(img *image.NRGBA) { fill(img, annularSector(128, 128, 60, 100, math.Pi/3), black, 4) }},
+		{Name: "fillet-arc", Draw: func(img *image.NRGBA) { fill(img, filletD(), black, 4) }},
+		{Name: "triangle", Draw: func(img *image.NRGBA) {
+			var p []pt
+			for _, c := range TriangleCorners() {
+				p = append(p, pt{c.X, c.Y})
+			}
+			fill(img, polygon(p), black, 4)
+		}},
+		{Name: "ring", Draw: func(img *image.NRGBA) {
+			o, i := RingRadii()
+			outer, inner := disc(128, 128, o), disc(128, 128, i)
+			fill(img, func(x, y float64) bool { return outer(x, y) && !inner(x, y) }, black, 4)
+		}},
 		{Name: "noisy-disc", Draw: func(img *image.NRGBA) {
 			fill(img, disc(128, 128, 96), black, 4)
 			rng := rand.New(rand.NewPCG(1, 1))
@@ -173,6 +191,62 @@ func RectRotCorners() [4]geom.Vec2 {
 		out[i] = geom.Vec2{X: 128 + d[0]*c - d[1]*s, Y: 128 + d[0]*s + d[1]*c}
 	}
 	return out
+}
+
+// TriangleCorners returns the corners of triangle: sides 180, 150 and
+// 120 px (angles 55.8°, 41.4°, 82.8°, so no right angle), the long side
+// horizontal at y = 196.
+func TriangleCorners() [3]geom.Vec2 {
+	return [3]geom.Vec2{{X: 38, Y: 196}, {X: 218, Y: 196}, {X: 105.5, Y: 96.78}}
+}
+
+// RingRadii returns the outer and inner radii of ring, centred on
+// (128, 128).
+func RingRadii() (outer, inner float64) { return 110, 80 }
+
+// FilletDGeometry returns fillet-arc's circle (centre and radius), its
+// fillet radius and the x of the chord that cuts the disc: the D is the
+// disc right of the chord with the two chord corners rounded by fillets
+// tangent to the chord and internally tangent to the circle.
+func FilletDGeometry() (centre geom.Vec2, r, fillet, chordX float64) {
+	return geom.Vec2{X: 128, Y: 128}, 100, 12, 60
+}
+
+// filletD is the inside test for fillet-arc. A fillet centre sits
+// fillet right of the chord and r−fillet from the disc centre; a point
+// left of the fillet centres and beyond them in y is inside only when
+// inside its fillet disc.
+func filletD() func(x, y float64) bool {
+	c, r, f, chordX := FilletDGeometry()
+	big := disc(c.X, c.Y, r)
+	fx := chordX + f
+	fy := math.Sqrt((r-f)*(r-f) - (fx-c.X)*(fx-c.X))
+	top, bottom := disc(fx, c.Y-fy, f), disc(fx, c.Y+fy, f)
+	return func(x, y float64) bool {
+		if x < chordX || !big(x, y) {
+			return false
+		}
+		if x < fx && y < c.Y-fy {
+			return top(x, y)
+		}
+		if x < fx && y > c.Y+fy {
+			return bottom(x, y)
+		}
+		return true
+	}
+}
+
+// annularSector is the inside test for the band between radii r0 and r1
+// about (cx, cy) within ±half of the +x axis.
+func annularSector(cx, cy, r0, r1, half float64) func(x, y float64) bool {
+	return func(x, y float64) bool {
+		dx, dy := x-cx, y-cy
+		d2 := dx*dx + dy*dy
+		if d2 < r0*r0 || d2 > r1*r1 {
+			return false
+		}
+		return math.Abs(math.Atan2(dy, dx)) <= half
+	}
 }
 
 // bigPoster scatters about 300 discs, 100 rings and 100 rounded rectangles

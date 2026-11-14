@@ -87,6 +87,7 @@ func TestTraceGoldenRefine(t *testing.T) {
 	}{
 		{"circle-aa", PresetBW}, {"rounded-rect", PresetBW}, {"star-5", PresetBW},
 		{"poster-discs", PresetPoster}, {"aa-abut", PresetPoster}, {"logo-holes", PresetPoster}, {"three-layer-stack", PresetPoster},
+		{"half-disc", PresetBW}, {"annular-sector", PresetBW}, {"fillet-arc", PresetBW}, {"triangle", PresetBW}, {"ring", PresetBW},
 	}
 	for _, c := range cases {
 		o := PresetOptions(c.preset)

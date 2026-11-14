@@ -27,8 +27,8 @@ func TestAllNamesUnique(t *testing.T) {
 		}
 		seen[s.Name] = true
 	}
-	if len(seen) != 17 {
-		t.Fatalf("got %d synthetics, want 17", len(seen))
+	if len(seen) != 22 {
+		t.Fatalf("got %d synthetics, want 22", len(seen))
 	}
 }
 
@@ -151,5 +151,28 @@ func TestGradientShapesPixels(t *testing.T) {
 	}
 	if c := img.NRGBAAt(236, 134); c.R < 180 {
 		t.Errorf("grey strip right should be light: %v", c)
+	}
+}
+
+// TestNewPrimitiveShapesRender: the five shapes the primitive pass is
+// pinned on exist at 256 px, and their geometry helpers say what the
+// tests expect.
+func TestNewPrimitiveShapesRender(t *testing.T) {
+	for _, name := range []string{"half-disc", "annular-sector", "fillet-arc", "triangle", "ring"} {
+		img := Render(find(t, name))
+		if img.Bounds().Dx() != 256 || img.Bounds().Dy() != 256 {
+			t.Fatalf("%s: %v", name, img.Bounds())
+		}
+	}
+	tc := TriangleCorners()
+	if d := tc[1].Sub(tc[0]).Len(); math.Abs(d-180) > 1e-9 {
+		t.Fatalf("AB = %v", d)
+	}
+	if o, i := RingRadii(); o != 110 || i != 80 {
+		t.Fatal(o, i)
+	}
+	c, r, f, x := FilletDGeometry()
+	if c != (geom.Vec2{X: 128, Y: 128}) || r != 100 || f != 12 || x != 60 {
+		t.Fatal(c, r, f, x)
 	}
 }
