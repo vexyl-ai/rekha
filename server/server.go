@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/vexyl-ai/rekha"
-	"github.com/vexyl-ai/rekha/internal/apiopts"
+	"github.com/vexyl-ai/rekha/apiopts"
 
 	// Decoders for the formats the API accepts, the same as the CLI.
 	_ "image/gif"

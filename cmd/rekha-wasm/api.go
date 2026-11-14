@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/vexyl-ai/rekha"
-	"github.com/vexyl-ai/rekha/internal/apiopts"
+	"github.com/vexyl-ai/rekha/apiopts"
 )
 
 const version = "dev"

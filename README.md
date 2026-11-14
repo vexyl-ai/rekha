@@ -191,6 +191,8 @@ func main() {
 
 `Segment` and `Finish` split the work so a cached segmentation can be re-fitted with new curve options; `TraceReader` decodes PNG, JPEG or GIF from an `io.Reader`. See the [package documentation](https://pkg.go.dev/github.com/vexyl-ai/rekha).
 
+Options given as text, the way the HTTP API and the playground take them, parse with the `apiopts` package: `apiopts.Parse` reads a JSON object and `apiopts.FromStrings` a map of string fields, both keyed by the CLI flag names in camelCase, seeded by the preset exactly as the CLI and validated with the field named in every error.
+
 Regions decided elsewhere, by a segmentation model, a matte or a hand selection, go in through `Options.ExternalMasks`. Each `Mask` carries one coverage byte per pixel and replaces the quantiser's verdict where it covers the image: a flat fill of its own, the mean of its pixels when `Fill` is left zero, or nothing at all with `Cut`, which drops the region as if it were a transparent page. Soft edges in the coverage reach the refinement as anti-aliasing, so a matte's feathered outline is traced as a clean curve through it.
 
 ```go

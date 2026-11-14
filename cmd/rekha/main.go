@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/vexyl-ai/rekha"
-	"github.com/vexyl-ai/rekha/internal/apiopts"
+	"github.com/vexyl-ai/rekha/apiopts"
 	"github.com/vexyl-ai/rekha/internal/cli"
 
 	// Decoders for the formats TraceReader accepts.

@@ -16,6 +16,9 @@ pipeline builds every artefact from the tag.
   with `server.New`, a `WithTrace` hook that sees the decoded image,
   options and extra request fields and decides what is written, and
   `WithFields` naming those fields. `rekha-serve` behaves as before.
+- `apiopts` package: the option parser behind the API and the
+  playground (`Parse` for JSON, `FromStrings` for form fields), public so
+  an embedder reads options as text the way the service does.
 
 ### Changed
 
