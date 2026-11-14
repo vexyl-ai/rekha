@@ -25,9 +25,18 @@ import (
 // to four megapixels, two on eight, one on sixteen) and never more than
 // GOMAXPROCS, so the WebAssembly build runs them one after another;
 // Progress sees stage "auto" counting candidates round the stages of
-// each, interleaved when they run together. The choice does not depend
-// on the scheduling: a tie goes to the earlier candidate.
+// each, interleaved when they run together but never called from two
+// goroutines at once. The choice does not depend on the scheduling: a
+// tie goes to the earlier candidate.
 func Auto(img image.Image, o Options) (*Result, Options, error) {
+	if p := o.Progress; p != nil {
+		var mu sync.Mutex
+		o.Progress = func(stage string, done, total int) {
+			mu.Lock()
+			defer mu.Unlock()
+			p(stage, done, total)
+		}
+	}
 	cands := autoCandidates(o)
 	next := o.counter("auto", len(cands))
 	b := img.Bounds()

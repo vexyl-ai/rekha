@@ -5,8 +5,26 @@ pipeline builds every artefact from the tag.
 
 ## Unreleased
 
+### Changed
+
+- A region whose pixels the quantiser gave no colour of their own gets
+  one after cleanup (`region.Rescue`): a component of at least sixteen
+  pixels whose mean is farther than the tolerance from its own palette
+  entry moves to an existing entry within tolerance, or adds its mean as
+  a new one, when the mean fits a third of its pixels or no entry does;
+  anti-aliased glyph strokes, whose mean is a grey no pixel has while
+  black fits most of them, keep black. The badge on a 2.6-megapixel
+  cartoon render goes from grey to its light blue, and a cream rim light
+  on the cheek stops being white; the image gains 0.29 dB with 258 fewer
+  paths. Fixed palettes are never extended. One golden changes,
+  `gradient-shapes-poster-*`, +0.18 dB at the same path count (a grey
+  box labelled pink gets its grey); the 21-image bench is in
+  `bench/results/2026-11-14-rescue.md`.
+
 ### Fixed
 
+- `rekha.Auto` called `Options.Progress` from several candidate
+  goroutines at once; it now serialises the calls.
 - PDF: a translucent gradient overlay (a layered gradient's soft-masked
   layer) painted far too strong, since the soft mask's ExtGState was
   set after the page matrix and the mask's form went through that

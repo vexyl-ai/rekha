@@ -197,3 +197,32 @@ func TestSegmentBWFillsBlend(t *testing.T) {
 		}
 	}
 }
+
+// A fixed palette is the caller's choice: a region of a colour it lacks
+// is not given an entry of its own.
+func TestSegmentFixedPaletteNotExtended(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			c := color.NRGBA{255, 255, 255, 255}
+			switch {
+			case x >= 20 && x < 40 && y >= 20 && y < 40:
+				c = color.NRGBA{60, 90, 200, 255}
+			case x >= 18 && x < 42 && y >= 18 && y < 42:
+				c = color.NRGBA{0, 0, 0, 255}
+			}
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	o := PresetOptions(PresetPoster)
+	o.Palette = []color.NRGBA{{255, 255, 255, 255}, {0, 0, 0, 255}}
+	s, err := Segment(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range s.Palette {
+		if c != o.Palette[0] && c != o.Palette[1] {
+			t.Fatalf("palette %v holds a colour the fixed one lacks", s.Palette)
+		}
+	}
+}

@@ -138,6 +138,11 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 	scratch := make([]uint8, w*h)
 	quant.NewLookup(pal, o.ColorPrecision).Map(rgb, s.Labels, s.Second, s.Blend)
 	final := region.Cleanup(s.Labels, rgb, w, h, pal, o.FilterSpeckle, o.ColorTolerance)
+	if len(o.Palette) == 0 {
+		// A region the quantiser gave no colour of its own; a fixed
+		// palette is the caller's choice and is not extended.
+		final = region.Rescue(s.Labels, rgb, w, h, final, o.FilterSpeckle, o.ColorTolerance)
+	}
 
 	// Second and Blend against the final palette. Where cleanup moved a
 	// pixel off its nearest colour, that colour becomes the second.
