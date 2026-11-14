@@ -52,9 +52,12 @@ jobs:
       - name: Rebuild the repositories
         run: scripts/packages-repo.sh pkgs pkgrepo "$GPG_KEY_ID"
       - name: Check the signatures
+        # A scratch rpm database: the system one needs root on the runner.
         run: |
-          rpm --import pkgrepo/gpg.key
-          rpm -K pkgrepo/rpm/*.rpm
+          db="$RUNNER_TEMP/rpmdb"
+          rpm --dbpath "$db" --initdb
+          rpm --dbpath "$db" --import pkgrepo/gpg.key
+          rpm --dbpath "$db" -K pkgrepo/rpm/*.rpm
           gpg --verify pkgrepo/apt/dists/stable/InRelease
       - name: Push
         run: |
