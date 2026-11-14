@@ -8,7 +8,8 @@ import (
 
 const (
 	// primRise is the relative rise in data energy a primitive snap may
-	// cost over the window it changes; beyond it the snap is reverted.
+	// cost over the window it changes; beyond it the snap is reverted
+	// unless the absolute floor primAbs (guard.go) admits it.
 	// Candidates are judged by fineDataEnergy, what they render, not by
 	// the Flatten-chord polygon the optimiser moved: that polygon sits
 	// r·(π/32)²/12 (0.02 px at r = 24) inside its curve, which the
@@ -148,6 +149,7 @@ func guardedSnap(b Bezigon, o Options, m Mask, img Window, run arcRun, r float64
 		snap
 		r            float64
 		rise, before float64
+		length       float64 // boundary length of the segments the snap changes
 		ok           bool
 	}
 	at := func(r float64) trial {
@@ -167,7 +169,8 @@ func guardedSnap(b Bezigon, o Options, m Mask, img Window, run arcRun, r float64
 			return trial{rise: math.Inf(1)}
 		}
 		before := fineDataEnergy(b, m, wl, l0)
-		return trial{sn, r, fineDataEnergy(sn.b, m, wl, l0) - before, before, true}
+		length := segmentsLength(b, run.first-lo, run.first+run.count-1+hi)
+		return trial{sn, r, fineDataEnergy(sn.b, m, wl, l0) - before, before, length, true}
 	}
 	best := at(r)
 	if search {
@@ -193,15 +196,10 @@ func guardedSnap(b Bezigon, o Options, m Mask, img Window, run arcRun, r float64
 			}
 		}
 	}
-	if !best.ok || best.before+best.rise > budget(best.before) {
+	if !best.ok || !withinBudget(best.before, best.before+best.rise, l0, best.length) {
 		return b, o, false
 	}
 	return best.b, best.o, true
-}
-
-// budget is the data energy a snap may reach: before plus primRise of it.
-func budget(before float64) float64 {
-	return float64(before * (1 + primRise))
 }
 
 // FitRectangle snaps a loop of four straight segments whose every turn
@@ -676,7 +674,7 @@ func withinRise(b, cand Bezigon, m Mask, img Window, bFrom, bTo, cFrom, cTo int)
 	if wl.W <= 0 || wl.H <= 0 {
 		return true
 	}
-	return fineDataEnergy(cand, m, wl, l0) <= budget(fineDataEnergy(b, m, wl, l0))
+	return withinBudget(fineDataEnergy(b, m, wl, l0), fineDataEnergy(cand, m, wl, l0), l0, segmentsLength(b, bFrom, bTo))
 }
 
 // polygonArea2 is twice the signed area of the flattened outline.

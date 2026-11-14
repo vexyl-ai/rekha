@@ -50,19 +50,52 @@ func FitCircle(b Bezigon, tol float64) (centre geom.Vec2, r float64, ok bool) {
 
 // SnapCircle replaces b by the four-cubic circle FitCircle finds, from
 // b's first anchor and in its direction, unless the rendered data energy
-// rises beyond the primitive guard (primRise); ok reports whether it
-// did. FitCircle measures the refined outline, so its radius is
-// corrected by chordFactor to the circle the mask shows.
+// rises beyond the primitive guard (withinBudget); ok reports whether it
+// did. FitCircle measures the refined outline, which the refinement
+// inflated by its own polygon sag (chordFactor for b's piece count), so
+// the radius is corrected for that and then refitted against the mask
+// by golden section within radiusSearch of it: at r = 850 the sag
+// correction alone is half a pixel and a guess is not good enough.
 func SnapCircle(b Bezigon, m Mask, img Window, tol float64) (Bezigon, bool) {
 	c, r, ok := FitCircle(b, tol)
 	if !ok {
 		return b, false
 	}
-	cand := Circle(c, r*chordFactor(2*math.Pi/(4*Flatten)), b.Pts[0], polygonArea2(b) > 0)
-	if !withinRise(b, cand, m, img, 0, b.N()-1, 0, 3) {
+	ccw := polygonArea2(b) > 0
+	r *= chordFactor(2 * math.Pi / float64(b.N()*Flatten))
+	l0 := math.Max(b.Length(), 1)
+	at := func(rr float64) Bezigon { return Circle(c, rr, b.Pts[0], ccw) }
+	wl := windowAround(img, segmentsBox(b, 0, b.N()-1), segmentsBox(at(r*(1+radiusSearch)), 0, 3))
+	if wl.W <= 0 || wl.H <= 0 {
+		return at(r), true
+	}
+	energy := func(rr float64) float64 { return fineDataEnergy(at(rr), m, wl, l0) }
+	best, eBest := r, energy(r)
+	// Golden-section search for the radius the mask likes best.
+	const phi = 0.6180339887498949
+	lo, hi := r*(1-radiusSearch), r*(1+radiusSearch)
+	x1, x2 := hi-phi*(hi-lo), lo+phi*(hi-lo)
+	f1, f2 := energy(x1), energy(x2)
+	for i := 0; i < radiusSteps; i++ {
+		if f1 < f2 {
+			hi, x2, f2 = x2, x1, f1
+			x1 = hi - phi*(hi-lo)
+			f1 = energy(x1)
+		} else {
+			lo, x1, f1 = x1, x2, f2
+			x2 = lo + phi*(hi-lo)
+			f2 = energy(x2)
+		}
+	}
+	for _, t := range [][2]float64{{x1, f1}, {x2, f2}} {
+		if t[1] < eBest {
+			best, eBest = t[0], t[1]
+		}
+	}
+	if !withinBudget(fineDataEnergy(b, m, wl, l0), eBest, l0, l0) {
 		return b, false
 	}
-	return cand, true
+	return at(best), true
 }
 
 // kasa is Kåsa's algebraic least-squares circle through pts.

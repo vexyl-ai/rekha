@@ -100,3 +100,92 @@ func TestFitCircleRejectsSmallSquare(t *testing.T) {
 		}
 	}
 }
+
+// nudgedCircle is the circle (centre, r) as n arc cubics whose anchors
+// are moved radially by d, alternately out and in, handles rebuilt along
+// the circle's tangents: a free outline that fits an imperfect image a
+// little better than the exact circle does.
+func nudgedCircle(centre geom.Vec2, r float64, n int, d float64) Bezigon {
+	step := 2 * math.Pi / float64(n)
+	k := 4.0 / 3 * math.Tan(step/4) * r
+	anchor := func(i int) geom.Vec2 {
+		a := float64(i%n) * step
+		rr := r + d
+		if i%2 == 1 {
+			rr = r - d
+		}
+		return v(centre.X+rr*math.Cos(a), centre.Y+rr*math.Sin(a))
+	}
+	tangent := func(i int) geom.Vec2 {
+		a := float64(i%n) * step
+		return v(-math.Sin(a), math.Cos(a))
+	}
+	var segs []fit.Segment
+	for i := 0; i < n; i++ {
+		p0, p1 := anchor(i), anchor(i+1)
+		segs = append(segs, cubic(p0, p0.Add(tangent(i).Scale(k)), p1.Sub(tangent(i+1).Scale(k)), p1))
+	}
+	return FromSegments(segs)
+}
+
+// TestSnapCircleAcceptsNearPerfectRing: an 8-cubic outline of a circle
+// of r = 110, each anchor nudged ±0.15 px radially, judged against the
+// exact circle's mask, becomes four cubics even though the free outline
+// fits the mask a little better than any circle (the Pokéball case).
+func TestSnapCircleAcceptsNearPerfectRing(t *testing.T) {
+	win := Window{0, 0, 256, 256}
+	exact := Circle(v(128, 128), 110, v(238, 128), true)
+	m := supersampled(exact, win)
+	b := nudgedCircle(v(128, 128), 110, 8, 0.15)
+	out, ok := SnapCircle(b, m, win, 0.5)
+	if !ok || out.N() != 4 {
+		t.Fatalf("ok=%v N=%d", ok, out.N())
+	}
+	if r := out.Pts[0].Sub(v(128, 128)).Len(); math.Abs(r-110) > 0.1 {
+		t.Fatalf("r = %.3f", r)
+	}
+}
+
+// discMask is the 4×4-sampled coverage of the disc (centre, r) over win.
+func discMask(centre geom.Vec2, r float64, win Window) coverageMask {
+	cov := make([]float32, win.W*win.H)
+	for y := 0; y < win.H; y++ {
+		for x := 0; x < win.W; x++ {
+			n := 0
+			for sy := 0; sy < 4; sy++ {
+				for sx := 0; sx < 4; sx++ {
+					px := float64(win.X0+x) + (float64(sx)+0.5)/4
+					py := float64(win.Y0+y) + (float64(sy)+0.5)/4
+					if dx, dy := px-centre.X, py-centre.Y; dx*dx+dy*dy <= r*r {
+						n++
+					}
+				}
+			}
+			cov[y*win.W+x] = float32(n) / 16
+		}
+	}
+	return coverageMask{win, cov}
+}
+
+// TestSnapCircleRefitsRadiusOnLargeCircle: the refined outline of a
+// large circle is inflated by its own polygon sag (an eight-piece fit by
+// a quarter of what a four-piece one is), so the Kåsa radius corrected
+// for four pieces lands half a pixel short at r = 850 and the mask
+// refuses it; the snap must refit the radius against the mask.
+func TestSnapCircleRefitsRadiusOnLargeCircle(t *testing.T) {
+	win := Window{0, 0, 1800, 1800}
+	c, r := v(900, 900), 850.0
+	m := discMask(c, r, win)
+	inflated := r / chordFactor(2*math.Pi/(8*Flatten))
+	b := nudgedCircle(c, inflated, 8, 0)
+	out, ok := SnapCircle(b, m, win, 0.5)
+	if !ok || out.N() != 4 {
+		t.Fatalf("ok=%v N=%d", ok, out.N())
+	}
+	// A four-cubic circle bulges 2.7e-4·r outward between its anchors
+	// (0.23 px here), so the radius the mask likes puts the anchors a
+	// tenth of a pixel inside the true circle.
+	if got := out.Pts[0].Sub(c).Len(); math.Abs(got-r) > 0.15 {
+		t.Fatalf("r = %.3f, want %.3f ± 0.15", got, r)
+	}
+}
