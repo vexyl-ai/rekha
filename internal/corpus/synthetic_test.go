@@ -27,8 +27,8 @@ func TestAllNamesUnique(t *testing.T) {
 		}
 		seen[s.Name] = true
 	}
-	if len(seen) != 22 {
-		t.Fatalf("got %d synthetics, want 22", len(seen))
+	if len(seen) != 24 {
+		t.Fatalf("got %d synthetics, want 24", len(seen))
 	}
 }
 
@@ -158,7 +158,7 @@ func TestGradientShapesPixels(t *testing.T) {
 // pinned on exist at 256 px, and their geometry helpers say what the
 // tests expect.
 func TestNewPrimitiveShapesRender(t *testing.T) {
-	for _, name := range []string{"half-disc", "annular-sector", "fillet-arc", "triangle", "ring"} {
+	for _, name := range []string{"half-disc", "annular-sector", "fillet-arc", "triangle", "ring", "ellipse-aa", "ellipse-rot"} {
 		img := Render(find(t, name))
 		if img.Bounds().Dx() != 256 || img.Bounds().Dy() != 256 {
 			t.Fatalf("%s: %v", name, img.Bounds())
@@ -170,6 +170,12 @@ func TestNewPrimitiveShapesRender(t *testing.T) {
 	}
 	if o, i := RingRadii(); o != 110 || i != 80 {
 		t.Fatal(o, i)
+	}
+	if ec, ea, eb, et := EllipseAAGeometry(); ec != (geom.Vec2{X: 128, Y: 128}) || ea != 100 || eb != 60 || et != 0 {
+		t.Fatal(ec, ea, eb, et)
+	}
+	if ec, ea, eb, et := EllipseRotGeometry(); ec != (geom.Vec2{X: 128, Y: 128}) || ea != 90 || eb != 50 || et != math.Pi/6 {
+		t.Fatal(ec, ea, eb, et)
 	}
 	c, r, f, x := FilletDGeometry()
 	if c != (geom.Vec2{X: 128, Y: 128}) || r != 100 || f != 12 || x != 60 {

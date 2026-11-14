@@ -115,6 +115,14 @@ func All() []Synthetic {
 			fill(img, func(x, y float64) bool { return x >= 128 && d(x, y) }, black, 4)
 		}},
 		{Name: "annular-sector", Draw: func(img *image.NRGBA) { fill(img, annularSector(128, 128, 60, 100, math.Pi/3), black, 4) }},
+		{Name: "ellipse-aa", Draw: func(img *image.NRGBA) {
+			c, ea, eb, th := EllipseAAGeometry()
+			fill(img, ellipse(c.X, c.Y, ea, eb, th), black, 4)
+		}},
+		{Name: "ellipse-rot", Draw: func(img *image.NRGBA) {
+			c, ea, eb, th := EllipseRotGeometry()
+			fill(img, ellipse(c.X, c.Y, ea, eb, th), black, 4)
+		}},
 		{Name: "fillet-arc", Draw: func(img *image.NRGBA) { fill(img, filletD(), black, 4) }},
 		{Name: "triangle", Draw: func(img *image.NRGBA) {
 			var p []pt
@@ -417,6 +425,29 @@ func disc(cx, cy, r float64) func(x, y float64) bool {
 		dx, dy := x-cx, y-cy
 		return dx*dx+dy*dy <= r*r
 	}
+}
+
+// ellipse is the filled ellipse of semi-axes a and b, the a axis at
+// theta from the x axis.
+func ellipse(cx, cy, a, b, theta float64) func(x, y float64) bool {
+	cs, sn := math.Cos(theta), math.Sin(theta)
+	return func(x, y float64) bool {
+		dx, dy := x-cx, y-cy
+		u, v := (dx*cs+dy*sn)/a, (-dx*sn+dy*cs)/b
+		return u*u+v*v <= 1
+	}
+}
+
+// EllipseAAGeometry is the axis-aligned ellipse's centre, semi-axes and
+// angle, for the tests that pin the primitive pass on it.
+func EllipseAAGeometry() (centre geom.Vec2, a, b, theta float64) {
+	return geom.Vec2{X: 128, Y: 128}, 100, 60, 0
+}
+
+// EllipseRotGeometry is the rotated ellipse's centre, semi-axes and
+// angle (30°).
+func EllipseRotGeometry() (centre geom.Vec2, a, b, theta float64) {
+	return geom.Vec2{X: 128, Y: 128}, 90, 50, math.Pi / 6
 }
 
 func rect(x0, y0, x1, y1 float64) func(x, y float64) bool {
