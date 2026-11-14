@@ -3,6 +3,19 @@
 Notable changes to Rekha. Versions are tags on `main`; the release
 pipeline builds every artefact from the tag.
 
+## Unreleased
+
+### Fixed
+
+- The quantiser took the width of a colour cell from the spacing of the
+  cells an image occupies. On an image of a few flat colours and no
+  anti-aliasing that spacing is the gap between two real colours, so a
+  band lying near the mixture line from its colour to a black outline
+  (every darker shade of a colour does) counted its own parent as its
+  halo and was never promoted: a band of 12 % of the image, two and a
+  half tolerances from the skin around it, was lost. The width now comes
+  from the colour precision. Every golden is byte-identical.
+
 ## v0.2.2
 
 ### Added
