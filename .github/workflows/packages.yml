@@ -30,11 +30,18 @@ jobs:
         run: gh release download "$TAG" -R vexyl-ai/rekha -p '*.deb' -p '*.rpm' -D pkgs
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Install createrepo_c
-        # apt-ftparchive, rpmsign and gpg ship with the runner image; the
-        # Ubuntu mirrors do not always resolve there, so createrepo_c
-        # comes from PyPI rather than apt.
+      - name: Install repository tools
+        # rpmsign and gpg ship with the runner image. apt-ftparchive did
+        # until the Ubuntu 26 image dropped apt-utils, so it is installed,
+        # with retries because the mirrors do not always resolve there;
+        # createrepo_c comes from PyPI since the Ubuntu package pulled in
+        # libraries the mirrors failed on.
         run: |
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends apt-utils && break
+            sleep 15
+          done
+          apt-ftparchive --version | head -1
           python3 -m pip install --quiet --user createrepo-c
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/createrepo_c" --version
