@@ -29,7 +29,8 @@ type arcEnd struct {
 }
 
 // arcEnds types the two ends of arc piece ps[i] from the joints they sit
-// on. A fixed joint, or the joint with an arc neighbour already snapped
+// on. A fixed joint, a joint whose neighbouring segment is frozen (its
+// control points may not move), or the joint with an arc neighbour already snapped
 // (whose exact cubics the anchor must not disturb), is a point: the
 // circle passes through the anchor as it is. A line neighbour is a
 // tangent (snapPiece demotes it to free when the tangent circle cannot
@@ -64,7 +65,7 @@ func arcEnds(b Bezigon, o Options, ps []piece, i int, tol float64) [2]arcEnd {
 		anchor := b.Pts[3*joint]
 		e := arcEnd{kind: endPoint, at: anchor, seg: seg, line: nb.kind == pieceLine}
 		switch {
-		case o.fixed(joint) || m == 1 || (nb.kind == pieceArc && nb.snapped):
+		case o.fixed(joint) || o.frozen(seg) || m == 1 || (nb.kind == pieceArc && nb.snapped):
 		case nb.kind == pieceLine:
 			e.kind, e.far = endTangent, far
 		default:

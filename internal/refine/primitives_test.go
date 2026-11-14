@@ -486,3 +486,90 @@ func TestSnapPiecesChordBeyondDiameter(t *testing.T) {
 		t.Fatalf("fixed ends moved: %v %v", out.Pts[3], out.Pts[0])
 	}
 }
+
+// TestSnapPiecesKeepsFrozenSegment: the half-disc's flat side is frozen
+// and no joint is fixed; the snap of the arc must leave that segment's
+// control points exactly as they were.
+func TestSnapPiecesKeepsFrozenSegment(t *testing.T) {
+	m := supersampled(halfDisc(0), win256)
+	in := halfDisc(0.2)
+	want := in.Segment(0)
+	out, _ := SnapPieces(in, m, win256, 0.5, Options{Frozen: []bool{true, false, false, false, false}})
+	for j := 0; j < out.N(); j++ {
+		if out.Segment(j) == want {
+			return
+		}
+	}
+	t.Fatalf("the frozen line %v is not in the output %v", want, out.Pts)
+}
+
+// twoArcCornerRect is the rounded rectangle of roundedRectRadii with its
+// top-right corner drawn as two arcs meeting at a 20° corner: r = 30 over
+// the first 45°, then r24 from 65° before the horizontal to it, the right
+// edge following. (Tangent arcs of these radii merge into one piece
+// within the tolerance; the corner keeps them apart.)
+func twoArcCornerRect(r24 float64) Bezigon {
+	c1 := v(80, 40)
+	p := c1.Add(v(math.Cos(-math.Pi/4), math.Sin(-math.Pi/4)).Scale(30))
+	a2 := -65 * math.Pi / 180
+	c2 := p.Sub(v(math.Cos(a2), math.Sin(a2)).Scale(r24))
+	right := c2.X + r24
+	return FromSegments([]fit.Segment{
+		ln(v(10+24, 10), v(80, 10)),
+		arcSeg(c1, 30, -math.Pi/2, -math.Pi/4),
+		arcSeg(c2, r24, a2, 0),
+		ln(v(right, c2.Y), v(right, 110-24)),
+		arcSeg(v(right-24, 110-24), 24, 0, math.Pi/2),
+		ln(v(right-24, 110), v(10+24, 110)),
+		arcSeg(v(10+24, 110-24), 24, math.Pi/2, math.Pi),
+		ln(v(10, 110-24), v(10, 10+24)),
+		arcSeg(v(10+24, 10+24), 24, math.Pi, 3*math.Pi/2),
+	})
+}
+
+// TestCommonRadiusKeepsExactNeighbourArc: the four r ≈ 24 corners share a
+// radius; the r = 30 arc beside one of them does not. Its exact cubic
+// must come through the refit of its neighbour unchanged, while the
+// neighbour itself is refit.
+func TestCommonRadiusKeepsExactNeighbourArc(t *testing.T) {
+	win := Window{0, 0, 120, 120}
+	m := supersampled(twoArcCornerRect(24), win)
+	in := twoArcCornerRect(24.3)
+	big, member := in.Segment(1), in.Segment(2)
+	out, _ := CommonRadius(in, m, win, 0.5, Options{})
+	if out.N() != in.N() {
+		t.Fatalf("%d segments, want %d", out.N(), in.N())
+	}
+	bigKept, memberKept := false, false
+	for j := 0; j < out.N(); j++ {
+		bigKept = bigKept || out.Segment(j) == big
+		memberKept = memberKept || out.Segment(j) == member
+	}
+	if memberKept {
+		t.Fatalf("the r = 24.3 member was not refit")
+	}
+	if !bigKept {
+		t.Fatalf("the exact r = 30 arc %v was changed; output %v", big, out.Pts)
+	}
+}
+
+// TestExactArcTellsLaidFromRefined: the cubics arcPieces lays are exact
+// arcs; the same cubic with one handle moved a hundredth of a pixel, as
+// a refinement leaves them, is not.
+func TestExactArcTellsLaidFromRefined(t *testing.T) {
+	b, _, ps := loopPieces(roundedRectRadii([4]float64{24, 24, 24, 24}), 0.5, Options{})
+	for i, p := range ps {
+		if p.kind != pieceArc {
+			continue
+		}
+		c, r, ok := exactArc(b, p)
+		if !ok || math.Abs(r-24) > 1e-6 {
+			t.Fatalf("piece %d: exact arc not recognised (ok=%v r=%v centre=%v)", i, ok, r, c)
+		}
+		nudged := Bezigon{Pts: append([]geom.Vec2(nil), b.Pts...)}
+		nudged.Pts[3*p.first+1] = nudged.Pts[3*p.first+1].Add(v(0.01, 0))
+		if _, _, ok := exactArc(nudged, p); ok {
+			t.Fatalf("piece %d: a cubic nudged 0.01 px passes as exact", i)
+		}
+	}
+}

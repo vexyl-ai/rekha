@@ -130,6 +130,11 @@ func CommonRadius(b Bezigon, m Mask, img Window, tol float64, o Options) (Bezigo
 		if math.Abs(ps[i].r-mean) <= radiusAgree*mean {
 			members = append(members, i)
 			sum += ps[i].r
+		} else if c, r, ok := exactArc(b, ps[i]); ok {
+			// An arc outside the agreement that SnapPieces already laid
+			// as exact cubics keeps them: a member beside it ends at
+			// their shared anchor instead of sliding it (arcEnds).
+			ps[i].centre, ps[i].r, ps[i].snapped = c, r, true
 		}
 	}
 	if len(members) < 2 {
@@ -145,6 +150,46 @@ func CommonRadius(b Bezigon, m Mask, img Window, tol float64, o Options) (Bezigo
 	}
 	return b, o
 }
+
+// exactArc reports whether every segment of arc piece p is an exact arc
+// cubic of one circle, as arcPieces lays them, and returns that circle.
+// The circle comes from the first segment alone: its centre is where the
+// normal at the start anchor (the handle is tangent) meets the chord's
+// perpendicular bisector; then every anchor must lie on it and every
+// handle must equal the one arcPieces would place, within exactTol of
+// the radius. A refined cubic is off by hundredths of a pixel and fails.
+func exactArc(b Bezigon, p piece) (centre geom.Vec2, r float64, ok bool) {
+	n := b.N()
+	c := b.Segment(p.first % n)
+	h := c[1].Sub(c[0])
+	chord := c[3].Sub(c[0])
+	if h.LenSq() == 0 || chord.LenSq() == 0 {
+		return geom.Vec2{}, 0, false
+	}
+	centre, ok = fit.Intersect(c[0], geom.Vec2{X: -h.Y, Y: h.X}, c[0].Add(c[3]).Scale(0.5), geom.Vec2{X: -chord.Y, Y: chord.X})
+	if !ok {
+		return geom.Vec2{}, 0, false
+	}
+	r = c[0].Sub(centre).Len()
+	tol := exactTol * (1 + r)
+	for j := 0; j < p.count; j++ {
+		c := b.Segment((p.first + j) % n)
+		for _, a := range []geom.Vec2{c[0], c[3]} {
+			if math.Abs(a.Sub(centre).Len()-r) > tol {
+				return geom.Vec2{}, 0, false
+			}
+		}
+		exact := arcPieces(centre, r, sweepBetween(c[0], c[3], centre, p.ccw), 1, c[0], c[3])
+		if exact[1].Sub(c[1]).Len() > tol || exact[2].Sub(c[2]).Len() > tol {
+			return geom.Vec2{}, 0, false
+		}
+	}
+	return centre, r, true
+}
+
+// exactTol is the relative slack exactArc allows for the rounding in an
+// arc cubic's construction.
+const exactTol = 1e-9
 
 // guardedSnap is snapPiece on arc piece ps[i] under the energy guard, the
 // radius first refitted against the mask within radiusSearch of r when

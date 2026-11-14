@@ -151,3 +151,17 @@ func TestSolveArcChordBeyondDiameter(t *testing.T) {
 		t.Fatal("a chord of 100 fits no circle of r = 40")
 	}
 }
+
+// TestArcEndsPointBesideFrozenSegment: a frozen segment's control points
+// never move, so an arc end beside one is a point, whatever the
+// neighbour's kind (the half-disc's flat side is frozen here; a tangent
+// end would re-lay it to the foot).
+func TestArcEndsPointBesideFrozenSegment(t *testing.T) {
+	b, o, ps := loopPieces(halfDisc(0.2), 0.5, Options{Frozen: []bool{true, false, false, false, false}})
+	i := arcPieceIndex(t, ps, 80)
+	for side, e := range arcEnds(b, o, ps, i, 0.5) {
+		if e.kind != endPoint {
+			t.Errorf("side %d typed %d, want a point beside the frozen line", side, e.kind)
+		}
+	}
+}
