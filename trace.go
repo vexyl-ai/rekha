@@ -160,6 +160,16 @@ const (
 	// points belong to another edge and would skew the flank line. Noise
 	// on a thresholded edge turns the polygon by far less.
 	flankBend = 40.0
+	// flankTol is how far, in pixels, a flank window's points may stray
+	// from the line, or circle, they are read as (fitFlank): a
+	// thresholded edge staircases within half a pixel.
+	flankTol = 0.75
+	// flankArcTol is the same allowance for a circle: a digital circle's
+	// crack vertices stray up to half a diagonal from it.
+	flankArcTol = 0.9
+	// cornerMinCross is the sine of the smallest angle at which a curved
+	// flank may cross the other for their crossing to be a corner: 10°.
+	cornerMinCross = 0.17365
 
 	// Straight-edge detection. A staircase-free edge of length L has
 	// sagitta at most maxStairDev, so if it is a chord of a curve that
@@ -476,11 +486,11 @@ func refineCorners(dense []geom.Vec2, groups [][]int, bends []int) []vertex {
 		maxMove := math.Max(cornerMaxMove, float64(span)/4)
 
 		if back-skipIn >= 3 && fwd-skipOut >= 3 {
-			pIn, dIn := fit.FitLine(window(dense, in, -1, skipIn, back))
-			pOut, dOut := fit.FitLine(window(dense, out, +1, skipOut, fwd))
+			fIn := fitFlank(window(dense, in, -1, skipIn, back))
+			fOut := fitFlank(window(dense, out, +1, skipOut, fwd))
 			crack := dense[in].Add(dense[out]).Scale(0.5)
-			if x, ok := fit.Intersect(pIn, dIn, pOut, dOut); ok && x.Sub(crack).Len() <= maxMove {
-				verts = append(verts, vertex{pos: x, in: in, out: out, tIn: dIn, tOut: dOut, span: span})
+			if x, ok := cornerOf(fIn, fOut, crack); ok && x.Sub(crack).Len() <= maxMove {
+				verts = append(verts, vertex{pos: x, in: in, out: out, tIn: fIn.tangentAt(x), tOut: fOut.tangentAt(x), span: span})
 				continue
 			}
 		}
@@ -497,6 +507,99 @@ func refineCorners(dense []geom.Vec2, groups [][]int, bends []int) []vertex {
 		}
 	}
 	return verts
+}
+
+// cornerFlank is the primitive a corner's flank window lies on: its
+// least-squares line (p, d, ordered away from the corner), and, when
+// the window bows away from that line but lies on a circle, that circle
+// (curved set). A flank that runs along a curve is read as the curve:
+// the chord line of an arc misses the corner by its sagitta and more (a
+// flat side meeting an arc of r = 80 was extended 8 px past the
+// corner), and no shorter chord helps, since the window starts past the
+// skipped tip where the tangent has already turned.
+type cornerFlank struct {
+	p, d   geom.Vec2
+	centre geom.Vec2
+	r      float64
+	curved bool
+}
+
+// fitFlank fits the flank window: a line when every point lies within
+// flankTol of the least-squares line; else a circle when the window has
+// at least cornerWindow points (fewer give no usable circle fit) that
+// all lie within flankArcTol of the geometric least-squares circle;
+// else the line, as before. A window the line holds is read as the line
+// even when a circle would hold it closer: on a nearly straight window
+// the two fits place the corner within hundredths of a pixel of each
+// other, and which fit wins would turn on the last digits (and differ
+// between arm64 and amd64).
+func fitFlank(pts []geom.Vec2) cornerFlank {
+	p, d := fit.FitLine(pts)
+	f := cornerFlank{p: p, d: d}
+	worst := 0.0
+	for _, q := range pts {
+		worst = math.Max(worst, math.Abs(geom.Cross(d, q.Sub(p))))
+	}
+	if worst <= flankTol || len(pts) < cornerWindow {
+		return f
+	}
+	centre, r, ok := fit.CircleGeometric(pts)
+	if !ok {
+		return f
+	}
+	for _, q := range pts {
+		if math.Abs(q.Sub(centre).Len()-r) > flankArcTol {
+			return f
+		}
+	}
+	f.centre, f.r, f.curved = centre, r, true
+	return f
+}
+
+// tangentAt is the flank's direction at x, oriented as its line is: the
+// line's direction, or the circle's tangent there.
+func (f cornerFlank) tangentAt(x geom.Vec2) geom.Vec2 {
+	if !f.curved {
+		return f.d
+	}
+	rad := x.Sub(f.centre)
+	t := geom.Vec2{X: -rad.Y, Y: rad.X}.Norm()
+	if t.Dot(f.d) < 0 {
+		t = t.Scale(-1)
+	}
+	return t
+}
+
+// cornerOf is where two flanks meet: the intersection of their lines, of
+// a line and a circle, or of two circles, the one nearest crack when
+// there are two; ok is false when they do not meet, or when a curved
+// pair crosses at under cornerMinCross: a line grazing a circle, or two
+// circles all but tangent, cross at a point that moves by pixels with
+// the last digits of the fits (and differs between arm64 and amd64),
+// and the junction is a smooth one, not a corner.
+func cornerOf(a, b cornerFlank, crack geom.Vec2) (geom.Vec2, bool) {
+	var cands []geom.Vec2
+	switch {
+	case !a.curved && !b.curved:
+		x, ok := fit.Intersect(a.p, a.d, b.p, b.d)
+		return x, ok
+	case a.curved && b.curved:
+		cands = fit.CircleCircle(a.centre, a.r, b.centre, b.r)
+	case a.curved:
+		cands = fit.LineCircle(b.p, b.d, a.centre, a.r)
+	default:
+		cands = fit.LineCircle(a.p, a.d, b.centre, b.r)
+	}
+	best, bd := geom.Vec2{}, math.Inf(1)
+	for _, c := range cands {
+		if d := c.Sub(crack).Len(); d < bd {
+			best, bd = c, d
+		}
+	}
+	if len(cands) == 0 || math.Abs(geom.Cross(a.tangentAt(best), b.tangentAt(best))) < cornerMinCross {
+		return geom.Vec2{}, false
+	}
+	return best, true
 }
 
 // gap is the number of dense steps from index a forward to index b.

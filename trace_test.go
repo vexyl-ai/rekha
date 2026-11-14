@@ -776,3 +776,24 @@ func TestFitArcNoZeroLengthSegments(t *testing.T) {
 		t.Errorf("%d segments, want one line", len(segs))
 	}
 }
+
+// TestCornerOfRejectsGlancingCrossing: two flanks whose primitives cross
+// at a glancing angle (a fillet circle all but tangent to the big
+// circle, a line all but tangent to a circle) meet at no corner: the
+// crossing point is ill-conditioned and the junction is smooth.
+func TestCornerOfRejectsGlancingCrossing(t *testing.T) {
+	big := cornerFlank{curved: true, centre: geom.Vec2{X: 128, Y: 128}, r: 100, d: geom.Vec2{X: 1, Y: 0}}
+	fillet := cornerFlank{curved: true, centre: geom.Vec2{X: 72, Y: 60}, r: 12, d: geom.Vec2{X: 0, Y: 1}}
+	if _, ok := cornerOf(fillet, big, geom.Vec2{X: 64, Y: 51}); ok {
+		t.Error("near-tangent circles gave a corner")
+	}
+	grazing := cornerFlank{p: geom.Vec2{X: 100, Y: 28.05}, d: geom.Vec2{X: 1, Y: 0}}
+	if _, ok := cornerOf(grazing, big, geom.Vec2{X: 128, Y: 28}); ok {
+		t.Error("a line grazing the circle gave a corner")
+	}
+	side := cornerFlank{p: geom.Vec2{X: 128, Y: 100}, d: geom.Vec2{X: 0, Y: -1}}
+	x, ok := cornerOf(side, big, geom.Vec2{X: 128, Y: 29})
+	if !ok || x.Sub(geom.Vec2{X: 128, Y: 28}).Len() > 1e-9 {
+		t.Errorf("line through the circle: %v %v", x, ok)
+	}
+}
