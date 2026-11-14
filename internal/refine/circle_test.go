@@ -189,3 +189,19 @@ func TestSnapCircleRefitsRadiusOnLargeCircle(t *testing.T) {
 		t.Fatalf("r = %.3f, want %.3f ± 0.15", got, r)
 	}
 }
+
+// TestSnapCircleRefusesOutsideTheWindow: a loop whose window holds no
+// pixel cannot be judged, so the snap is refused rather than admitted.
+func TestSnapCircleRefusesOutsideTheWindow(t *testing.T) {
+	win := Window{0, 0, 32, 32}
+	b := circle(200, 200, 10)
+	out, ok := SnapCircle(b, maskOf(circle(16, 16, 8), win), win, 0.5)
+	if ok {
+		t.Fatalf("snapped a circle the window does not see")
+	}
+	for i := range b.Pts {
+		if out.Pts[i] != b.Pts[i] {
+			t.Fatalf("point %d moved", i)
+		}
+	}
+}

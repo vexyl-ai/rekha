@@ -41,3 +41,10 @@ func TestPerpDistDegenerate(t *testing.T) {
 		t.Fatalf("PerpDist = %v, want 5", got)
 	}
 }
+
+func TestAddScaled(t *testing.T) {
+	got := Vec2{1, 2}.AddScaled(Vec2{3, -4}, 0.5)
+	if got != (Vec2{2.5, 0}) {
+		t.Fatalf("got %v", got)
+	}
+}

@@ -23,6 +23,13 @@ func (a Vec2) Sub(b Vec2) Vec2 { return Vec2{a.X - b.X, a.Y - b.Y} }
 // Scale returns a*k.
 func (a Vec2) Scale(k float64) Vec2 { return Vec2{a.X * k, a.Y * k} }
 
+// AddScaled is a + k·b with the products rounded before the sum, so the
+// result is the same on hardware that fuses a multiply and add (arm64)
+// and hardware that does not.
+func (a Vec2) AddScaled(b Vec2, k float64) Vec2 {
+	return Vec2{a.X + float64(b.X*k), a.Y + float64(b.Y*k)}
+}
+
 // Dot returns a·b.
 //
 // Products are rounded explicitly before they are summed, here and in the

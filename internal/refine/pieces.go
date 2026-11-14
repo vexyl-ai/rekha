@@ -36,13 +36,13 @@ type piece struct {
 func hardCuts(b Bezigon, o Options) []bool {
 	n := b.N()
 	cut := make([]bool, n)
-	any := false
+	cutAny := false
 	for a := 0; a < n; a++ {
 		prev := (a + n - 1) % n
 		cut[a] = o.fixed(a) || o.frozen(a) || o.frozen(prev) || AnglePrior(b, a) >= arcJointTurn*math.Pi/180
-		any = any || cut[a]
+		cutAny = cutAny || cut[a]
 	}
-	if !any {
+	if !cutAny {
 		return nil
 	}
 	return cut

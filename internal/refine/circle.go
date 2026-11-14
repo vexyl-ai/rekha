@@ -66,25 +66,25 @@ func SnapCircle(b Bezigon, m Mask, img Window, tol float64) (Bezigon, bool) {
 	r *= chordFactor(2 * math.Pi / float64(b.N()*Flatten))
 	l0 := math.Max(b.Length(), 1)
 	at := func(rr float64) Bezigon { return Circle(c, rr, b.Pts[0], ccw) }
-	wl := windowAround(img, segmentsBox(b, 0, b.N()-1), segmentsBox(at(r*(1+radiusSearch)), 0, 3))
+	wl := windowAround(img, segmentsBox(b, 0, b.N()-1), segmentsBox(at(float64(r*(1+radiusSearch))), 0, 3))
 	if wl.W <= 0 || wl.H <= 0 {
-		return at(r), true
+		return b, false // nothing to judge the snap by
 	}
 	energy := func(rr float64) float64 { return fineDataEnergy(at(rr), m, wl, l0) }
 	best, eBest := r, energy(r)
 	// Golden-section search for the radius the mask likes best.
 	const phi = 0.6180339887498949
-	lo, hi := r*(1-radiusSearch), r*(1+radiusSearch)
-	x1, x2 := hi-phi*(hi-lo), lo+phi*(hi-lo)
+	lo, hi := float64(r*(1-radiusSearch)), float64(r*(1+radiusSearch))
+	x1, x2 := hi-float64(phi*(hi-lo)), lo+float64(phi*(hi-lo))
 	f1, f2 := energy(x1), energy(x2)
 	for i := 0; i < radiusSteps; i++ {
 		if f1 < f2 {
 			hi, x2, f2 = x2, x1, f1
-			x1 = hi - phi*(hi-lo)
+			x1 = hi - float64(phi*(hi-lo))
 			f1 = energy(x1)
 		} else {
 			lo, x1, f1 = x1, x2, f2
-			x2 = lo + phi*(hi-lo)
+			x2 = lo + float64(phi*(hi-lo))
 			f2 = energy(x2)
 		}
 	}

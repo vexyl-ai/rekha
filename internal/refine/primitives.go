@@ -226,7 +226,7 @@ func guardedSnap(b Bezigon, o Options, m Mask, img Window, ps []piece, i int, r 
 			return trial{rise: math.Inf(1)}
 		}
 		before := fineDataEnergy(b, m, wl, l0)
-		length := segmentsLength(b, pc.first-lo, pc.first+pc.count-1+hi)
+		length := segmentsLength(b, pc.first-lo, pc.count+lo+hi)
 		return trial{sn, fineDataEnergy(sn.b, m, wl, l0) - before, before, length, true}
 	}
 	best := at(r)
@@ -545,6 +545,7 @@ func rebuildLines(b Bezigon, o Options, m Mask, img Window, ps []piece, tol floa
 		cand, co := replaceRun(b, o, p.first, p.count, lineCubic(a, c))
 		if withinRise(b, cand, m, img, p.first, p.first+p.count-1, p.first, p.first) {
 			b, o = cand, co
+			n = b.N() // later pieces (lower indices) are unaffected; the loop is shorter
 		}
 	}
 	return b, o
@@ -731,7 +732,8 @@ func withinRise(b, cand Bezigon, m Mask, img Window, bFrom, bTo, cFrom, cTo int)
 	if wl.W <= 0 || wl.H <= 0 {
 		return true
 	}
-	return withinBudget(fineDataEnergy(b, m, wl, l0), fineDataEnergy(cand, m, wl, l0), l0, segmentsLength(b, bFrom, bTo))
+	n := b.N()
+	return withinBudget(fineDataEnergy(b, m, wl, l0), fineDataEnergy(cand, m, wl, l0), l0, segmentsLength(b, bFrom, ((bTo-bFrom)%n+n)%n+1))
 }
 
 // polygonArea2 is twice the signed area of the flattened outline.

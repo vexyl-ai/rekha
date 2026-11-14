@@ -45,18 +45,20 @@ func withinBudget(before, after, l0, length float64) bool {
 	return rise <= primRelMax*before && rise*math.Max(l0, 1)/math.Max(length, 1) <= primAbs
 }
 
-// segmentsLength is the polyline length of segments from..to (cyclic,
-// inclusive) of b, at Flatten chords per segment.
-func segmentsLength(b Bezigon, from, to int) float64 {
+// segmentsLength is the polyline length of count segments of b from
+// segment from (cyclic; count is capped at the loop), at Flatten chords
+// per segment. The count is explicit because a span may cover the whole
+// loop, which a (from, to) pair cannot say.
+func segmentsLength(b Bezigon, from, count int) float64 {
 	n := b.N()
-	if n == 0 {
+	if n == 0 || count <= 0 {
 		return 0
 	}
-	count := ((to-from)%n+n)%n + 1
+	count = min(count, n)
 	var pts []geom.Vec2
 	for k := 0; k < count; k++ {
 		pts = flattenInto(pts, b.Segment(((from+k)%n+n)%n))
 	}
-	pts = append(pts, b.Pts[3*(((to+1)%n+n)%n)])
+	pts = append(pts, b.Pts[3*(((from+count)%n+n)%n)])
 	return polylineLength(pts, false)
 }

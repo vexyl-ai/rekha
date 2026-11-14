@@ -1,6 +1,9 @@
 package refine
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestWithinBudgetRelativeClause(t *testing.T) {
 	if !withinBudget(100, 101, 1000, 10) {
@@ -35,5 +38,18 @@ func TestWithinBudgetRelativeCap(t *testing.T) {
 	// Within the cap but over the floor on a long loop: fails.
 	if withinBudget(2.73, 3.5, 5530, 5530) {
 		t.Fatal("+28 % must fail")
+	}
+}
+
+// TestSegmentsLengthCountsAcrossTheWrap: the span starting one segment
+// before the loop's first and covering every segment is the whole loop;
+// the old (from, to) form read it as one segment.
+func TestSegmentsLengthCountsAcrossTheWrap(t *testing.T) {
+	b := square(0, 0, 10, 10)
+	if l := segmentsLength(b, -1, 4); math.Abs(l-40) > 1e-9 {
+		t.Fatalf("whole loop from -1 measures %v, want 40", l)
+	}
+	if l := segmentsLength(b, 3, 2); math.Abs(l-20) > 1e-9 {
+		t.Fatalf("two segments from 3 measure %v, want 20", l)
 	}
 }

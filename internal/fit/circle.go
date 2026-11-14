@@ -55,7 +55,8 @@ func Kasa(pts []geom.Vec2) (centre geom.Vec2, r float64, ok bool) {
 // distances, found by Gauss-Newton from Kåsa's algebraic fit, which on
 // a short arc of noisy points underestimates the radius (crack points
 // on 50° of an r = 80 circle give Kåsa r = 74). ok is false when Kåsa
-// fails or the iteration does not settle.
+// fails or the iteration diverges (a radius that is not positive); after
+// 20 steps the current estimate is returned as it stands.
 func CircleGeometric(pts []geom.Vec2) (centre geom.Vec2, r float64, ok bool) {
 	centre, r, ok = Kasa(pts)
 	if !ok {
@@ -135,13 +136,13 @@ func solve3(a [3][3]float64, g [3]float64) ([3]float64, bool) {
 // LineCircle is where the line p+t·d (d unit) meets the circle: two
 // points, or none.
 func LineCircle(p, d, centre geom.Vec2, r float64) []geom.Vec2 {
-	foot := p.Add(d.Scale(centre.Sub(p).Dot(d)))
+	foot := p.AddScaled(d, centre.Sub(p).Dot(d))
 	h2 := float64(r*r) - foot.Sub(centre).LenSq()
 	if h2 < 0 {
 		return nil
 	}
 	h := math.Sqrt(h2)
-	return []geom.Vec2{foot.Add(d.Scale(h)), foot.Sub(d.Scale(h))}
+	return []geom.Vec2{foot.AddScaled(d, h), foot.AddScaled(d, -h)}
 }
 
 // CircleCircle is where two circles meet: two points, or none.
@@ -158,7 +159,7 @@ func CircleCircle(c0 geom.Vec2, r0 float64, c1 geom.Vec2, r1 float64) []geom.Vec
 	}
 	h := math.Sqrt(h2)
 	u := dv.Scale(1 / dist)
-	mid := c0.Add(u.Scale(a))
+	mid := c0.AddScaled(u, a)
 	n := geom.Vec2{X: -u.Y, Y: u.X}
-	return []geom.Vec2{mid.Add(n.Scale(h)), mid.Sub(n.Scale(h))}
+	return []geom.Vec2{mid.AddScaled(n, h), mid.AddScaled(n, -h)}
 }
