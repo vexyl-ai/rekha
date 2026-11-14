@@ -105,7 +105,7 @@ func TestFromStringsBadNumber(t *testing.T) {
 }
 
 func TestSegmentKeys(t *testing.T) {
-	want := []string{"auto", "preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance", "flatten"}
+	want := []string{"auto", "preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance", "flatten", "flatLightness"}
 	if got := SegmentKeys(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}
@@ -184,5 +184,18 @@ func TestParseFlatten(t *testing.T) {
 	o = mustParse(t, `{"preset":"flat","flatten":false}`)
 	if o.Flatten {
 		t.Fatal("flatten not cleared on the flat preset")
+	}
+}
+
+func TestParseFlatLightness(t *testing.T) {
+	o := mustParse(t, `{"preset":"flat","flatLightness":0.05}`)
+	if o.FlatLightness != 0.05 {
+		t.Fatalf("flatLightness %v, want 0.05", o.FlatLightness)
+	}
+	if o := mustParse(t, `{"preset":"flat"}`); o.FlatLightness != 0.12 {
+		t.Fatalf("default %v, want 0.12", o.FlatLightness)
+	}
+	if _, err := Parse([]byte(`{"preset":"flat","flatLightness":1.5}`)); err == nil {
+		t.Fatal("flatLightness 1.5 accepted")
 	}
 }

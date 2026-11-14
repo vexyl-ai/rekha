@@ -29,7 +29,7 @@ const (
 // are compatible (see the thresholds), so a chain of shades stops where
 // the next shade is too far from the colour of what has merged. labels
 // are relabelled in place; the compacted palette is returned.
-func Flatten(labels, rgb []uint8, w, h int, palette []colour.OKLab) []colour.OKLab {
+func Flatten(labels, rgb []uint8, w, h int, palette []colour.OKLab, light float64) []colour.OKLab {
 	n := len(palette)
 	count := make([]float64, n)
 	sum := make([]colour.OKLab, n)
@@ -106,7 +106,7 @@ func Flatten(labels, rgb []uint8, w, h int, palette []colour.OKLab) []colour.OKL
 	}
 	for _, k := range pairs {
 		ga, gb := find(k.a), find(k.b)
-		if ga == gb || count[ga] == 0 || count[gb] == 0 || !sameFlat(own[largest[ga]], own[largest[gb]]) {
+		if ga == gb || count[ga] == 0 || count[gb] == 0 || !sameFlat(own[largest[ga]], own[largest[gb]], light) {
 			continue
 		}
 		if total[ga] < total[gb] || (total[ga] == total[gb] && ga > gb) {
@@ -132,8 +132,8 @@ func Flatten(labels, rgb []uint8, w, h int, palette []colour.OKLab) []colour.OKL
 
 // sameFlat reports whether a and b are shades of one colour under the
 // Flatten thresholds.
-func sameFlat(a, b colour.OKLab) bool {
-	if math.Abs(a.L-b.L) > flatLight {
+func sameFlat(a, b colour.OKLab, light float64) bool {
+	if math.Abs(a.L-b.L) > light {
 		return false
 	}
 	ca, cb := math.Hypot(a.A, a.B), math.Hypot(b.A, b.B)

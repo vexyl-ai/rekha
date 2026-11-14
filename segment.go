@@ -144,7 +144,7 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 		final = region.Rescue(s.Labels, rgb, w, h, final, o.FilterSpeckle, o.ColorTolerance)
 		if o.Flatten {
 			o.report("flatten")
-			final = region.Flatten(s.Labels, rgb, w, h, final)
+			final = region.Flatten(s.Labels, rgb, w, h, final, o.FlatLightness)
 		}
 	}
 

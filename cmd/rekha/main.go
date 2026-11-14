@@ -57,6 +57,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Float64Var(&o.Stroke, "cutout-stroke", o.Stroke, "old name for --stroke")
 	fs.BoolVar(&o.Gradients, "gradients", o.Gradients, "merge adjacent colour bands that form one linear ramp into a gradient fill (colour presets)")
 	fs.BoolVar(&o.Flatten, "flatten", o.Flatten, "merge adjacent shades of one hue into one flat colour: the posterised look (the flat preset's default)")
+	fs.Float64Var(&o.FlatLightness, "flat-lightness", o.FlatLightness, "how far apart in OKLab lightness 0..1 two adjacent shades may be and still merge under --flatten (0.12; 0.05 keeps twice the shade steps)")
 	fs.Float64Var(&o.GradientTolerance, "gradient-tolerance", o.GradientTolerance, "RMS colour error 0..1 a gradient fill may leave, in sRGB units (0.03 ≈ 8/255)")
 	fs.BoolVar(&o.NoMark, "no-mark", o.NoMark, "leave out the data-generator attribute and the Rekha comment from the SVG")
 	fs.Float64Var(&o.Scale, "scale", 0, "the image is this many times the size the output is for (0.25-8): the SVG is written at image size ÷ scale, the viewBox at image size")

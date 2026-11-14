@@ -98,6 +98,13 @@ type Options struct {
 	// colour while a hue step stays an edge. The flat preset sets it;
 	// a fixed Palette is never flattened.
 	Flatten bool
+	// FlatLightness is how far apart in OKLab lightness (0..1) two
+	// adjacent shades of one hue may be and still merge under Flatten;
+	// default 0.12. Lower keeps more of the quantiser's shade steps as
+	// their own flat tones (0.05 doubles a cartoon's fills), higher
+	// merges more; a shade softer than ColorTolerance is gone before
+	// Flatten runs.
+	FlatLightness float64
 
 	// NoMark leaves out the generator mark: by default the SVG root
 	// carries data-generator="rekha <version>" and a comment naming
@@ -165,6 +172,7 @@ func PresetOptions(p Preset) Options {
 		Hierarchical: HierarchicalCutout,
 
 		GradientTolerance: 0.03,
+		FlatLightness:     0.12,
 
 		Refine: RefineOptions{Sweeps: 3, MaxIter: 30, Weights: refine.DefaultWeights, MergeSplit: true, Primitives: true},
 	}
@@ -310,6 +318,9 @@ func (o Options) Validate() error {
 		return err
 	}
 	if err := inRangeF("CutoutStroke", o.CutoutStroke, 0, 4); err != nil {
+		return err
+	}
+	if err := inRangeF("FlatLightness", o.FlatLightness, 0, 1); err != nil {
 		return err
 	}
 	if err := inRangeF("GradientTolerance", o.GradientTolerance, 0, 1); err != nil {

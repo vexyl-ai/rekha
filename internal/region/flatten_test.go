@@ -62,7 +62,7 @@ var (
 // does not drift when its highlight crescent joins it).
 func TestFlattenMergesLightnessStep(t *testing.T) {
 	labels, rgb, w, h := bandsOf([]int{8, 12}, brownDark, brownMid)
-	pal := Flatten(labels, rgb, w, h, labs(brownDark, brownMid))
+	pal := Flatten(labels, rgb, w, h, labs(brownDark, brownMid), 0.12)
 	if len(pal) != 1 {
 		t.Fatalf("palette %v, want one brown", pal)
 	}
@@ -82,7 +82,7 @@ func TestFlattenKeepsHueStep(t *testing.T) {
 	if math.Abs(a.L-b.L) > 0.12 {
 		t.Fatalf("fixture: lightness differs by %.3f", a.L-b.L)
 	}
-	pal := Flatten(labels, rgb, w, h, labs(brownTan, olive))
+	pal := Flatten(labels, rgb, w, h, labs(brownTan, olive), 0.12)
 	if len(pal) != 2 {
 		t.Fatalf("palette %v, want both", pal)
 	}
@@ -92,7 +92,7 @@ func TestFlattenKeepsHueStep(t *testing.T) {
 // grey outline is not the hair's shade.
 func TestFlattenKeepsNeutralBesideChromatic(t *testing.T) {
 	labels, rgb, w, h := bands(grey, brownMid)
-	pal := Flatten(labels, rgb, w, h, labs(grey, brownMid))
+	pal := Flatten(labels, rgb, w, h, labs(grey, brownMid), 0.12)
 	if len(pal) != 2 {
 		t.Fatalf("palette %v, want both", pal)
 	}
@@ -114,7 +114,7 @@ func TestFlattenChainStopsAtGroupColour(t *testing.T) {
 	if d := l[2].L - l[0].L; d <= 0.12 {
 		t.Fatalf("fixture: pale is %.3f from dark, want more than 0.12", d)
 	}
-	pal := Flatten(labels, rgb, w, h, l)
+	pal := Flatten(labels, rgb, w, h, l, 0.12)
 	if len(pal) != 2 || colour.Dist(pal[0], l[0]) > 1e-9 {
 		t.Fatalf("palette %v, want dark (with mid in it) and pale", pal)
 	}
@@ -123,8 +123,21 @@ func TestFlattenChainStopsAtGroupColour(t *testing.T) {
 // Labels that never touch are not merged, whatever their colours.
 func TestFlattenNeedsAdjacency(t *testing.T) {
 	labels, rgb, w, h := bands(brownPale, olive, brownTan)
-	pal := Flatten(labels, rgb, w, h, labs(brownPale, olive, brownTan))
+	pal := Flatten(labels, rgb, w, h, labs(brownPale, olive, brownTan), 0.12)
 	if len(pal) != 3 {
 		t.Fatalf("palette %v, want all three", pal)
+	}
+}
+
+// TestFlattenLightnessThreshold: the threshold is the caller's. The
+// dark and mid browns are 0.08 apart in lightness: at 0.05 they stay
+// two colours, at 0.12 they merge.
+func TestFlattenLightnessThreshold(t *testing.T) {
+	labels, rgb, w, h := bandsOf([]int{8, 12}, brownDark, brownMid)
+	if pal := Flatten(labels, rgb, w, h, labs(brownDark, brownMid), 0.05); len(pal) != 2 {
+		t.Fatalf("at 0.05: %d colours, want 2", len(pal))
+	}
+	if pal := Flatten(labels, rgb, w, h, labs(brownDark, brownMid), 0.12); len(pal) != 1 {
+		t.Fatalf("at 0.12: %d colours, want 1", len(pal))
 	}
 }

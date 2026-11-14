@@ -3,6 +3,27 @@
 Notable changes to Rekha. Versions are tags on `main`; the release
 pipeline builds every artefact from the tag.
 
+## Unreleased
+
+### Added
+
+- `--flat-lightness` (`Options.FlatLightness`, API and wasm `flatLightness`,
+  a field in the playground): how far apart in OKLab lightness two
+  adjacent shades of one hue may be and still merge under `--flatten`,
+  default the 0.12 the flat preset used. On the boy render, refined:
+
+  | flat-lightness | dB | paths | fills |
+  |---|---|---|---|
+  | 0.03 | 31.45 | 714 | 43 |
+  | 0.05 | 31.65 | 515 | 39 |
+  | 0.08 | 30.07 | 389 | 26 |
+  | 0.12 | 28.58 | 331 | 20 |
+
+  At 0.05 the hair's and the hoodie's shade steps stay as their own flat
+  tones at twice the fills; a shadow softer than the colour tolerance
+  (the neck's) is merged by the quantiser before Flatten runs and is a
+  gradients matter, not this knob's (`bench/results/2026-11-14-flat-lightness.md`).
+
 ## v0.2.1
 
 ### Added

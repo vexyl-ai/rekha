@@ -273,3 +273,17 @@ func TestSegmentFlattenKeepsFixedPalette(t *testing.T) {
 		t.Fatalf("palette %v, want the two fixed entries", s.Palette)
 	}
 }
+
+// TestSegmentFlatLightnessKeepsCloseShades: a lower FlatLightness keeps
+// the two browns (0.08 apart) as two colours under the flat preset.
+func TestSegmentFlatLightnessKeepsCloseShades(t *testing.T) {
+	o := PresetOptions(PresetFlat)
+	o.FlatLightness = 0.05
+	s, err := Segment(twoShades(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Palette) != 2 {
+		t.Fatalf("palette %v, want two browns", s.Palette)
+	}
+}

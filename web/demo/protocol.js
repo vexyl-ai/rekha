@@ -7,7 +7,7 @@
 
   // Keys of the options object that change Segment; anything else only
   // changes Finish. Pinned by apiopts.SegmentKeys in Go.
-  const SEGMENT_KEYS = ['auto', 'preset', 'threshold', 'colorPrecision', 'colorTolerance', 'maxColors', 'palette', 'filterSpeckle', 'gradients', 'gradientTolerance', 'flatten'];
+  const SEGMENT_KEYS = ['auto', 'preset', 'threshold', 'colorPrecision', 'colorTolerance', 'maxColors', 'palette', 'filterSpeckle', 'gradients', 'gradientTolerance', 'flatten', 'flatLightness'];
 
   // needsResegment reports whether moving from options prev to next
   // requires a new segmentation (prev null: nothing cached yet).

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { SEGMENT_KEYS, needsResegment, Requests, progressText, Viewport } = require('./protocol.js');
 
 test('segment keys', () => {
-  assert.deepEqual(SEGMENT_KEYS, ['auto', 'preset', 'threshold', 'colorPrecision', 'colorTolerance', 'maxColors', 'palette', 'filterSpeckle', 'gradients', 'gradientTolerance', 'flatten']);
+  assert.deepEqual(SEGMENT_KEYS, ['auto', 'preset', 'threshold', 'colorPrecision', 'colorTolerance', 'maxColors', 'palette', 'filterSpeckle', 'gradients', 'gradientTolerance', 'flatten', 'flatLightness']);
 });
 
 test('needsResegment on preset change', () => {

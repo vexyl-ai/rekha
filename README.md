@@ -134,7 +134,8 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 | `--filter-speckle N` | `4` / `16` | Drop components below N pixels (`poster` / `photo`) |
 | `--gradients` | off | Colour presets: merge bands that follow one ramp into a `<linearGradient>` fill, a `<radialGradient>` when they run round a centre, or a base gradient under translucent layers (radial or linear, fading either way) when the region is shaded more than one way |
 | `--gradient-tolerance 0..1` | `0.03` | RMS error a ramp may leave, in sRGB units (about 8/255) |
-| `--flatten` | off / on (`flat`) | Merge adjacent shades of one hue (within 0.12 of OKLab lightness, hue within 23°) into one flat colour after cleanup; a neutral and a chromatic colour never merge |
+| `--flatten` | off / on (`flat`) | Merge adjacent shades of one hue (within `--flat-lightness` of OKLab lightness, hue within 23°) into one flat colour after cleanup; a neutral and a chromatic colour never merge |
+| `--flat-lightness` | 0.12 | How far apart in OKLab lightness (0..1) two adjacent shades may be and still merge; 0.05 keeps twice the shade steps as their own flat tones |
 
 ### Curves
 

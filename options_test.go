@@ -223,3 +223,19 @@ func TestValidateScale(t *testing.T) {
 		}
 	}
 }
+
+func TestFlatLightnessDefaultAndRange(t *testing.T) {
+	if d := DefaultOptions().FlatLightness; d != 0.12 {
+		t.Fatalf("default %v, want 0.12", d)
+	}
+	if d := PresetOptions(PresetFlat).FlatLightness; d != 0.12 {
+		t.Fatalf("flat preset %v, want 0.12", d)
+	}
+	for _, v := range []float64{-0.1, 1.5} {
+		o := PresetOptions(PresetFlat)
+		o.FlatLightness = v
+		if err := o.Validate(); err == nil {
+			t.Fatalf("FlatLightness %v accepted", v)
+		}
+	}
+}

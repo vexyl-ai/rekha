@@ -456,4 +456,9 @@ func TestFlagFlatten(t *testing.T) {
 	if n := fills("--preset", "photo", "--flatten"); n != 1 {
 		t.Fatalf("photo --flatten: %d paths, want 1", n)
 	}
+	// The two browns are 0.08 apart in lightness: a threshold under that
+	// keeps them.
+	if n := fills("--preset", "flat", "--flat-lightness", "0.05"); n != 2 {
+		t.Fatalf("flat --flat-lightness 0.05: %d paths, want 2", n)
+	}
 }
