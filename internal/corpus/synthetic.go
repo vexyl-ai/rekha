@@ -212,24 +212,41 @@ func FilletDGeometry() (centre geom.Vec2, r, fillet, chordX float64) {
 	return geom.Vec2{X: 128, Y: 128}, 100, 12, 60
 }
 
-// filletD is the inside test for fillet-arc. A fillet centre sits
-// fillet right of the chord and r−fillet from the disc centre; a point
-// left of the fillet centres and beyond them in y is inside only when
-// inside its fillet disc.
+// filletD is the inside test for fillet-arc. A fillet centre F sits
+// fillet right of the chord and r−fillet from the disc centre C, so its
+// circle touches the chord at A (level with F) and the big circle at T
+// (on the ray C→F). The corner the fillet rounds off is the wedge at F
+// between the rays F→A and F→T: a point in that wedge is inside only
+// when inside the fillet disc; anywhere else the D is the big disc right
+// of the chord (between T and the vertical through F the big circle
+// bounds it, not the fillet).
 func filletD() func(x, y float64) bool {
 	c, r, f, chordX := FilletDGeometry()
 	big := disc(c.X, c.Y, r)
 	fx := chordX + f
 	fy := math.Sqrt((r-f)*(r-f) - (fx-c.X)*(fx-c.X))
 	top, bottom := disc(fx, c.Y-fy, f), disc(fx, c.Y+fy, f)
+	// inWedge reports whether (x, y) lies in the corner wedge of the
+	// fillet centred on (fx, fcy): on the far side of F→A from C (beyond
+	// the fillet centre in y) and on the chord's side of the ray C→F.
+	inWedge := func(x, y, fcy float64) bool {
+		dx, dy := fx-c.X, fcy-c.Y // C→F
+		px, py := x-fx, y-fcy     // F→P
+		if (y < fcy) != (fcy < c.Y) {
+			return false
+		}
+		// A−F = (−f, 0); P is on A's side of C→F when its cross product
+		// with C→F has the sign A's has.
+		return (dx*py-dy*px < 0) == (dy*f < 0)
+	}
 	return func(x, y float64) bool {
 		if x < chordX || !big(x, y) {
 			return false
 		}
-		if x < fx && y < c.Y-fy {
+		if inWedge(x, y, c.Y-fy) {
 			return top(x, y)
 		}
-		if x < fx && y > c.Y+fy {
+		if inWedge(x, y, c.Y+fy) {
 			return bottom(x, y)
 		}
 		return true

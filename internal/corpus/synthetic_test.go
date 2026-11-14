@@ -176,3 +176,26 @@ func TestNewPrimitiveShapesRender(t *testing.T) {
 		t.Fatal(c, r, f, x)
 	}
 }
+
+// TestFilletDKeepsTheCrescent: between the fillet's tangency with the
+// big circle and the vertical through the fillet centre, the D is the
+// big disc; only the corner wedge between the chord, the big circle and
+// the fillet is cut away.
+func TestFilletDKeepsTheCrescent(t *testing.T) {
+	in := filletD()
+	for _, p := range []struct {
+		x, y float64
+		want bool
+	}{
+		{70, 47, true},   // inside the big disc, past the tangency, outside the fillet disc
+		{70, 209, true},  // the same below
+		{61, 55, false},  // the cut corner
+		{61, 201, false}, // the same below
+		{61, 61, true},   // on the fillet arc's inside
+		{59, 128, false}, // left of the chord
+	} {
+		if got := in(p.x, p.y); got != p.want {
+			t.Errorf("inside(%v,%v) = %v, want %v", p.x, p.y, got, p.want)
+		}
+	}
+}
