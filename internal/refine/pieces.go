@@ -59,8 +59,14 @@ func hardCuts(b Bezigon, o Options) []bool {
 func fitSpan(b Bezigon, first, count int, tol float64) (piece, bool) {
 	pts := samples(b, first, count)
 	out := piece{first: first, count: count}
-	centre, r, circleOK := kasa(pts)
-	circleOK = circleOK && onCircle(pts, centre, r, math.Min(tol, circleRelTol*r))
+	// The circle is fitted and tested on the interior samples: the span's
+	// end anchors are re-placed by the arc solve (a free end moves onto
+	// the circle, a tangent end to its foot), and a refined corner anchor
+	// wanders along its edges by up to a pixel, which would otherwise
+	// cut the last few pixels of an arc off as a piece of their own.
+	inner := pts[1 : len(pts)-1]
+	centre, r, circleOK := kasa(inner)
+	circleOK = circleOK && onCircle(inner, centre, r, math.Min(tol, circleRelTol*r))
 	p, dir := fit.FitLine(pts)
 	lineOK := dir.LenSq() > 0
 	for _, q := range pts {

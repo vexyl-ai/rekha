@@ -1,6 +1,7 @@
 package refine
 
 import (
+	"math"
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/corpus"
@@ -83,5 +84,39 @@ func TestSharpenCornerKeepsFixedJoint(t *testing.T) {
 	}
 	if fixed != 1 {
 		t.Fatalf("fixed flags %v", ro.Fixed)
+	}
+}
+
+// halfDiscSliver is the half-disc whose arc stops short of the bottom
+// corner, the last 2.5 px of it traced as a kinked straight sliver to a
+// corner anchor pushed 1.2 px out along the flat side, as the
+// refinement leaves a corner between a curve and a straight edge.
+func halfDiscSliver() Bezigon {
+	c := v(128, 128)
+	end := math.Pi/2 - 2.5/80
+	segs := []fit.Segment{ln(v(128, 209.2), v(128, 48))}
+	segs = append(segs, nudgedArc(c, 80, -math.Pi/2, end, 4, 0.2)...)
+	segs = append(segs, ln(segs[len(segs)-1].P[3], v(128, 209.2)))
+	return FromSegments(segs)
+}
+
+// TestSharpenCornerBetweenArcAndLine: the sliver goes, the corner sits
+// where the flat side meets the circle, and the arc reaches it.
+func TestSharpenCornerBetweenArcAndLine(t *testing.T) {
+	m := supersampled(halfDisc(0), win256)
+	out, _ := SnapPieces(halfDiscSliver(), m, win256, 0.5, Options{})
+	lines, curved := countKinds(out, 0.25)
+	if out.N() != 3 || lines != 1 || curved != 2 {
+		t.Fatalf("%d segments, %d lines, %d curved", out.N(), lines, curved)
+	}
+	cornerAt(t, out, v(128, 208), 0.15)
+	for j := 0; j < out.N(); j++ {
+		if c := out.Segment(j); !straightCubic(c, 0.25) {
+			for _, p := range []geom.Vec2{c[0], c[3]} {
+				if r := p.Sub(v(128, 128)).Len(); math.Abs(r-80) > 0.1 {
+					t.Errorf("anchor %v is %.3f from the centre", p, r)
+				}
+			}
+		}
 	}
 }

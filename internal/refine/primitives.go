@@ -78,6 +78,10 @@ func SnapPieces(b Bezigon, m Mask, img Window, tol float64, o Options) (Bezigon,
 		return b, o
 	}
 	b, o, ps := loopPieces(b, tol, o)
+	// Corners are sharpened before the arcs are snapped, so an arc whose
+	// corner a fillet hid ends at that corner, typed by its line
+	// neighbour.
+	b, o, ps = sharpenCorners(b, o, ps, m, img, tol)
 	for i := len(ps) - 1; i >= 0; i-- {
 		if ps[i].kind != pieceArc {
 			continue
@@ -90,7 +94,6 @@ func SnapPieces(b Bezigon, m Mask, img Window, tol float64, o Options) (Bezigon,
 		shiftPieces(ps, i+1, sn.pieces-ps[i].count)
 		ps[i].count, ps[i].centre, ps[i].r, ps[i].snapped = sn.pieces, sn.centre, sn.r, true
 	}
-	b, o, ps = sharpenCorners(b, o, ps, m, img, tol)
 	return rebuildLines(b, o, m, img, ps, tol)
 }
 
@@ -381,7 +384,7 @@ func buildArc(b Bezigon, o Options, pc piece, ends [2]arcEnd, r float64, pieces 
 			}
 			ends[side].at = foot
 		case endFree:
-			ends[side].at = projectOnCircle(e.at, centre, r)
+			ends[side].at = freeEndOn(e, centre, r)
 		}
 		if ends[side].at != b.Pts[3*joints[side]] {
 			moved[side] = true
@@ -416,6 +419,28 @@ func buildArc(b Bezigon, o Options, pc piece, ends [2]arcEnd, r float64, pieces 
 	}
 	out, co := replaceRun(cand, o, pc.first, pc.count, arcPieces(centre, r, sweep, pieces, a, c))
 	return snap{out, co, ends, moved, centre, r, sweep, pieces}, true
+}
+
+// freeEndOn is where a free end's anchor goes on the solved circle: the
+// corner where its line neighbour meets the circle (the intersection
+// nearest the anchor), or, beside anything else or when the line misses
+// the circle, the anchor's radial projection.
+func freeEndOn(e arcEnd, centre geom.Vec2, r float64) geom.Vec2 {
+	if e.line {
+		d := e.at.Sub(e.far)
+		if d.LenSq() > 0 {
+			best, bd := geom.Vec2{}, math.Inf(1)
+			for _, x := range fit.LineCircle(e.far, d.Norm(), centre, r) {
+				if dd := x.Sub(e.at).Len(); dd < bd {
+					best, bd = x, dd
+				}
+			}
+			if bd < math.Inf(1) {
+				return best
+			}
+		}
+	}
+	return projectOnCircle(e.at, centre, r)
 }
 
 // rebuildLines rebuilds the line pieces of ps in b. First every free

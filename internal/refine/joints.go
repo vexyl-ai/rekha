@@ -75,13 +75,15 @@ func arcEnds(b Bezigon, o Options, ps []piece, i int, tol float64) [2]arcEnd {
 	return ends
 }
 
-// demoted is the tangent end e retyped as free; any other end is
-// returned as it is.
+// demoted is the tangent end e retyped as free, keeping the line it sat
+// on so the free end can still be placed where that line meets the
+// circle; any other end is returned as it is.
 func demoted(e arcEnd) arcEnd {
 	if e.kind != endTangent {
 		return e
 	}
-	return arcEnd{kind: endFree, at: e.at, seg: e.seg, line: e.line}
+	e.kind = endFree
+	return e
 }
 
 // projectOnCircle is p moved radially onto the circle (centre, r); the
