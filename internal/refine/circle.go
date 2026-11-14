@@ -3,6 +3,7 @@ package refine
 import (
 	"math"
 
+	"github.com/vexyl-ai/rekha/internal/fit"
 	"github.com/vexyl-ai/rekha/internal/geom"
 )
 
@@ -98,45 +99,8 @@ func SnapCircle(b Bezigon, m Mask, img Window, tol float64) (Bezigon, bool) {
 	return at(best), true
 }
 
-// kasa is Kåsa's algebraic least-squares circle through pts.
-func kasa(pts []geom.Vec2) (centre geom.Vec2, r float64, ok bool) {
-	if len(pts) < 3 {
-		return geom.Vec2{}, 0, false
-	}
-	// Centre the data on its mean for conditioning, then solve the
-	// normal equations of x² + y² + D·x + E·y + F = 0.
-	var mean geom.Vec2
-	for _, p := range pts {
-		mean = mean.Add(p)
-	}
-	mean = mean.Scale(1 / float64(len(pts)))
-	var sxx, sxy, syy, sxz, syz, sz float64
-	for _, p := range pts {
-		x, y := p.X-mean.X, p.Y-mean.Y
-		z := float64(x*x) + float64(y*y)
-		sxx += float64(x * x)
-		sxy += float64(x * y)
-		syy += float64(y * y)
-		sxz += float64(x * z)
-		syz += float64(y * z)
-		sz += z
-	}
-	// With centred data Σx = Σy = 0, so D and E decouple from F:
-	// [sxx sxy; sxy syy]·[D E]ᵀ = -[sxz syz]ᵀ, F = -(sz + 0)/m.
-	det := float64(sxx*syy) - float64(sxy*sxy)
-	if det <= 1e-12*(sxx+syy)*(sxx+syy) || !finite(det) {
-		return geom.Vec2{}, 0, false
-	}
-	d := (float64(-sxz*syy) + float64(syz*sxy)) / det
-	e := (float64(-syz*sxx) + float64(sxz*sxy)) / det
-	f := -sz / float64(len(pts))
-	cx, cy := -d/2, -e/2
-	r2 := float64(cx*cx) + float64(cy*cy) - f
-	if !(r2 > 0) || !finite(r2) {
-		return geom.Vec2{}, 0, false
-	}
-	return geom.Vec2{X: cx + mean.X, Y: cy + mean.Y}, math.Sqrt(r2), true
-}
+// kasa is Kåsa's algebraic least-squares circle through pts (fit.Kasa).
+func kasa(pts []geom.Vec2) (centre geom.Vec2, r float64, ok bool) { return fit.Kasa(pts) }
 
 // Circle is the four-cubic circle of the given centre and radius, its
 // first anchor at the circle point nearest start, running counter-
