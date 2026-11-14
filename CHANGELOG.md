@@ -3,7 +3,7 @@
 Notable changes to Rekha. Versions are tags on `main`; the release
 pipeline builds every artefact from the tag.
 
-## Unreleased
+## v0.2.1
 
 ### Added
 
