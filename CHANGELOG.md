@@ -17,6 +17,19 @@ pipeline builds every artefact from the tag.
   options and extra request fields and decides what is written, and
   `WithFields` naming those fields. `rekha-serve` behaves as before.
 
+### Changed
+
+- The Wu quantiser judges a colour group, not only a single cell, when
+  it asks whether a box hides a subject, so a small object shaded over
+  several cells keeps a palette entry at the poster tolerance (a
+  cartoon's skin and orange shoes were each merged into a grey). A
+  group counts only above a 512th of the image and its halo is taken
+  around the whole group, so noise and gradient ramps split no further
+  than before. Three goldens change, `gradient-shapes-poster-*`, each
+  about 1.9 dB closer to the image with one more fill; the 21-image
+  bench is in `bench/results/2026-11-14-wu-groups.md` (mean +0.51 dB,
+  no losses).
+
 ## v0.2.0
 
 ### Added
