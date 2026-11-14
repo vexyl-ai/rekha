@@ -2,6 +2,7 @@ package quant
 
 import (
 	"math"
+	"sort"
 
 	"github.com/vexyl-ai/rekha/internal/colour"
 )
@@ -133,7 +134,17 @@ func (m *moments) split(bx box) (box, box, bool) {
 // heaviest cell of each explanation is a subject when it holds at least
 // 1/subjectShare of the whole image and stands alone: the box's other
 // cells within adjacentCells cells of it in sRGB hold under 1/haloShare
-// of its weight between them. A flat colour puts its mass in one cell
+// of its weight between them.
+//
+// A shaded object spreads its mass over many cells, and two small objects
+// in one box dilute each other, so no single cell passes either test.
+// Each pile is therefore also judged by its heaviest colour group: the
+// cells within tol of a seed, seeds tried heaviest first. A far group is
+// coherent on the same terms as a cell; a tail or mixture group is a
+// subject on the same terms, with the halo taken outside the group. A
+// group counts only when it holds 1/groupFloor of the image: the far tail
+// of a gradient ramp on a large image is a few hundred pixels spread thin,
+// and splitting on it cuts the ramp. A flat colour puts its mass in one cell
 // and only its anti-aliased rim in the cells beside it; a noise tail
 // spreads its mass over the neighbours, and a plateau at the end of a
 // ramp trails a share of its mass up the ramp (cutting that plateau out
@@ -148,6 +159,7 @@ const (
 	subjectShare  = 64
 	haloShare     = 16
 	adjacentCells = 2
+	groupFloor    = 512
 )
 
 // cellStep is the sRGB width of a cell, taken as the smallest positive
@@ -172,9 +184,13 @@ func chebyshev(a, b colour.OKLab) int {
 }
 
 // pile accumulates the mass of one explanation and its heaviest cell.
-type pile struct{ mass, heaviest, cell int }
+type pile struct {
+	mass, heaviest, cell int
+	members              []int
+}
 
 func (p *pile) add(i, w int) {
+	p.members = append(p.members, i)
 	p.mass += w
 	if w > p.heaviest {
 		p.heaviest, p.cell = w, i
@@ -185,6 +201,40 @@ func (p *pile) add(i, w int) {
 // at least coherentMin weight.
 func (p pile) coherent() bool {
 	return p.heaviest >= coherentMin && float64(p.heaviest) >= coherentShare*float64(p.mass)
+}
+
+// group finds the heaviest colour group in p: cells within tol of a seed,
+// seeds tried heaviest first (index order on ties), each cell in one
+// group. It returns the group's mass, seed and members, or 0 and -1 for
+// an empty pile.
+func (p pile) group(cells []Cell, tol float64) (mass, seed int, group []int) {
+	members := append([]int(nil), p.members...)
+	sort.SliceStable(members, func(i, j int) bool {
+		if cells[members[i]].Weight != cells[members[j]].Weight {
+			return cells[members[i]].Weight > cells[members[j]].Weight
+		}
+		return members[i] < members[j]
+	})
+	taken := make([]bool, len(members))
+	mass, seed = 0, -1
+	for i, ci := range members {
+		if taken[i] {
+			continue
+		}
+		m := 0
+		var in []int
+		for j, cj := range members {
+			if !taken[j] && colour.Dist(cells[ci].Lab, cells[cj].Lab) <= tol {
+				taken[j] = true
+				m += cells[cj].Weight
+				in = append(in, cj)
+			}
+		}
+		if m > mass {
+			mass, seed, group = m, ci, in
+		}
+	}
+	return mass, seed, group
 }
 
 // wuBox is a live histogram box with the cells it holds.
@@ -261,27 +311,56 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		if far.coherent() {
 			return false, -1
 		}
+		if gm, _, _ := far.group(cells, tol); gm >= coherentMin && float64(gm) >= coherentShare*float64(far.mass) && gm*groupFloor >= total {
+			return false, -1
+		}
 		// subject reports whether the pile's heaviest cell is a flat
 		// colour of its own: heavy enough, with little of the box's
-		// mass in the cells around it.
-		subject := func(p pile) bool {
-			if p.heaviest == 0 || p.heaviest*subjectShare < total {
-				return false
-			}
-			halo := 0
-			for _, j := range idx {
-				if j != p.cell && chebyshev(cells[j].Lab, cells[p.cell].Lab) <= near {
-					halo += cells[j].Weight
+		// mass in the cells around it; failing that, whether its
+		// heaviest colour group is. It returns the cell to promote.
+		subject := func(p pile) (int, bool) {
+			if p.heaviest > 0 && p.heaviest*subjectShare >= total {
+				halo := 0
+				for _, j := range idx {
+					if j != p.cell && chebyshev(cells[j].Lab, cells[p.cell].Lab) <= near {
+						halo += cells[j].Weight
+					}
+				}
+				if halo*haloShare < p.heaviest {
+					return p.cell, true
 				}
 			}
-			return halo*haloShare < p.heaviest
+			gm, seed, group := p.group(cells, tol)
+			if gm == 0 || gm*subjectShare < total || gm*groupFloor < total {
+				return -1, false
+			}
+			in := make(map[int]bool, len(group))
+			for _, j := range group {
+				in[j] = true
+			}
+			// The halo is the box's mass next to any cell of the group,
+			// not just the seed: a run of ramp cells shields its seed
+			// from the ramp's neighbours, a hidden object has none.
+			halo := 0
+			for _, j := range idx {
+				if in[j] {
+					continue
+				}
+				for _, k := range group {
+					if chebyshev(cells[j].Lab, cells[k].Lab) <= near {
+						halo += cells[j].Weight
+						break
+					}
+				}
+			}
+			return seed, halo*haloShare < gm
 		}
-		if subject(tail) {
-			return true, tail.cell
+		if cell, ok := subject(tail); ok {
+			return true, cell
 		}
 		for _, p := range mix {
-			if subject(p) {
-				return true, p.cell
+			if cell, ok := subject(p); ok {
+				return true, cell
 			}
 		}
 		return true, -1

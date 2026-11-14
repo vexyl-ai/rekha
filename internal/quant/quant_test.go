@@ -331,3 +331,121 @@ func TestWuKeepsRampPlateauInItsBox(t *testing.T) {
 		t.Fatalf("got %d entries %v, want white and one cyan box", len(pal), pal)
 	}
 }
+
+// field is a w×h sRGB buffer of one colour with a ±amp deterministic
+// texture on every channel.
+func field(w, h int, c [3]uint8, amp int) []uint8 {
+	rgb := make([]uint8, w*h*3)
+	for p := 0; p < w*h; p++ {
+		d := (p*7919)%(2*amp+1) - amp
+		for k := 0; k < 3; k++ {
+			rgb[3*p+k] = uint8(min(max(int(c[k])+d, 0), 255))
+		}
+	}
+	return rgb
+}
+
+// disc paints a disc of radius r at (cx, cy) ramping from a to b over
+// eight levels left to right.
+func disc(rgb []uint8, w, cx, cy, r int, a, b [3]uint8) {
+	for y := cy - r; y <= cy+r; y++ {
+		for x := cx - r; x <= cx+r; x++ {
+			if (x-cx)*(x-cx)+(y-cy)*(y-cy) > r*r {
+				continue
+			}
+			t := float64((x-cx+r)*8/(2*r+1)) / 7
+			for k := 0; k < 3; k++ {
+				rgb[3*(y*w+x)+k] = uint8(float64(a[k]) + t*(float64(b[k])-float64(a[k])) + 0.5)
+			}
+		}
+	}
+}
+
+func palDist(pal []colour.OKLab, c [3]uint8) float64 {
+	best := 10.0
+	for _, p := range pal {
+		best = min(best, colour.Dist(p, colour.FromSRGB8(c[0], c[1], c[2])))
+	}
+	return best
+}
+
+// Two shaded objects of 0.7 % each in a near-grey field dilute each other
+// in the field's box: neither has one cell heavy enough on its own, but
+// each is a colour group that is.
+func TestWuGroupsTwoShadedSubjects(t *testing.T) {
+	w, h := 512, 512
+	rgb := field(w, h, [3]uint8{0xcf, 0xc6, 0xbf}, 2)
+	disc(rgb, w, 128, 256, 24, [3]uint8{0xf7, 0x75, 0x2a}, [3]uint8{0xc8, 0x5a, 0x1c})
+	disc(rgb, w, 384, 256, 24, [3]uint8{0xff, 0xff, 0xff}, [3]uint8{0xe8, 0xe8, 0xe8})
+	pal := Wu(Cells(rgb, 6), 0, 0.08)
+	if len(pal) < 3 {
+		t.Fatalf("got %d entries, want the field, orange and white: %v", len(pal), pal)
+	}
+	for _, want := range [][3]uint8{{0xe0, 0x68, 0x23}, {0xf4, 0xf4, 0xf4}} {
+		if d := palDist(pal, want); d > 0.06 {
+			t.Errorf("%v not in palette (nearest %.3f): %v", want, d, pal)
+		}
+	}
+}
+
+// A patch under 1/512 of the image is not a group: a gradient's tail of a
+// few hundred pixels on a large image must not force a split.
+func TestWuGroupFloorKeepsRamp(t *testing.T) {
+	w, h := 1024, 1024
+	ramp := func() []uint8 {
+		rgb := make([]uint8, w*h*3)
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				v := uint8(x * 255 / (w - 1))
+				i := 3 * (y*w + x)
+				rgb[i], rgb[i+1], rgb[i+2] = v, v, v
+			}
+		}
+		return rgb
+	}
+	plain := len(Wu(Cells(ramp(), 6), 0, 0.08))
+	// The patch is shaded over eight levels so no single cell holds a
+	// quarter of the far pile: only a colour group could force a split.
+	rgb := ramp()
+	for p := 0; p < 150; p++ {
+		i := 3 * (512*w + 512 + p)
+		t := float64(p*8/150) / 7
+		rgb[i] = uint8(0xf7 - t*(0xf7-0xc8))
+		rgb[i+1] = uint8(0x75 - t*(0x75-0x5a))
+		rgb[i+2] = uint8(0x2a - t*(0x2a-0x1c))
+	}
+	if got := len(Wu(Cells(rgb, 6), 0, 0.08)); got != plain {
+		t.Fatalf("150-pixel patch changed the palette from %d to %d entries", plain, got)
+	}
+}
+
+// Noise on a flat field is not a subject: its far cells group, but the
+// group is the field's own halo.
+func TestWuGroupIgnoresNoise(t *testing.T) {
+	rgb := field(256, 256, [3]uint8{0x80, 0x80, 0x80}, 20)
+	if pal := Wu(Cells(rgb, 6), 0, 0.08); len(pal) != 1 {
+		t.Fatalf("got %d entries for a noisy flat field: %v", len(pal), pal)
+	}
+}
+
+// A plain ramp has no hidden subject: the tail of a ramp box is a run of
+// cells in a chain, and the chain continues on both sides of that run.
+// The group halo must see the chain's neighbours, or every ramp box with
+// a tail would promote a band of itself (the gradient-h golden grew from
+// 5 to 7 entries when the halo was taken around the seed alone).
+func TestWuGroupHaloSeesRampNeighbours(t *testing.T) {
+	w, h := 256, 256
+	rgb := make([]uint8, w*h*3)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			v := uint8(x * 255 / (w - 1))
+			i := 3 * (y*w + x)
+			rgb[i], rgb[i+1], rgb[i+2] = v, v, v
+		}
+	}
+	// Five is what the RMS test alone gives this ramp at the poster
+	// tolerance; the group rules may not add to it.
+	if got := len(Wu(Cells(rgb, 6), 0, 0.08)); got != 5 {
+		t.Fatalf("ramp palette has %d entries, want 5", got)
+	}
+}
