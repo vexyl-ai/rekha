@@ -7,6 +7,21 @@ pipeline builds every artefact from the tag.
 
 ### Added
 
+- Ellipses. Under `--refine` a free loop that is an ellipse (every
+  sample of its outline within tolerance of the least-squares ellipse,
+  the axes at least 1 % apart so a circle stays a circle, the short
+  semi-axis at least 4 px) becomes four cubics, the four-cubic circle
+  under the affine map onto the ellipse, after the circle snap declines
+  and under the same energy guard with the axes refitted against the
+  image; an ellipse loop is final, so the pieces pass does not cut its
+  quadrants into arcs. Two new synthetics, `ellipse-aa` (semi-axes 100
+  and 60) and `ellipse-rot` (90 and 50 at 30°), trace as exactly four
+  cubics within 0.2 px of the true ellipse where the free refinement
+  left them 0.3 px off; `bench/results/2026-11-14-ellipse.md` has the
+  21-image refined bench, on which nothing changes: no logo there has an
+  ellipse, and the Pokéball's rings stay circles. Rounded rectangles were
+  already covered (`CommonRadius`); symmetry is deferred, with the
+  reasons in the design doc.
 - `--preset flat` (`PresetFlat`, API and wasm `"flat"`), the posterised
   look: the photo preset's colours (tolerance 0.04, so every hue
   survives the quantiser), then adjacent shades of one hue merged into

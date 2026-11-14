@@ -34,7 +34,7 @@ Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase pr
 ## Features
 
 - **Curve refinement.** `--refine` optimises every Bézier against the image's anti-aliasing (after Yang et al., 2016), placing edges to a fraction of a pixel. On anti-aliased test images this adds 5–20 dB PSNR at about the same node count.
-- **Geometric primitives.** Circles become four exact arcs, rounded rectangles four lines and four arcs with one shared radius, rotated rectangles four nodes; half-discs, pie wedges and concentric bands come out as arcs with corner ends, and sharp corners are single nodes. The result edits cleanly in Illustrator, Figma or Inkscape.
+- **Geometric primitives.** Circles become four exact arcs, ellipses four cubics, rounded rectangles four lines and four arcs with one shared radius, rotated rectangles four nodes; half-discs, pie wedges and concentric bands come out as arcs with corner ends, and sharp corners are single nodes. The result edits cleanly in Illustrator, Figma or Inkscape.
 - **Gradient fills.** `--gradients` merges colour bands that follow one ramp into a single region filled by a multi-stop `<linearGradient>`, joined across bends, or by a `<radialGradient>` when the bands run round a centre, with specks inside a ramp absorbed. A region shaded more than one way (a sphere with an off-centre highlight, a rim light) is painted in layers: a base gradient under up to two translucent radial gradients that fade by `stop-opacity`, as an illustrator draws it. A 16-megapixel illustration drops from 155 flat paths at 36.7 dB to 82 paths at 39.8 dB with 60 % fewer bytes; flat art is byte-identical with the option on.
 - **Clean colour edges.** Anti-aliased pixels between two colours are recognised as their mixture and absorbed, rather than surviving as slivers of a third colour.
 - **Small objects keep their colour.** A region too small for the quantiser to give a colour of its own (a badge of a few hundred pixels in a photograph, a rim light) is labelled whatever entry is nearest, which may be a grey; after cleanup, a region whose pixels sit farther than the tolerance from its entry gets an entry at its own mean, or moves to an existing one within tolerance.
@@ -144,7 +144,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 | `--simplify px` | `0.75` | Polygon simplification tolerance |
 | `--corner-threshold deg` | `60` | Angle above which a vertex is a corner |
 | `--fit-tolerance px` | `1.0` / `1.5` | Maximum curve error in the plain fit (`bw`,`poster` / `photo`) |
-| `--refine` | off | Optimise curves against the anti-aliasing; replaces recognised circles, arcs, shared radii and rectangles when the rendered error rises by no more than 2 % |
+| `--refine` | off | Optimise curves against the anti-aliasing; replaces recognised circles, ellipses, arcs, shared radii and rectangles when the rendered error rises by no more than 2 % |
 | `--refine-passes N` | `3` | Optimiser sweeps (1–10) |
 
 ### Output

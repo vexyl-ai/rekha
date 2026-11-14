@@ -29,7 +29,7 @@ With `--refine`, spline mode, any preset, either hierarchy:
 
 `type Ellipse struct { Centre geom.Vec2; A, B, Theta float64 }`, `A ≥ B > 0`, `Theta` the direction of the A axis in (−π/2, π/2].
 
-`Ellipse(pts []geom.Vec2) (Ellipse, bool)`: the algebraic least-squares conic `a·x² + b·xy + c·y² + d·x + e·y = 1` on data centred on its mean (the mean of a closed outline lies inside it, so the constant term is safe to fix at 1 and the system is linear), solved by the 5×5 normal equations with Gaussian elimination (`solveN`, the general form of `solve3`). ok is false with fewer than six points, a singular system, a discriminant `b² − 4ac ≥ 0` (a parabola or hyperbola), or axes that are not finite and positive. The algebraic fit is biased on noisy short arcs; here the points are a refined smooth outline a fraction of a pixel off the curve all the way round, where the bias is far below the tolerance.
+`FitEllipse(pts []geom.Vec2) (Ellipse, bool)` (the type takes the bare name): the algebraic least-squares conic `a·x² + b·xy + c·y² + d·x + e·y = 1` on data centred on its mean (the mean of a closed outline lies inside it, so the constant term is safe to fix at 1 and the system is linear), solved by the 5×5 normal equations with Gaussian elimination (`solve5`, as `solve3` with a pivot threshold relative to the matrix's scale). ok is false with fewer than six points, a singular system, a discriminant `b² − 4ac ≥ 0` (a parabola or hyperbola), or axes that are not finite and positive. The algebraic fit is biased on noisy short arcs; here the points are a refined smooth outline a fraction of a pixel off the curve all the way round, where the bias is far below the tolerance.
 
 `(Ellipse) At(phi float64) geom.Vec2` is the parametric point; `(Ellipse) Dist(p geom.Vec2) float64` is the geometric distance, by Newton on the parametric angle from the angle of p in the ellipse's frame (`atan2(y/B, x/A)`), eight steps, which converges for points within a few per cent of the curve, the only points asked about.
 
@@ -49,6 +49,10 @@ For a free loop (no fixed anchor, no frozen segment), after `SnapCircle` decline
 
 `internal/corpus/synthetic.go` gains `ellipse(cx, cy, a, b, theta)` and the two shapes, with `EllipseAAGeometry()` and `EllipseRotGeometry()` returning centre and axes for the tests; `go run ./internal/corpus/gen` writes the PNGs; the goldens are new files. Tests: the fit on exact points (parameters within 1e-6, rejections for collinear and hyperbolic points, `Dist` on and off the curve), the snap on a nudged eight-cubic ellipse against the exact ellipse's mask (four cubics, axes within 0.15 px), refusals for a circle and a rounded rectangle, the two synthetics end to end, and the existing primitive tests unchanged.
 
-## 5. What is left to the builder
+## 5. Outcome (execution, 2026-11-14)
+
+Both synthetics come out as four cubics within 0.2 px of the true ellipse (`ellipse-aa` 40.38 → 45.43 dB, `ellipse-rot` 43.37 → 43.87). The 21 real images are byte-identical under the pass: none has an ellipse loop, and the ring circles stay circles. Two refined goldens (`annular-sector`, `poster-discs`) differ in their last bits when regenerated on arm64 with or without this change, which is the known arch drift the quality comparison allows for; they were left as committed. Results: `bench/results/2026-11-14-ellipse.md`.
+
+## 6. What is left to the builder
 
 Names of the constants, the Newton step count, the exact window of the energy guard (follow the circle), and the choice of the golden-section bounds beyond following `radiusSearch`.
