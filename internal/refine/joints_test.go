@@ -71,12 +71,23 @@ func TestArcEndsTangentBothSides(t *testing.T) {
 	}
 }
 
+// TestArcEndsCornerOnLine: the half-disc's arc meets its line at two
+// corners; arcEnds offers both as tangents, and snapPiece, finding no
+// tangent circle that holds the arc, demotes both to points at the
+// anchors' projections.
 func TestArcEndsCornerOnLine(t *testing.T) {
 	b, o, ps := loopPieces(halfDisc(0.2), 0.5, Options{})
 	i := arcPieceIndex(t, ps, 80)
-	ends := arcEnds(b, o, ps, i, 0.5)
-	if ends[0].kind != endPoint || ends[1].kind != endPoint {
-		t.Fatalf("ends %+v", ends)
+	if ends := arcEnds(b, o, ps, i, 0.5); ends[0].kind != endTangent || ends[1].kind != endTangent {
+		t.Fatalf("typed ends %+v", ends)
+	}
+	sn, ok := snapPiece(b, o, ps, i, ps[i].r, 0, 0.5)
+	if !ok {
+		t.Fatal("no snap")
+	}
+	ends := sn.ends
+	if ends[0].kind != endFree || ends[1].kind != endFree {
+		t.Fatalf("solved ends %+v", ends)
 	}
 	for _, e := range ends {
 		if !near(e.at, v(128, 48), 0.2) && !near(e.at, v(128, 208), 0.2) {
@@ -100,21 +111,37 @@ func TestArcEndsFixedIsPoint(t *testing.T) {
 	}
 }
 
-func TestArcEndsArcArcMeanProjection(t *testing.T) {
+// TestArcEndsArcNeighbourIsFree: beside an unsnapped arc the end is
+// free, and beside a snapped one a point at the anchor.
+func TestArcEndsArcNeighbourIsFree(t *testing.T) {
 	b, o, ps := loopPieces(filletD(), 0.5, Options{})
 	i := arcPieceIndex(t, ps, 100)
 	j := arcPieceIndex(t, ps, 12)
-	ends := arcEnds(b, o, ps, i, 0.5)
-	if ends[1].kind != endPoint {
+	anchor := b.Pts[3*((ps[i].first+ps[i].count)%b.N())]
+	if ends := arcEnds(b, o, ps, i, 0.5); ends[1].kind != endFree || ends[1].at != anchor {
 		t.Fatalf("end beside the fillet %+v", ends[1])
 	}
-	anchor := b.Pts[3*((ps[i].first+ps[i].count)%b.N())]
-	proj := func(p piece) geom.Vec2 {
-		return p.centre.Add(anchor.Sub(p.centre).Scale(p.r / anchor.Sub(p.centre).Len()))
+	ps[j].snapped = true
+	if ends := arcEnds(b, o, ps, i, 0.5); ends[1].kind != endPoint || ends[1].at != anchor {
+		t.Fatalf("end beside the snapped fillet %+v", ends[1])
 	}
-	want := proj(ps[i]).Add(proj(ps[j])).Scale(0.5)
-	if !near(ends[1].at, want, 1e-9) {
-		t.Fatalf("at %v, want %v", ends[1].at, want)
+}
+
+func TestSolveArcFreeEnds(t *testing.T) {
+	kasa := v(50, 30)
+	// Both free: the Kåsa centre itself.
+	if c, ok := solveArc([2]arcEnd{{kind: endFree}, {kind: endFree}}, 20, kasa); !ok || c != kasa {
+		t.Fatalf("free/free %v %v", c, ok)
+	}
+	// Through (50,10) with the other end free: the centre nearest near
+	// on the circle of r = 20 about the point.
+	if c, ok := solveArc([2]arcEnd{{kind: endPoint, at: v(50, 10)}, {kind: endFree}}, 20, v(50, 33)); !ok || !near(c, v(50, 30), 1e-9) {
+		t.Fatalf("point/free %v %v", c, ok)
+	}
+	// Tangent to the line y = 10 with the other end free: the centre
+	// nearest near on the line y = 30.
+	if c, ok := solveArc([2]arcEnd{{kind: endFree}, {kind: endTangent, at: v(50, 10), far: v(10, 10)}}, 20, v(52, 33)); !ok || !near(c, v(52, 30), 1e-9) {
+		t.Fatalf("free/tangent %v %v", c, ok)
 	}
 }
 

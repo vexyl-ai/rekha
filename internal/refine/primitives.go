@@ -3,6 +3,7 @@ package refine
 import (
 	"math"
 
+	"github.com/vexyl-ai/rekha/internal/fit"
 	"github.com/vexyl-ai/rekha/internal/geom"
 )
 
@@ -55,122 +56,128 @@ func chordFactor(theta float64) float64 {
 	return math.Sqrt(math.Sin(theta) / theta)
 }
 
-// arcRun is a run of consecutive curved segments first..first+count-1
-// (never wrapping) that lie on one circle.
-type arcRun struct {
-	first, count int
-	centre       geom.Vec2
-	r            float64
-	ccw          bool // the run goes round the centre with increasing angle
-}
-
-// FitArcs replaces every run of curved segments that lies on one circle
-// by circular-arc cubics: maximal runs bounded by straight or frozen
-// segments and by fixed joints, cut where an interior joint turns by
-// arcJointTurn or more, whose circleSamples points per segment lie within
-// min(tol, circleRelTol·r) of a Kåsa-fitted circle. The run becomes
-// pieces of at most pieceSweep with handle 4/3·tan(θ/4)·r. A fixed end
-// anchor stays where it is; a free one slides to the circle's tangent
-// point on its neighbouring straight segment, and a free end beside a
-// curved segment leaves the run alone (an anchor there is nobody's
-// tangent point, and the kink it would keep costs more than the guard
-// can see). The circle is placed through the kept ends and tangent to
-// the lines, and its radius refitted against the mask. A snap that
-// raises the data energy over its window beyond primRise is reverted.
-// The loop as a whole is never a run (see FitCircle). The options come
-// back with Fixed and Frozen renumbered for the result; a loop whose
-// first joint is not a run boundary is rotated to start at one.
-func FitArcs(b Bezigon, m Mask, img Window, tol float64, o Options) (Bezigon, Options) {
-	if b.N() < 2 {
+// SnapPieces rebuilds the loop piece by piece. loopPieces cuts it into
+// line, arc and free pieces; every arc piece, later pieces first so
+// earlier indices stay valid, becomes circular-arc cubics of at most
+// pieceSweep with handle 4/3·tan(θ/4)·r, its circle solved from the
+// joints at its ends (arcEnds: tangent to a neighbouring line, through a
+// point otherwise) at each trial radius of a golden-section search
+// around its Kåsa radius, the radius the mask likes best kept; then
+// every line piece becomes one line cubic between the anchors its
+// neighbours settled, a joint between two lines first moved to their
+// intersection (rebuildLines), so collinear refined segments collapse
+// into one. Each rebuild is one snap under the energy guard
+// (withinBudget) over the window of what it changes; a rejected piece
+// keeps its control points and anchors, so the loop stays continuous.
+// The loop as a whole is never a piece (see FitCircle). The options come
+// back with Fixed and Frozen renumbered for the result; the loop is
+// rotated to start at a piece boundary.
+func SnapPieces(b Bezigon, m Mask, img Window, tol float64, o Options) (Bezigon, Options) {
+	if b.N() < 3 {
 		return b, o
 	}
-	b, o = rotateToCut(b, tol, o)
-	runs := arcRuns(b, tol, o)
-	// Later runs first, so earlier indices stay valid.
-	for i := len(runs) - 1; i >= 0; i-- {
-		run := runs[i]
-		if cand, co, ok := guardedSnap(b, o, m, img, run, run.r, 0, tol, true); ok {
-			b, o = cand, co
+	b, o, ps := loopPieces(b, tol, o)
+	for i := len(ps) - 1; i >= 0; i-- {
+		if ps[i].kind != pieceArc {
+			continue
 		}
+		sn, ok := guardedSnap(b, o, m, img, ps, i, ps[i].r, 0, tol, true)
+		if !ok {
+			continue
+		}
+		b, o = sn.b, sn.o
+		shiftPieces(ps, i+1, sn.pieces-ps[i].count)
+		ps[i].count, ps[i].centre, ps[i].r, ps[i].snapped = sn.pieces, sn.centre, sn.r, true
 	}
-	return b, o
+	return rebuildLines(b, o, m, img, ps, tol)
+}
+
+// shiftPieces moves the first segment of pieces ps[from:] by delta.
+func shiftPieces(ps []piece, from, delta int) {
+	for k := from; k < len(ps); k++ {
+		ps[k].first += delta
+	}
 }
 
 // CommonRadius refits the arcs of b whose radii agree within radiusAgree
 // of their mean at that mean radius, each under the energy guard. Arcs
-// are found as FitArcs finds them; each keeps its segment count.
+// are the arc pieces loopPieces finds; each keeps its segment count.
 func CommonRadius(b Bezigon, m Mask, img Window, tol float64, o Options) (Bezigon, Options) {
-	if b.N() < 2 {
+	if b.N() < 3 {
 		return b, o
 	}
-	b, o = rotateToCut(b, tol, o)
-	runs := arcRuns(b, tol, o)
-	if len(runs) < 2 {
-		return b, o
-	}
+	b, o, ps := loopPieces(b, tol, o)
+	var arcs []int
 	mean := 0.0
-	for _, r := range runs {
-		mean += r.r
+	for i, p := range ps {
+		if p.kind == pieceArc && p.count < b.N() {
+			arcs = append(arcs, i)
+			mean += p.r
+		}
 	}
-	mean /= float64(len(runs))
-	var members []arcRun
+	if len(arcs) < 2 {
+		return b, o
+	}
+	mean /= float64(len(arcs))
+	var members []int
 	sum := 0.0
-	for _, r := range runs {
-		if math.Abs(r.r-mean) <= radiusAgree*mean {
-			members = append(members, r)
-			sum += r.r
+	for _, i := range arcs {
+		if math.Abs(ps[i].r-mean) <= radiusAgree*mean {
+			members = append(members, i)
+			sum += ps[i].r
 		}
 	}
 	if len(members) < 2 {
 		return b, o
 	}
 	rm := sum / float64(len(members))
-	for i := len(members) - 1; i >= 0; i-- {
-		run := members[i]
-		if cand, co, ok := guardedSnap(b, o, m, img, run, rm, run.count, tol, false); ok {
-			b, o = cand, co
+	for k := len(members) - 1; k >= 0; k-- {
+		i := members[k]
+		if sn, ok := guardedSnap(b, o, m, img, ps, i, rm, ps[i].count, tol, false); ok {
+			b, o = sn.b, sn.o
+			ps[i].centre, ps[i].r, ps[i].snapped = sn.centre, sn.r, true
 		}
 	}
 	return b, o
 }
 
-// guardedSnap is snapRun under the energy guard, the radius first
-// refitted against the mask within radiusSearch of r when search is set.
-// Each candidate is judged over the window of what it changes: the run
-// in b, the pieces that replace it, and a neighbour rebuilt as a line
-// when its end slid; the residual of the rest of the loop does not pad
-// its budget.
-func guardedSnap(b Bezigon, o Options, m Mask, img Window, run arcRun, r float64, pieces int, tol float64, search bool) (Bezigon, Options, bool) {
-	if run.first == 0 && run.count == b.N() {
-		return b, o, false
+// guardedSnap is snapPiece on arc piece ps[i] under the energy guard, the
+// radius first refitted against the mask within radiusSearch of r when
+// search is set. Each candidate is judged over the window of what it
+// changes: the piece in b, the cubics that replace it, and a neighbour
+// whose end moved; the residual of the rest of the loop does not pad its
+// budget.
+func guardedSnap(b Bezigon, o Options, m Mask, img Window, ps []piece, i int, r float64, pieces int, tol float64, search bool) (snap, bool) {
+	pc := ps[i]
+	if pc.count >= b.N() {
+		return snap{}, false
 	}
 	l0 := math.Max(b.Length(), 1)
 	type trial struct {
 		snap
-		r            float64
 		rise, before float64
 		length       float64 // boundary length of the segments the snap changes
 		ok           bool
 	}
 	at := func(r float64) trial {
-		sn, ok := snapRun(b, o, run, r, pieces, tol)
+		sn, ok := snapPiece(b, o, ps, i, r, pieces, tol)
 		if !ok {
 			return trial{rise: math.Inf(1)}
 		}
 		lo, hi := 0, 0
-		if sn.slid[0] {
+		if sn.moved[0] {
 			lo = 1
 		}
-		if sn.slid[1] {
+		if sn.moved[1] {
 			hi = 1
 		}
-		wl := windowAround(img, segmentsBox(b, run.first-lo, run.first+run.count-1+hi), segmentsBox(sn.b, run.first-lo, run.first+sn.pieces-1+hi))
+		wl := windowAround(img, segmentsBox(b, pc.first-lo, pc.first+pc.count-1+hi), segmentsBox(sn.b, pc.first-lo, pc.first+sn.pieces-1+hi))
 		if wl.W <= 0 || wl.H <= 0 {
 			return trial{rise: math.Inf(1)}
 		}
 		before := fineDataEnergy(b, m, wl, l0)
-		length := segmentsLength(b, run.first-lo, run.first+run.count-1+hi)
-		return trial{sn, r, fineDataEnergy(sn.b, m, wl, l0) - before, before, length, true}
+		length := segmentsLength(b, pc.first-lo, pc.first+pc.count-1+hi)
+		return trial{sn, fineDataEnergy(sn.b, m, wl, l0) - before, before, length, true}
 	}
 	best := at(r)
 	if search {
@@ -197,9 +204,9 @@ func guardedSnap(b Bezigon, o Options, m Mask, img Window, run arcRun, r float64
 		}
 	}
 	if !best.ok || !withinBudget(best.before, best.before+best.rise, l0, best.length) {
-		return b, o, false
+		return snap{}, false
 	}
-	return best.b, best.o, true
+	return best.snap, true
 }
 
 // FitRectangle snaps a loop of four straight segments whose every turn
@@ -277,86 +284,7 @@ func lineCubic(a, c geom.Vec2) []geom.Vec2 {
 	return []geom.Vec2{a, a.Add(d.Scale(1.0 / 3)), a.Add(d.Scale(2.0 / 3))}
 }
 
-// arcRuns lists the runs of b that lie on circles, in segment order.
-func arcRuns(b Bezigon, tol float64, o Options) []arcRun {
-	n := b.N()
-	cut := cutJoints(b, tol, o)
-	if cut == nil {
-		return nil // the whole loop is one curved run: not an arc
-	}
-	var runs []arcRun
-	for s := 0; s < n; {
-		if !cut[s] || !curved(b, s, tol, o) {
-			s++
-			continue
-		}
-		count := 1
-		for s+count < n && !cut[s+count] && curved(b, s+count, tol, o) {
-			count++
-		}
-		if run, ok := fitRun(b, s, count, tol); ok {
-			runs = append(runs, run)
-		}
-		s += count
-	}
-	return runs
-}
-
-// curved reports whether segment j can belong to an arc run.
-func curved(b Bezigon, j int, tol float64, o Options) bool {
-	return !o.frozen(j) && !straightCubic(b.Segment(j), tol)
-}
-
-// cutJoints marks the joints that end arc runs: fixed joints, joints
-// beside a straight or frozen segment, and joints turning by
-// arcJointTurn or more. It returns nil when no joint is a cut.
-func cutJoints(b Bezigon, tol float64, o Options) []bool {
-	n := b.N()
-	cut := make([]bool, n)
-	any := false
-	for a := 0; a < n; a++ {
-		prev := (a + n - 1) % n
-		cut[a] = o.fixed(a) || !curved(b, a, tol, o) || !curved(b, prev, tol, o) || AnglePrior(b, a) >= arcJointTurn*math.Pi/180
-		any = any || cut[a]
-	}
-	if !any {
-		return nil
-	}
-	return cut
-}
-
-// rotateToCut rotates b to start at a cut joint when its first joint is
-// not one, so no arc run wraps round the end of the loop.
-func rotateToCut(b Bezigon, tol float64, o Options) (Bezigon, Options) {
-	cut := cutJoints(b, tol, o)
-	if cut == nil || cut[0] {
-		return b, o
-	}
-	s := 0
-	for !cut[s] {
-		s++
-	}
-	n := b.N()
-	out := Bezigon{Pts: make([]geom.Vec2, 0, len(b.Pts))}
-	out.Pts = append(out.Pts, b.Pts[3*s:]...)
-	out.Pts = append(out.Pts, b.Pts[:3*s]...)
-	ro := o
-	if o.Fixed != nil {
-		ro.Fixed = make([]bool, n)
-		for k := range ro.Fixed {
-			ro.Fixed[k] = o.fixed((k + s) % n)
-		}
-	}
-	if o.Frozen != nil {
-		ro.Frozen = make([]bool, n)
-		for k := range ro.Frozen {
-			ro.Frozen[k] = o.frozen((k + s) % n)
-		}
-	}
-	return out, ro
-}
-
-// samples are the run's circleSamples points per segment and its end.
+// samples are the span's circleSamples points per segment and its end.
 func samples(b Bezigon, first, count int) []geom.Vec2 {
 	pts := make([]geom.Vec2, 0, count*circleSamples+1)
 	for k := 0; k < count; k++ {
@@ -378,119 +306,176 @@ func onCircle(pts []geom.Vec2, centre geom.Vec2, r, lim float64) bool {
 	return true
 }
 
-// fitRun fits a circle to the run's samples (Kåsa) and accepts the run
-// when every sample is within min(tol, circleRelTol·r) of it.
-func fitRun(b Bezigon, first, count int, tol float64) (arcRun, bool) {
-	pts := samples(b, first, count)
-	centre, r, ok := kasa(pts)
-	if !ok || !onCircle(pts, centre, r, math.Min(tol, circleRelTol*r)) {
-		return arcRun{}, false
-	}
-	a := pts[0]
-	am := pts[len(pts)/2]
-	// The run's direction round the centre: the side its middle sample
-	// lies on.
-	ccw := math.Mod(math.Atan2(am.Y-centre.Y, am.X-centre.X)-math.Atan2(a.Y-centre.Y, a.X-centre.X)+4*math.Pi, 2*math.Pi) < sweepBetween(a, pts[len(pts)-1], centre, true)
-	return arcRun{first: first, count: count, centre: centre, r: r, ccw: ccw}, true
-}
-
-// runEnd is one end of an arc run: the anchor there, and, when the
-// anchor is free and its neighbour a straight segment, that segment
-// (slide set), whose far anchor the line runs from or to.
-type runEnd struct {
-	at    geom.Vec2
-	slide bool
-	seg   int
-	far   geom.Vec2
-}
-
-// runEnds describes the two ends of run; ok is false when a free end
-// sits beside a curved (or frozen) segment, which no snap may move.
-func runEnds(b Bezigon, o Options, run arcRun, tol float64) (ends [2]runEnd, ok bool) {
-	n := b.N()
-	prev, next := (run.first+n-1)%n, (run.first+run.count)%n
-	ends[0] = runEnd{at: b.Pts[3*run.first], seg: prev, far: b.Pts[3*prev]}
-	ends[1] = runEnd{at: b.Pts[3*next], seg: next, far: b.Pts[3*((next+1)%n)]}
-	if !o.fixed(run.first) {
-		if prev == next || o.frozen(prev) || !straightCubic(b.Segment(prev), tol) {
-			return ends, false
-		}
-		ends[0].slide = true
-	}
-	if !o.fixed(next) {
-		if prev == next || o.frozen(next) || !straightCubic(b.Segment(next), tol) {
-			return ends, false
-		}
-		ends[1].slide = true
-	}
-	return ends, true
-}
-
-// snap is a run rebuilt as an arc: the bezigon, the options renumbered
-// for it, whether an end slid, and the arc's sweep and piece count.
+// snap is an arc piece rebuilt as arc cubics: the bezigon, the options
+// renumbered for it, the ends as solved (a tangent end holds its foot),
+// whether each end's anchor moved (changing the neighbour there), the
+// circle, and the arc's sweep and cubic count.
 type snap struct {
 	b      Bezigon
 	o      Options
-	slid   [2]bool // whether each end slid, rebuilding its neighbour as a line
+	ends   [2]arcEnd
+	moved  [2]bool
+	centre geom.Vec2
+	r      float64
 	sweep  float64
 	pieces int
 }
 
-// snapRun rebuilds the run as an arc of radius r (pieces of at most
-// pieceSweep, or exactly pieces when given). The circle goes through
-// the fixed ends and is tangent to the sliding ends' lines, whose
-// anchors move to the tangent points; when both ends slide the run's
-// samples must still lie within min(tol, circleRelTol·r) of it.
-func snapRun(b Bezigon, o Options, run arcRun, r float64, pieces int, tol float64) (snap, bool) {
-	ends, ok := runEnds(b, o, run, tol)
+// snapPiece rebuilds arc piece ps[i] as an arc of radius r (cubics of at
+// most pieceSweep, or exactly pieces when given) whose circle satisfies
+// the piece's typed ends (arcEnds). A tangent circle must hold the
+// piece's samples within min(tol, circleRelTol·r); when it cannot, the
+// tangent ends are demoted to free, both ends tangent first, then each
+// alone, then neither, which is how a corner is told from the kink a
+// refinement leaves at a tangent joint. ok is false when no typing
+// yields a circle (points further apart than 2r, a tangent foot beyond
+// the line's far anchor).
+func snapPiece(b Bezigon, o Options, ps []piece, i int, r float64, pieces int, tol float64) (snap, bool) {
+	pc := ps[i]
+	typed := arcEnds(b, o, ps, i, tol)
+	lim := math.Min(tol, circleRelTol*r)
+	pts := samples(b, pc.first, pc.count)
+	tries := [][2]arcEnd{typed}
+	t0, t1 := typed[0].kind == endTangent, typed[1].kind == endTangent
+	if t0 && t1 {
+		tries = append(tries, [2]arcEnd{demoted(typed[0]), typed[1]}, [2]arcEnd{typed[0], demoted(typed[1])})
+	}
+	if t0 || t1 {
+		tries = append(tries, [2]arcEnd{demoted(typed[0]), demoted(typed[1])})
+	}
+	for _, ends := range tries {
+		if sn, ok := buildArc(b, o, pc, ends, r, pieces, lim, pts); ok {
+			return sn, true
+		}
+	}
+	return snap{}, false
+}
+
+// buildArc is the piece rebuilt as the arc of radius r through, tangent
+// to or free at its ends: the circle is solved, a tangent circle checked
+// against the samples, the end anchors moved to the tangent feet (the
+// line re-laid straight to the foot) or onto the circle (the neighbour's
+// near handle following), and the arc cubics put in the piece's place.
+func buildArc(b Bezigon, o Options, pc piece, ends [2]arcEnd, r float64, pieces int, lim float64, pts []geom.Vec2) (snap, bool) {
+	centre, ok := solveArc(ends, r, pc.centre)
 	if !ok {
 		return snap{}, false
 	}
-	var centre geom.Vec2
-	switch {
-	case ends[0].slide && ends[1].slide:
-		centre, ok = tangentCircle(ends[0].far, ends[0].at, ends[1].at, ends[1].far, r, run.centre)
-		ok = ok && onCircle(samples(b, run.first, run.count), centre, r, math.Min(tol, circleRelTol*r))
-	case ends[0].slide:
-		centre, ok = throughAndTangent(ends[1].at, ends[0].far, ends[0].at, r, run.centre)
-	case ends[1].slide:
-		centre, ok = throughAndTangent(ends[0].at, ends[1].at, ends[1].far, r, run.centre)
-	default:
-		centre, ok = centreAt(ends[0].at, ends[1].at, r, run.centre)
-	}
-	if !ok {
+	if (ends[0].kind == endTangent || ends[1].kind == endTangent) && !onCircle(pts, centre, r, lim) {
 		return snap{}, false
 	}
+	n := b.N()
+	joints := [2]int{pc.first, (pc.first + pc.count) % n}
 	cand := Bezigon{Pts: append([]geom.Vec2(nil), b.Pts...)}
-	var slid [2]bool
-	for i, e := range ends {
-		if !e.slide {
+	var moved [2]bool
+	for side, e := range ends {
+		switch e.kind {
+		case endTangent:
+			foot := footOf(centre, e.far, e.at)
+			// The tangent point stays on the far side of the line's far
+			// anchor, else the line would reverse.
+			if foot.Sub(e.far).Dot(e.at.Sub(e.far)) <= 0 {
+				return snap{}, false
+			}
+			ends[side].at = foot
+		case endFree:
+			ends[side].at = projectOnCircle(e.at, centre, r)
+		}
+		if ends[side].at != b.Pts[3*joints[side]] {
+			moved[side] = true
+			cand.Pts[3*joints[side]] = ends[side].at
+		}
+	}
+	for side, e := range ends {
+		if !moved[side] {
 			continue
 		}
-		foot := footOf(centre, e.far, e.at)
-		// The tangent point stays on the far side of the line's far
-		// anchor, else the line would reverse.
-		if foot.Sub(e.far).Dot(e.at.Sub(e.far)) <= 0 {
-			return snap{}, false
+		if e.kind == endTangent {
+			// The line is the arc's tangent: it is re-laid straight to
+			// the foot.
+			copy(cand.Pts[3*e.seg:], lineCubic(cand.Pts[3*e.seg], cand.Pts[3*((e.seg+1)%n)]))
+			continue
 		}
-		ends[i].at = foot
-		slid[i] = true
-		if i == 0 {
-			copy(cand.Pts[3*e.seg:], lineCubic(e.far, foot))
-		} else {
-			copy(cand.Pts[3*e.seg:], lineCubic(foot, e.far))
+		// A free end: the neighbour's end follows the anchor and its
+		// shape is kept, so its near handle moves with it.
+		d := e.at.Sub(b.Pts[3*joints[side]])
+		h := 3*e.seg + 1
+		if side == 0 {
+			h = 3*e.seg + 2
 		}
+		cand.Pts[h] = cand.Pts[h].Add(d)
 	}
 	a, c := ends[0].at, ends[1].at
-	sweep := sweepBetween(a, c, centre, run.ccw)
+	sweep := sweepBetween(a, c, centre, pc.ccw)
 	if pieces == 0 {
 		pieces = max(int(math.Ceil(math.Abs(sweep)/pieceSweep)), 1)
 	} else if math.Abs(sweep)/float64(pieces) > pieceSweep {
 		return snap{}, false
 	}
-	pts := arcPieces(centre, r, sweep, pieces, a, c)
-	out, co := replaceRun(cand, o, run.first, run.count, pts)
-	return snap{out, co, slid, sweep, pieces}, true
+	out, co := replaceRun(cand, o, pc.first, pc.count, arcPieces(centre, r, sweep, pieces, a, c))
+	return snap{out, co, ends, moved, centre, r, sweep, pieces}, true
+}
+
+// rebuildLines rebuilds the line pieces of ps in b. First every free
+// joint between two line pieces is moved to the intersection of their
+// fitted lines when that lies within min(tol, 0.1·shorter chord) of the
+// anchor, the two segments meeting there straightened with it; then,
+// later pieces first, each line piece becomes one line cubic between its
+// end anchors, so collinear refined segments collapse into one. Each
+// move is a snap under the energy guard; a rejected one keeps the loop
+// as it was.
+func rebuildLines(b Bezigon, o Options, m Mask, img Window, ps []piece, tol float64) (Bezigon, Options) {
+	n, mp := b.N(), len(ps)
+	if mp < 2 {
+		return b, o
+	}
+	chord := func(p piece) float64 {
+		return b.Pts[3*((p.first+p.count)%n)].Sub(b.Pts[3*p.first]).Len()
+	}
+	for i, p := range ps {
+		q := ps[(i+1)%mp]
+		joint := (p.first + p.count) % n
+		if p.kind != pieceLine || q.kind != pieceLine || o.fixed(joint) {
+			continue
+		}
+		p1, d1 := fit.FitLine(samples(b, p.first, p.count))
+		p2, d2 := fit.FitLine(samples(b, q.first, q.count))
+		x, ok := fit.Intersect(p1, d1, p2, d2)
+		if !ok {
+			continue
+		}
+		anchor := b.Pts[3*joint]
+		if d := x.Sub(anchor).Len(); d > math.Min(tol, 0.1*math.Min(chord(p), chord(q))) || d < 1e-9 {
+			continue
+		}
+		prev := (joint + n - 1) % n
+		cand := Bezigon{Pts: append([]geom.Vec2(nil), b.Pts...)}
+		cand.Pts[3*joint] = x
+		copy(cand.Pts[3*prev:], lineCubic(cand.Pts[3*prev], x))
+		copy(cand.Pts[3*joint:], lineCubic(x, cand.Pts[3*((joint+1)%n)]))
+		// The window is the two segments meeting at the joint: joint-1
+		// may be -1 (segment ranges are cyclic but never run backwards).
+		if withinRise(b, cand, m, img, joint-1, joint, joint-1, joint) {
+			b = cand
+		}
+	}
+	for i := mp - 1; i >= 0; i-- {
+		p := ps[i]
+		if p.kind != pieceLine {
+			continue
+		}
+		// A single segment stays as the refinement left it: Straightened
+		// already judged its bow, and a chord in its place saves no node.
+		if p.count < 2 {
+			continue
+		}
+		a, c := b.Pts[3*p.first], b.Pts[3*((p.first+p.count)%n)]
+		cand, co := replaceRun(b, o, p.first, p.count, lineCubic(a, c))
+		if withinRise(b, cand, m, img, p.first, p.first+p.count-1, p.first, p.first) {
+			b, o = cand, co
+		}
+	}
+	return b, o
 }
 
 // footOf is the foot of the perpendicular from p onto the line a–b.

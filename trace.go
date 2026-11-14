@@ -101,7 +101,7 @@ func refineConstrained(segs []fit.Segment, fixed, frozen []bool, m refine.Mask, 
 		if free {
 			b, _ = refine.SnapCircle(b, m, img, tol)
 		}
-		b, ro = refine.FitArcs(b, m, img, tol, ro)
+		b, ro = refine.SnapPieces(b, m, img, tol, ro)
 		b, ro = refine.CommonRadius(b, m, img, tol, ro)
 		if free {
 			b, _ = refine.FitRectangle(b, m, img, tol)

@@ -1,18 +1,18 @@
 package refine
 
 import (
-	"math"
-
 	"github.com/vexyl-ai/rekha/internal/geom"
 )
 
 // endKind says how an arc piece's circle is solved at one of its ends:
-// through a point, or tangent to the neighbouring line.
+// through a point, tangent to the neighbouring line, or free, when the
+// end does not constrain the circle and the anchor is moved onto it.
 type endKind uint8
 
 const (
 	endPoint endKind = iota
 	endTangent
+	endFree
 )
 
 // arcEnd is one end of an arc piece: for a point end the point the
@@ -29,13 +29,19 @@ type arcEnd struct {
 }
 
 // arcEnds types the two ends of arc piece ps[i] from the joints they sit
-// on: a fixed joint is a point at the anchor; a line neighbour the arc
-// meets within arcJointTurn is a tangent; a line neighbour it meets at a
-// corner is a point at the anchor's radial projection onto the piece's
-// circle; an arc neighbour is a point at the mean of the anchor's
-// projections onto both circles (both pass within lim of it, so the
-// kink is at most lim); a free neighbour, or no neighbour because the
-// piece spans the whole loop, is a point at the anchor.
+// on. A fixed joint, or the joint with an arc neighbour already snapped
+// (whose exact cubics the anchor must not disturb), is a point: the
+// circle passes through the anchor as it is. A line neighbour is a
+// tangent (snapPiece demotes it to free when the tangent circle cannot
+// hold the piece's samples, which is what a corner looks like; the turn
+// at the joint cannot tell a corner from the kink a refinement leaves at
+// a tangent joint). An unsnapped arc or free neighbour, or no neighbour
+// because the piece spans the whole loop, is free: the anchor does not
+// pin the circle, whose centre then comes from the piece's samples
+// (every refined anchor is a little off its circle, and a circle pinned
+// through two of them is off by as much all along, which on a clean
+// edge is worse than the refinement), and is moved onto the solved
+// circle, the neighbour's near handle following so its shape is kept.
 func arcEnds(b Bezigon, o Options, ps []piece, i int, tol float64) [2]arcEnd {
 	n, m := b.N(), len(ps)
 	pc := ps[i]
@@ -58,19 +64,24 @@ func arcEnds(b Bezigon, o Options, ps []piece, i int, tol float64) [2]arcEnd {
 		anchor := b.Pts[3*joint]
 		e := arcEnd{kind: endPoint, at: anchor, seg: seg, line: nb.kind == pieceLine}
 		switch {
-		case o.fixed(joint) || m == 1:
+		case o.fixed(joint) || m == 1 || (nb.kind == pieceArc && nb.snapped):
 		case nb.kind == pieceLine:
-			if AnglePrior(b, joint) < arcJointTurn*math.Pi/180 {
-				e.kind, e.far = endTangent, far
-			} else {
-				e.at = projectOnCircle(anchor, pc.centre, pc.r)
-			}
-		case nb.kind == pieceArc:
-			e.at = projectOnCircle(anchor, pc.centre, pc.r).Add(projectOnCircle(anchor, nb.centre, nb.r)).Scale(0.5)
+			e.kind, e.far = endTangent, far
+		default:
+			e.kind = endFree
 		}
 		ends[side] = e
 	}
 	return ends
+}
+
+// demoted is the tangent end e retyped as free; any other end is
+// returned as it is.
+func demoted(e arcEnd) arcEnd {
+	if e.kind != endTangent {
+		return e
+	}
+	return arcEnd{kind: endFree, at: e.at, seg: e.seg, line: e.line}
 }
 
 // projectOnCircle is p moved radially onto the circle (centre, r); the
@@ -85,18 +96,48 @@ func projectOnCircle(p, centre geom.Vec2, r float64) geom.Vec2 {
 }
 
 // solveArc is the centre of the circle of radius r that satisfies both
-// ends: tangent to both lines, through one point and tangent to the
-// other line, or through both points, on the side of near; ok is false
-// when no such circle exists (parallel lines, a point further than 2r
-// from the line, a chord longer than 2r).
+// ends, the one nearest near (the piece's Kåsa centre) when the ends
+// leave a choice: tangent to both lines; through one point and tangent
+// to the other line; through both points; tangent to one line, or
+// through one point, with the other end free; or near itself when both
+// are free. ok is false when no such circle exists (parallel lines, a
+// point further than 2r from the line, a chord longer than 2r).
 func solveArc(ends [2]arcEnd, r float64, near geom.Vec2) (geom.Vec2, bool) {
-	switch {
-	case ends[0].kind == endTangent && ends[1].kind == endTangent:
-		return tangentCircle(ends[0].far, ends[0].at, ends[1].at, ends[1].far, r, near)
-	case ends[0].kind == endTangent:
-		return throughAndTangent(ends[1].at, ends[0].far, ends[0].at, r, near)
-	case ends[1].kind == endTangent:
-		return throughAndTangent(ends[0].at, ends[1].at, ends[1].far, r, near)
+	a, c := ends[0], ends[1]
+	if a.kind == endFree || (c.kind == endTangent && a.kind != endTangent) {
+		a, c = c, a // a is the more constraining end: tangent, then point, then free
 	}
-	return centreAt(ends[0].at, ends[1].at, r, near)
+	switch {
+	case a.kind == endTangent && c.kind == endTangent:
+		return tangentCircle(a.far, a.at, c.at, c.far, r, near)
+	case a.kind == endTangent && c.kind == endPoint:
+		return throughAndTangent(c.at, a.far, a.at, r, near)
+	case a.kind == endTangent:
+		return tangentOnly(a.far, a.at, r, near)
+	case a.kind == endPoint && c.kind == endPoint:
+		return centreAt(a.at, c.at, r, near)
+	case a.kind == endPoint:
+		return throughOnly(a.at, r, near)
+	}
+	return near, true
+}
+
+// tangentOnly is the centre of the circle of radius r tangent to the
+// line a–b nearest near: near's projection onto the line of centres.
+func tangentOnly(a, b geom.Vec2, r float64, near geom.Vec2) (geom.Vec2, bool) {
+	n, ok := lineNormal(a, b, near)
+	if !ok {
+		return geom.Vec2{}, false
+	}
+	return near.Add(n.Scale(a.Dot(n) + r - near.Dot(n))), true
+}
+
+// throughOnly is the centre of the circle of radius r through p nearest
+// near; ok is false when near is p.
+func throughOnly(p geom.Vec2, r float64, near geom.Vec2) (geom.Vec2, bool) {
+	d := near.Sub(p)
+	if d.LenSq() == 0 {
+		return geom.Vec2{}, false
+	}
+	return p.Add(d.Norm().Scale(r)), true
 }

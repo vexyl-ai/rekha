@@ -26,6 +26,7 @@ type piece struct {
 	centre       geom.Vec2 // arc
 	r            float64   // arc
 	ccw          bool      // arc: the piece goes round the centre with increasing angle
+	snapped      bool      // arc: rebuilt as exact arc cubics; centre and r are then the solved circle
 	p, dir       geom.Vec2 // line: a point on it and its unit direction, first anchor towards last
 }
 
