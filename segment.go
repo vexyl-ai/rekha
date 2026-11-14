@@ -142,6 +142,10 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 		// A region the quantiser gave no colour of its own; a fixed
 		// palette is the caller's choice and is not extended.
 		final = region.Rescue(s.Labels, rgb, w, h, final, o.FilterSpeckle, o.ColorTolerance)
+		if o.Flatten {
+			o.report("flatten")
+			final = region.Flatten(s.Labels, rgb, w, h, final)
+		}
 	}
 
 	// Second and Blend against the final palette. Where cleanup moved a

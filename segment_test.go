@@ -226,3 +226,50 @@ func TestSegmentFixedPaletteNotExtended(t *testing.T) {
 		}
 	}
 }
+
+// twoShades is a 64×32 image: the left half one brown, the right half a
+// lighter shade of it, the kind of band the flat preset collapses.
+func twoShades() *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 32))
+	for y := 0; y < 32; y++ {
+		for x := 0; x < 64; x++ {
+			c := color.NRGBA{64, 37, 22, 255}
+			if x >= 32 {
+				c = color.NRGBA{90, 56, 36, 255}
+			}
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	return img
+}
+
+func TestSegmentFlatPresetMergesShades(t *testing.T) {
+	// At the flat preset's own tolerance (0.04, the photo preset's) the
+	// two shades are two colours; Flatten is what joins them.
+	photo, err := Segment(twoShades(), PresetOptions(PresetPhoto))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(photo.Palette) != 2 {
+		t.Fatalf("fixture: photo sees %d colours, want 2", len(photo.Palette))
+	}
+	flat, err := Segment(twoShades(), PresetOptions(PresetFlat))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flat.Palette) != 1 {
+		t.Fatalf("flat palette %v, want one brown", flat.Palette)
+	}
+}
+
+func TestSegmentFlattenKeepsFixedPalette(t *testing.T) {
+	o := PresetOptions(PresetFlat)
+	o.Palette = []color.NRGBA{{64, 37, 22, 255}, {90, 56, 36, 255}}
+	s, err := Segment(twoShades(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Palette) != 2 {
+		t.Fatalf("palette %v, want the two fixed entries", s.Palette)
+	}
+}

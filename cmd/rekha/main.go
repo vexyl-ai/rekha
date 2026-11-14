@@ -37,7 +37,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var preset, mode, output, format, threshold, turnPolicy, palette, hierarchical string
 	var showVersion bool
 	fs.BoolVar(&o.Auto, "auto", false, "trace under four candidate settings (poster, poster with gradients, photo with gradients, bw) and keep the closest to the image; a --palette adds a fifth; other tracing flags are ignored")
-	fs.StringVar(&preset, "preset", string(o.Preset), "preset seeding the defaults: bw (cutout, 2 colours), poster (stacked, tolerance 0.08), photo (stacked, tolerance 0.04, speckle 16, fit 1.5)")
+	fs.StringVar(&preset, "preset", string(o.Preset), "preset seeding the defaults: bw (cutout, 2 colours), poster (stacked, tolerance 0.08), photo (stacked, tolerance 0.04, speckle 16, fit 1.5), flat (photo's colours, speckle 16, shades of one hue merged into flat colours)")
 	fs.StringVar(&mode, "mode", string(o.Mode), "mode: pixel, polygon, spline")
 	fs.IntVar(&o.FilterSpeckle, "filter-speckle", o.FilterSpeckle, "discard regions smaller than N pixels")
 	fs.IntVar(&o.ColorPrecision, "color-precision", o.ColorPrecision, "colour bits per channel (1-8)")
@@ -56,6 +56,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.Float64Var(&o.Stroke, "stroke", o.Stroke, "stroke width in px hiding hairline seams between colour shapes when enlarged (0-4, 0 = none; thickens edges at 1:1)")
 	fs.Float64Var(&o.Stroke, "cutout-stroke", o.Stroke, "old name for --stroke")
 	fs.BoolVar(&o.Gradients, "gradients", o.Gradients, "merge adjacent colour bands that form one linear ramp into a gradient fill (colour presets)")
+	fs.BoolVar(&o.Flatten, "flatten", o.Flatten, "merge adjacent shades of one hue into one flat colour: the posterised look (the flat preset's default)")
 	fs.Float64Var(&o.GradientTolerance, "gradient-tolerance", o.GradientTolerance, "RMS colour error 0..1 a gradient fill may leave, in sRGB units (0.03 ≈ 8/255)")
 	fs.BoolVar(&o.NoMark, "no-mark", o.NoMark, "leave out the data-generator attribute and the Rekha comment from the SVG")
 	fs.Float64Var(&o.Scale, "scale", 0, "the image is this many times the size the output is for (0.25-8): the SVG is written at image size ÷ scale, the viewBox at image size")

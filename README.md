@@ -38,7 +38,7 @@ Rekha converts raster images (PNG, JPEG, GIF) into editable SVG. One codebase pr
 - **Gradient fills.** `--gradients` merges colour bands that follow one ramp into a single region filled by a multi-stop `<linearGradient>`, joined across bends, or by a `<radialGradient>` when the bands run round a centre, with specks inside a ramp absorbed. A region shaded more than one way (a sphere with an off-centre highlight, a rim light) is painted in layers: a base gradient under up to two translucent radial gradients that fade by `stop-opacity`, as an illustrator draws it. A 16-megapixel illustration drops from 155 flat paths at 36.7 dB to 82 paths at 39.8 dB with 60 % fewer bytes; flat art is byte-identical with the option on.
 - **Clean colour edges.** Anti-aliased pixels between two colours are recognised as their mixture and absorbed, rather than surviving as slivers of a third colour.
 - **Small objects keep their colour.** A region too small for the quantiser to give a colour of its own (a badge of a few hundred pixels in a photograph, a rim light) is labelled whatever entry is nearest, which may be a grey; after cleanup, a region whose pixels sit farther than the tolerance from its entry gets an entry at its own mean, or moves to an existing one within tolerance.
-- **Three presets.** `bw` for line art and scans, `poster` for flat-colour artwork, `photo` for photographs and soft shading. Every parameter can be overridden.
+- **Four presets.** `bw` for line art and scans, `poster` for flat-colour artwork, `photo` for photographs and soft shading, `flat` for the posterised look: the photo preset's colours, then adjacent shades of one hue merged into one flat colour, so a cartoon comes out in about twenty fills with every hue kept (`--flatten` asks any colour preset for it). Every parameter can be overridden.
 - **Shared boundaries.** Cutout output fits each boundary between two shapes once, so neighbours carry identical coordinates; stacked output layers shapes with no seams. `--stroke` seals hairline seams in either mode.
 - **Small text survives.** On the small-glyphs fixture Rekha reaches 32.26 dB with 86 nodes against Potrace's 32.22 dB with 107.
 - **Fast and deterministic.** 0.1–0.25 s per 256×256 image with refinement; 1.1 s plain or 4.6 s refined for a 3.4-megapixel logo on a laptop. The same input gives the same SVG on one core or eight, arm64 or amd64.
@@ -117,7 +117,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 
 ## Options
 
-`--preset bw|poster|photo` seeds every default; any flag given on the command line overrides it.
+`--preset bw|poster|photo|flat` seeds every default; any flag given on the command line overrides it.
 
 `--auto` ignores the tracing flags and races four candidates instead: poster at tolerance 0.06, poster at 0.04 with gradients, photo with gradients and a speckle filter of 2, and bw with the automatic threshold, each with `--refine`. Every candidate is rendered by a rasteriser built in and scored against the image (PSNR over white, the benchmark's measure), and the closest wins; a `--palette` adds a fifth candidate fixed to it. On a mixed set of twenty logos, cartoons and renders the race scored 1.7 dB above a fixed poster-with-gradients setting on average and fell below it on one image, by half a decibel; it costs four traces, run at once when memory allows (all four up to about four megapixels, two at eight, one at sixteen). Output flags (`--path-precision`, `--stroke`, `--no-mark`, `--format`) still apply.
 
@@ -134,6 +134,7 @@ Exit codes: `0` success, `1` usage error, `2` a trace failed (remaining inputs a
 | `--filter-speckle N` | `4` / `16` | Drop components below N pixels (`poster` / `photo`) |
 | `--gradients` | off | Colour presets: merge bands that follow one ramp into a `<linearGradient>` fill, a `<radialGradient>` when they run round a centre, or a base gradient under translucent layers (radial or linear, fading either way) when the region is shaded more than one way |
 | `--gradient-tolerance 0..1` | `0.03` | RMS error a ramp may leave, in sRGB units (about 8/255) |
+| `--flatten` | off / on (`flat`) | Merge adjacent shades of one hue (within 0.12 of OKLab lightness, hue within 23°) into one flat colour after cleanup; a neutral and a chromatic colour never merge |
 
 ### Curves
 

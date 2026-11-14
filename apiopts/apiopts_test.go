@@ -105,7 +105,7 @@ func TestFromStringsBadNumber(t *testing.T) {
 }
 
 func TestSegmentKeys(t *testing.T) {
-	want := []string{"auto", "preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance"}
+	want := []string{"auto", "preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance", "flatten"}
 	if got := SegmentKeys(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}
@@ -169,5 +169,20 @@ func TestParseFormat(t *testing.T) {
 	}
 	if _, err := Parse([]byte(`{"format": "dxf"}`)); err == nil {
 		t.Fatal("dxf accepted")
+	}
+}
+
+func TestParseFlatten(t *testing.T) {
+	o := mustParse(t, `{"preset":"flat"}`)
+	if o.Preset != rekha.PresetFlat || !o.Flatten || o.ColorTolerance != 0.04 {
+		t.Fatalf("flat preset: %+v", o)
+	}
+	o = mustParse(t, `{"preset":"poster","flatten":true}`)
+	if !o.Flatten {
+		t.Fatal("flatten not set on the poster preset")
+	}
+	o = mustParse(t, `{"preset":"flat","flatten":false}`)
+	if o.Flatten {
+		t.Fatal("flatten not cleared on the flat preset")
 	}
 }

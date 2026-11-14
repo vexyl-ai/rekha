@@ -5,6 +5,22 @@ pipeline builds every artefact from the tag.
 
 ## Unreleased
 
+### Added
+
+- `--preset flat` (`PresetFlat`, API and wasm `"flat"`), the posterised
+  look: the photo preset's colours (tolerance 0.04, so every hue
+  survives the quantiser), then adjacent shades of one hue merged into
+  one flat colour (`Options.Flatten`, `--flatten`, API `flatten`, which
+  any colour preset may ask for): lightness within 0.12, hue within 23°,
+  a neutral never merged with a chromatic colour, a merged group taking
+  its largest member's colour, not a pixel mean (a logo's brand red
+  stays its own red when its shade joins it), chains judged against
+  that colour. The boy render comes out in 20 fills and 331 paths with the iris and the strap brown; raising the poster tolerance
+  instead merges hues before shades (at 0.10 the skin is grey). A flat
+  look costs PSNR by design; `bench/results/2026-11-14-flat.md` has the
+  21 images against the poster at 0.06. One new golden,
+  `gradient-shapes-flat-spline`.
+
 ### Changed
 
 - A region whose pixels the quantiser gave no colour of their own gets

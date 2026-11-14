@@ -28,6 +28,10 @@ const (
 	PresetBW     Preset = "bw"
 	PresetPoster Preset = "poster"
 	PresetPhoto  Preset = "photo"
+	// PresetFlat is the posterised look: quantised finely, so every hue
+	// survives, then adjacent shades of one hue merged into one flat
+	// colour (Flatten).
+	PresetFlat Preset = "flat"
 )
 
 // Hierarchical selects how colour shapes are layered in the output.
@@ -88,6 +92,13 @@ type Options struct {
 	Gradients         bool    // colour presets: merge adjacent bands that form one linear ramp into a gradient fill
 	GradientTolerance float64 // 0..1, default 0.03; RMS sRGB distance (channels 0..1) a ramp may leave
 
+	// Flatten merges adjacent colours that differ in lightness only
+	// (shades of one hue, within 0.12 of OKLab lightness) into one flat
+	// colour after cleanup: a region's shading collapses into its
+	// colour while a hue step stays an edge. The flat preset sets it;
+	// a fixed Palette is never flattened.
+	Flatten bool
+
 	// NoMark leaves out the generator mark: by default the SVG root
 	// carries data-generator="rekha <version>" and a comment naming
 	// Rekha and its repository. Neither changes how the image renders.
@@ -111,7 +122,7 @@ type Options struct {
 	Auto bool
 
 	// Progress, when set, is told how far Segment and Finish have got:
-	// stage names quantise, label, ramps (Segment; no count) and
+	// stage names quantise, label, flatten, ramps (Segment; no count) and
 	// outlines, nest, edges, refine, curves (Finish; done of total, total
 	// 0 when a stage has no count). Under parallel work it may be called from several
 	// goroutines at once and counts may arrive out of order. It must be
@@ -168,6 +179,12 @@ func PresetOptions(p Preset) Options {
 		o.FilterSpeckle = 16
 		o.FitTolerance = 1.5
 		o.Hierarchical = HierarchicalStacked
+	case PresetFlat:
+		o.MaxColors = 0
+		o.ColorTolerance = 0.04
+		o.FilterSpeckle = 16
+		o.Hierarchical = HierarchicalStacked
+		o.Flatten = true
 	}
 	return o
 }
@@ -225,7 +242,7 @@ func (o Options) counter(stage string, total int) func() {
 
 func (o Options) Validate() error {
 	switch o.Preset {
-	case PresetBW, PresetPoster, PresetPhoto:
+	case PresetBW, PresetPoster, PresetPhoto, PresetFlat:
 	default:
 		return &ValidationError{"Preset", fmt.Sprintf("unknown value %q", string(o.Preset))}
 	}

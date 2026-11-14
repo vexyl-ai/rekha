@@ -416,3 +416,44 @@ func TestSVGInputIsConverted(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// --preset flat and --flatten are accepted; the two shades of the ramp's
+// dark end come out as one fill under flat and two under photo.
+func TestFlagFlatten(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "shades.png")
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 32))
+	for y := 0; y < 32; y++ {
+		for x := 0; x < 64; x++ {
+			c := color.NRGBA{64, 37, 22, 255}
+			if x >= 32 {
+				c = color.NRGBA{90, 56, 36, 255}
+			}
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	f, err := os.Create(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	fills := func(args ...string) int {
+		var out, errb bytes.Buffer
+		if code := run(append(args, "-o", "-", in), strings.NewReader(""), &out, &errb); code != 0 {
+			t.Fatalf("exit %d: %s", code, errb.String())
+		}
+		return strings.Count(out.String(), "<path")
+	}
+	if n := fills("--preset", "photo"); n != 2 {
+		t.Fatalf("photo: %d paths, want 2", n)
+	}
+	if n := fills("--preset", "flat"); n != 1 {
+		t.Fatalf("flat: %d paths, want 1", n)
+	}
+	if n := fills("--preset", "photo", "--flatten"); n != 1 {
+		t.Fatalf("photo --flatten: %d paths, want 1", n)
+	}
+}

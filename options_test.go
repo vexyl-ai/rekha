@@ -63,7 +63,7 @@ func TestValidationErrorMessage(t *testing.T) {
 }
 
 func TestPresetOptionsTable(t *testing.T) {
-	bw, poster, photo := PresetOptions(PresetBW), PresetOptions(PresetPoster), PresetOptions(PresetPhoto)
+	bw, poster, photo, flat := PresetOptions(PresetBW), PresetOptions(PresetPoster), PresetOptions(PresetPhoto), PresetOptions(PresetFlat)
 	if !reflect.DeepEqual(DefaultOptions(), bw) {
 		t.Fatalf("DefaultOptions differs from PresetOptions(bw)")
 	}
@@ -89,13 +89,22 @@ func TestPresetOptionsTable(t *testing.T) {
 		{"photo.FitTolerance", photo.FitTolerance, 1.5},
 		{"photo.Mode", photo.Mode, ModeSpline},
 		{"photo.CornerThreshold", photo.CornerThreshold, 60.0},
+		{"flat.Hierarchical", flat.Hierarchical, HierarchicalStacked},
+		{"flat.MaxColors", flat.MaxColors, 0},
+		{"flat.ColorTolerance", flat.ColorTolerance, 0.04},
+		{"flat.FilterSpeckle", flat.FilterSpeckle, 16},
+		{"flat.FitTolerance", flat.FitTolerance, 1.0},
+		{"flat.Flatten", flat.Flatten, true},
+		{"flat.Gradients", flat.Gradients, false},
+		{"poster.Flatten", poster.Flatten, false},
+		{"photo.Flatten", photo.Flatten, false},
 	}
 	for _, c := range checks {
 		if !reflect.DeepEqual(c.got, c.want) {
 			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
 		}
 	}
-	for _, p := range []Preset{PresetBW, PresetPoster, PresetPhoto} {
+	for _, p := range []Preset{PresetBW, PresetPoster, PresetPhoto, PresetFlat} {
 		if err := PresetOptions(p).Validate(); err != nil {
 			t.Errorf("%s preset invalid: %v", p, err)
 		}

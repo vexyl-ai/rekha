@@ -17,8 +17,9 @@ const PRESETS = {
   bw:     { hierarchical: 'cutout',  maxColors: 2, colorTolerance: 0,    filterSpeckle: 4,  gradients: false },
   poster: { hierarchical: 'stacked', maxColors: 0, colorTolerance: 0.08, filterSpeckle: 4,  gradients: false },
   photo:  { hierarchical: 'stacked', maxColors: 0, colorTolerance: 0.04, filterSpeckle: 16, gradients: true },
+  flat:   { hierarchical: 'stacked', maxColors: 0, colorTolerance: 0.04, filterSpeckle: 16, gradients: false, flatten: true },
 };
-const COMMON = { mode: 'spline', threshold: 0.5, thresholdAuto: false, refine: false, refinePasses: 3, stroke: 0, pathPrecision: 2, gradientTolerance: 0.03 };
+const COMMON = { flatten: false, mode: 'spline', threshold: 0.5, thresholdAuto: false, refine: false, refinePasses: 3, stroke: 0, pathPrecision: 2, gradientTolerance: 0.03 };
 
 let worker = null;
 let pending = new Map();         // id → {resolve, reject}
@@ -54,6 +55,7 @@ function readOptions() {
     threshold: $('thresholdAuto').checked ? 'auto' : +$('threshold').value,
     filterSpeckle: +$('filterSpeckle').value,
     gradients: $('gradients').checked,
+    flatten: $('flatten').checked,
     gradientTolerance: +$('gradientTolerance').value,
     refine: $('refine').checked,
     refinePasses: +$('refinePasses').value,
@@ -432,7 +434,7 @@ document.addEventListener('paste', (e) => {
 // Controls.
 $('preset').addEventListener('change', () => { applyPreset($('preset').value); run(); });
 $('auto').addEventListener('change', () => { document.body.classList.toggle('auto', $('auto').checked); run(); });
-for (const id of ['mode', 'hierarchical', 'maxColors', 'colorTolerance', 'threshold', 'thresholdAuto', 'filterSpeckle', 'gradients', 'gradientTolerance', 'refine', 'refinePasses', 'stroke', 'pathPrecision']) {
+for (const id of ['mode', 'hierarchical', 'maxColors', 'colorTolerance', 'threshold', 'thresholdAuto', 'filterSpeckle', 'gradients', 'gradientTolerance', 'flatten', 'refine', 'refinePasses', 'stroke', 'pathPrecision']) {
   $(id).addEventListener('change', () => run());
 }
 function cancel() { startWorker(); setStatus('Cancelled. Change a setting to trace again.'); }

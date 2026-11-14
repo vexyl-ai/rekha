@@ -41,9 +41,10 @@ type Params struct {
 	Stroke            *float64   `json:"stroke"`
 	Gradients         *bool      `json:"gradients"`
 	GradientTolerance *float64   `json:"gradientTolerance"`
-	NoMark            *bool      `json:"noMark"` // leave out the data-generator mark and comment
-	Format            *string    `json:"format"` // svg (default), pdf, eps
-	Scale             *float64   `json:"scale"`  // the image is this many times the size the output is for
+	Flatten           *bool      `json:"flatten"` // merge adjacent shades of one hue into one flat colour (the flat preset sets it)
+	NoMark            *bool      `json:"noMark"`  // leave out the data-generator mark and comment
+	Format            *string    `json:"format"`  // svg (default), pdf, eps
+	Scale             *float64   `json:"scale"`   // the image is this many times the size the output is for
 }
 
 // Threshold is a foreground threshold: a number in 0..1 or "auto" (Otsu).
@@ -180,6 +181,9 @@ func Parse(jsonText []byte) (rekha.Options, error) {
 		o.Gradients = *p.Gradients
 	}
 	setFloat(&o.GradientTolerance, p.GradientTolerance)
+	if p.Flatten != nil {
+		o.Flatten = *p.Flatten
+	}
 	if p.NoMark != nil {
 		o.NoMark = *p.NoMark
 	}
@@ -237,5 +241,5 @@ func rewriteFieldError(err error, kv map[string]string) error {
 // SegmentKeys lists the Params keys that change the segmentation (and so
 // need Segment to run again); every other key only changes Finish.
 func SegmentKeys() []string {
-	return []string{"auto", "preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance"}
+	return []string{"auto", "preset", "threshold", "colorPrecision", "colorTolerance", "maxColors", "palette", "filterSpeckle", "gradients", "gradientTolerance", "flatten"}
 }
