@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"hash/crc32"
 	"image"
 	"image/color"
@@ -403,5 +405,67 @@ func TestServeHookOptionsDriveTheWrite(t *testing.T) {
 	}
 	if v := rec.Header().Get("X-Rekha-Cleanup"); v != "off" {
 		t.Fatalf("X-Rekha-Cleanup %q", v)
+	}
+}
+
+// A format registered with WithFormat is traced by the server and
+// written by the wrapper's writer, with its media type; the hook sees
+// the name in extra["format"]. The name matches case-insensitively.
+func TestServeExtraFormat(t *testing.T) {
+	var seen string
+	h := New(limits(), "",
+		WithFormat("dxf", "application/dxf", func(w io.Writer, r *rekha.Result, o rekha.Options, extra map[string]string) error {
+			_, err := fmt.Fprintf(w, "DXF %s %s", r.Paths[0].Fill, extra["units"])
+			return err
+		}),
+		WithFields("units"),
+		WithTrace(func(ctx context.Context, img image.Image, o rekha.Options, extra map[string]string) (*rekha.Result, rekha.Options, http.Header, error) {
+			seen = extra["format"]
+			return defaultTrace(ctx, img, o, extra)
+		}))
+	rec := post(t, h, "/v1/trace?preset=bw&format=DXF&units=mm", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/dxf" {
+		t.Errorf("content type %q", ct)
+	}
+	if !strings.HasPrefix(rec.Body.String(), "DXF #") || !strings.HasSuffix(rec.Body.String(), " mm") {
+		t.Errorf("body %q", rec.Body.String())
+	}
+	if seen != "dxf" {
+		t.Errorf("hook saw format %q", seen)
+	}
+}
+
+// Without a registration the name is refused as it always was.
+func TestServeUnregisteredFormatRefused(t *testing.T) {
+	rec := post(t, New(limits(), ""), "/v1/trace?format=dxf", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "Format") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A writer that fails yields a 500 with its message, not a partial body.
+func TestServeExtraFormatWriterError(t *testing.T) {
+	h := New(limits(), "", WithFormat("dxf", "application/dxf", func(w io.Writer, r *rekha.Result, o rekha.Options, extra map[string]string) error {
+		io.WriteString(w, "partial")
+		return errors.New("dxf: no pen")
+	}))
+	rec := post(t, h, "/v1/trace?format=dxf", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 500 || !strings.Contains(rec.Body.String(), "no pen") || strings.Contains(rec.Body.String(), "partial") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A wrapper may register a built-in name and take over its write.
+func TestServeFormatRegistryOverridesBuiltin(t *testing.T) {
+	h := New(limits(), "", WithFormat("svg", "text/plain", func(w io.Writer, r *rekha.Result, o rekha.Options, extra map[string]string) error {
+		_, err := io.WriteString(w, "mine")
+		return err
+	}))
+	rec := post(t, h, "/v1/trace?format=svg", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 200 || rec.Body.String() != "mine" || rec.Header().Get("Content-Type") != "text/plain" {
+		t.Fatalf("%d %q %q", rec.Code, rec.Body.String(), rec.Header().Get("Content-Type"))
 	}
 }

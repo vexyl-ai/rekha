@@ -63,6 +63,30 @@ func WithFields(names ...string) Option {
 	}
 }
 
+// FormatWriter writes a traced result in a format the server does not
+// know, from the options the trace was written with and the extra
+// request fields (see WithFields).
+type FormatWriter func(w io.Writer, r *rekha.Result, o rekha.Options, extra map[string]string) error
+
+// WithFormat registers an output format: a request whose format field
+// is name (case-insensitive) is traced as usual, with the name in
+// extra["format"] for the TraceFunc and the options' own Format left at
+// SVG, and written by write with contentType as its media type. A
+// TraceFunc may also switch to a registered format by returning its
+// name as the Format. A built-in name may be registered to take over
+// its write.
+func WithFormat(name, contentType string, write FormatWriter) Option {
+	return func(h *handler) {
+		h.formats[strings.ToLower(name)] = format{contentType, write}
+	}
+}
+
+// format is a registered output format.
+type format struct {
+	contentType string
+	write       FormatWriter
+}
+
 func defaultTrace(_ context.Context, img image.Image, o rekha.Options, _ map[string]string) (*rekha.Result, rekha.Options, http.Header, error) {
 	r, err := rekha.Trace(img, o)
 	return r, o, nil, err
@@ -74,7 +98,8 @@ type handler struct {
 	waiting  atomic.Int64 // requests waiting for a slot
 	inflight atomic.Int64 // requests admitted: reading, waiting or tracing
 	traceFn  TraceFunc
-	fields   map[string]bool // extra request fields passed to traceFn
+	fields   map[string]bool   // extra request fields passed to traceFn
+	formats  map[string]format // output formats a wrapper writes, by lower-case name
 	mux      *http.ServeMux
 }
 
@@ -90,7 +115,7 @@ const WriteGrace = 10 * time.Second
 // New routes /healthz, POST /v1/trace and, when static is a directory,
 // files under / for the demo page.
 func New(l Limits, static string, opts ...Option) http.Handler {
-	h := &handler{l: l, sem: make(chan struct{}, max(l.Concurrency, 1)), traceFn: defaultTrace, fields: map[string]bool{}, mux: http.NewServeMux()}
+	h := &handler{l: l, sem: make(chan struct{}, max(l.Concurrency, 1)), traceFn: defaultTrace, fields: map[string]bool{}, formats: map[string]format{}, mux: http.NewServeMux()}
 	for _, opt := range opts {
 		opt(h)
 	}
@@ -165,6 +190,15 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 		if v, ok := fields[k]; ok {
 			extra[k] = v
 			delete(fields, k)
+		}
+	}
+	// A registered format is not one apiopts or the tracer knows: it
+	// is taken out before parsing and travels in extra["format"], so
+	// the options stay valid for the trace.
+	if f, ok := fields["format"]; ok {
+		if _, ok := h.formats[strings.ToLower(f)]; ok {
+			extra["format"] = strings.ToLower(f)
+			delete(fields, "format")
 		}
 	}
 	o, err := apiopts.FromStrings(fields)
@@ -243,7 +277,21 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 		}
 		o = out.o
 		var buf bytes.Buffer
-		if err := out.res.Write(&buf, o); err != nil {
+		// The request's registered format, or one the hook switched
+		// to by returning its name as the Format, is the wrapper's to
+		// write; anything else is a built-in.
+		ct := contentType(o.Format)
+		name := extra["format"]
+		if name == "" {
+			name = strings.ToLower(string(o.Format))
+		}
+		if f, ok := h.formats[name]; ok {
+			ct = f.contentType
+			err = f.write(&buf, out.res, o, extra)
+		} else {
+			err = out.res.Write(&buf, o)
+		}
+		if err != nil {
 			fail(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -255,7 +303,7 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 				w.Header().Add(k, v)
 			}
 		}
-		w.Header().Set("Content-Type", contentType(o.Format))
+		w.Header().Set("Content-Type", ct)
 		w.Header().Set("X-Rekha-Paths", strconv.Itoa(len(out.res.Paths)))
 		w.Header().Set("X-Rekha-Millis", strconv.FormatInt(time.Since(start).Milliseconds(), 10))
 		w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))

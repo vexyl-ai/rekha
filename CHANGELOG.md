@@ -19,6 +19,9 @@ pipeline builds every artefact from the tag.
 - `apiopts` package: the option parser behind the API and the
   playground (`Parse` for JSON, `FromStrings` for form fields), public so
   an embedder reads options as text the way the service does.
+- `server.WithFormat`: a wrapper registers an output format by name,
+  media type and writer; the server traces the request and the wrapper
+  writes the body. The open build registers none.
 
 ### Changed
 

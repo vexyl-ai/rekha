@@ -30,11 +30,13 @@ fork of the server: forbidden by rule 1. Picked (b).
 **Design.** `type FormatWriter func(w io.Writer, r *rekha.Result, o rekha.Options, extra map[string]string) error`.
 `WithFormat(name, contentType string, write FormatWriter) Option`. In
 the handler, a `format` field naming a registered format is taken out
-before `apiopts.FromStrings` (which would refuse it) and set on
-`o.Format` so the TraceFunc sees it; after the trace, when the returned
-options' Format names a registered format, its writer writes the body
-and its media type is the Content-Type; otherwise `Result.Write` as
-today. `internal/apiopts` moves to `apiopts` unchanged, three importers
+before `apiopts.FromStrings` (which would refuse it) and passed to the
+TraceFunc in `extra["format"]`, the options' Format staying SVG so the
+tracer's own validation passes (ruled during execution: `rekha.Trace`
+validates Format); after the trace, the request's registered name, or
+the returned options' Format when it names a registered format, picks
+the writer that writes the body and the media type; otherwise
+`Result.Write` as today. `internal/apiopts` moves to `apiopts` unchanged, three importers
 follow.
 
 **Left to the builder.** Test names; CHANGELOG wording.
