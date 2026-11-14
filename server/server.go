@@ -69,15 +69,17 @@ func WithFields(names ...string) Option {
 type FormatWriter func(w io.Writer, r *rekha.Result, o rekha.Options, extra map[string]string) error
 
 // WithFormat registers an output format: a request whose format field
-// is name (case-insensitive) is traced as usual, with the name in
-// extra["format"] for the TraceFunc and the options' own Format left at
-// SVG, and written by write with contentType as its media type. A
-// TraceFunc may also switch to a registered format by returning its
-// name as the Format. A built-in name may be registered to take over
-// its write.
+// is name (case-insensitive, with or without a leading dot) is traced
+// as usual, with the name in extra["format"] for the TraceFunc and the
+// options' own Format left as it was, and written by write with
+// contentType as its media type. The writer runs on the trace goroutine
+// under the same slot, timeout and panic isolation as the trace. A
+// TraceFunc that returns a different Format moves the request to that
+// format, registered or built-in. A built-in name may be registered to
+// take over its write, requests that leave the format out included.
 func WithFormat(name, contentType string, write FormatWriter) Option {
 	return func(h *handler) {
-		h.formats[strings.ToLower(name)] = format{contentType, write}
+		h.formats[formatName(name)] = format{contentType, write}
 	}
 }
 
@@ -105,6 +107,23 @@ type handler struct {
 
 // panicError is a tracer panic caught on the trace goroutine.
 type panicError struct{ v any }
+
+// writeError is a failure writing the result: the server's or the
+// registered writer's fault, not the request's.
+type writeError struct{ err error }
+
+func (e *writeError) Error() string { return e.err.Error() }
+func (e *writeError) Unwrap() error { return e.err }
+
+// formatName is the key a format is looked up by: lower case, no leading
+// dot, the empty name read as svg, as ParseFormat reads them.
+func formatName(f string) string {
+	f = strings.ToLower(strings.TrimPrefix(f, "."))
+	if f == "" {
+		return string(rekha.FormatSVG)
+	}
+	return f
+}
 
 func (e *panicError) Error() string { return fmt.Sprintf("rekha: internal error: %v", e.v) }
 
@@ -186,19 +205,19 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	extra := map[string]string{}
-	for k := range h.fields {
-		if v, ok := fields[k]; ok {
-			extra[k] = v
-			delete(fields, k)
-		}
-	}
 	// A registered format is not one apiopts or the tracer knows: it
 	// is taken out before parsing and travels in extra["format"], so
 	// the options stay valid for the trace.
 	if f, ok := fields["format"]; ok {
-		if _, ok := h.formats[strings.ToLower(f)]; ok {
-			extra["format"] = strings.ToLower(f)
+		if _, ok := h.formats[formatName(f)]; ok {
+			extra["format"] = formatName(f)
 			delete(fields, "format")
+		}
+	}
+	for k := range h.fields {
+		if v, ok := fields[k]; ok {
+			extra[k] = v
+			delete(fields, k)
 		}
 	}
 	o, err := apiopts.FromStrings(fields)
@@ -240,10 +259,12 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type outcome struct {
-		res *rekha.Result
-		o   rekha.Options
-		hdr http.Header
-		err error
+		res  *rekha.Result
+		o    rekha.Options
+		hdr  http.Header
+		body []byte
+		ct   string
+		err  error
 	}
 	done := make(chan outcome, 1)
 	start := time.Now()
@@ -262,39 +283,46 @@ func (h *handler) trace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		res, o2, hdr, err := h.traceFn(ctx, decoded, o, extra)
-		done <- outcome{res, o2, hdr, err}
+		if err != nil {
+			done <- outcome{err: err}
+			return
+		}
+		// The write runs here, under the slot, the timeout and the
+		// recover, since a registered writer is the wrapper's code. A
+		// hook that returned another Format has moved the request to
+		// it; otherwise the request's registered name, if any, wins.
+		name := formatName(string(o2.Format))
+		if o2.Format == o.Format && extra["format"] != "" {
+			name = extra["format"]
+		}
+		var buf bytes.Buffer
+		ct := contentType(name)
+		if f, ok := h.formats[name]; ok {
+			ct = f.contentType
+			err = f.write(&buf, res, o2, extra)
+		} else {
+			err = res.Write(&buf, o2)
+		}
+		if err != nil {
+			done <- outcome{err: &writeError{err}}
+			return
+		}
+		done <- outcome{res: res, o: o2, hdr: hdr, body: buf.Bytes(), ct: ct}
 	}()
 	select {
 	case out := <-done:
 		if out.err != nil {
 			var pe *panicError
-			if errors.As(out.err, &pe) {
+			var we *writeError
+			if errors.As(out.err, &pe) || errors.As(out.err, &we) {
 				fail(w, http.StatusInternalServerError, out.err.Error())
 				return
 			}
 			fail(w, http.StatusBadRequest, out.err.Error())
 			return
 		}
-		o = out.o
-		var buf bytes.Buffer
-		// The request's registered format, or one the hook switched
-		// to by returning its name as the Format, is the wrapper's to
-		// write; anything else is a built-in.
-		ct := contentType(o.Format)
-		name := extra["format"]
-		if name == "" {
-			name = strings.ToLower(string(o.Format))
-		}
-		if f, ok := h.formats[name]; ok {
-			ct = f.contentType
-			err = f.write(&buf, out.res, o, extra)
-		} else {
-			err = out.res.Write(&buf, o)
-		}
-		if err != nil {
-			fail(w, http.StatusInternalServerError, err.Error())
-			return
-		}
+		buf := bytes.NewBuffer(out.body)
+		ct := out.ct
 		// The server's write deadline started at the request header; the
 		// upload, the queue wait and the trace may have used it up.
 		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(WriteGrace))
@@ -367,12 +395,13 @@ func readRequest(r *http.Request) (img []byte, fields map[string]string, err err
 	return img, fields, nil
 }
 
-// contentType is the media type of each output format.
-func contentType(f rekha.Format) string {
-	switch f {
-	case rekha.FormatPDF:
+// contentType is the media type of each built-in output format, by its
+// formatName.
+func contentType(name string) string {
+	switch name {
+	case string(rekha.FormatPDF):
 		return "application/pdf"
-	case rekha.FormatEPS:
+	case string(rekha.FormatEPS):
 		return "application/postscript"
 	default:
 		return "image/svg+xml; charset=utf-8"

@@ -469,3 +469,55 @@ func TestServeFormatRegistryOverridesBuiltin(t *testing.T) {
 		t.Fatalf("%d %q %q", rec.Code, rec.Body.String(), rec.Header().Get("Content-Type"))
 	}
 }
+
+// A hook that returns another Format moves a registered request to it.
+func TestServeHookSwitchesRegisteredRequest(t *testing.T) {
+	h := New(limits(), "",
+		WithFormat("dxf", "application/dxf", func(w io.Writer, r *rekha.Result, o rekha.Options, extra map[string]string) error {
+			_, err := io.WriteString(w, "DXF")
+			return err
+		}),
+		WithTrace(func(ctx context.Context, img image.Image, o rekha.Options, extra map[string]string) (*rekha.Result, rekha.Options, http.Header, error) {
+			o.Format = rekha.FormatPDF
+			return defaultTrace(ctx, img, o, extra)
+		}))
+	rec := post(t, h, "/v1/trace?format=dxf", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 200 || rec.Header().Get("Content-Type") != "application/pdf" || !bytes.HasPrefix(rec.Body.Bytes(), []byte("%PDF")) {
+		t.Fatalf("%d %q %q", rec.Code, rec.Header().Get("Content-Type"), rec.Body.Bytes()[:min(8, rec.Body.Len())])
+	}
+}
+
+// A registered built-in takes over requests that leave the format out,
+// and names match however they are spelt.
+func TestServeFormatRegistryTakesOverDefault(t *testing.T) {
+	h := New(limits(), "", WithFormat("svg", "text/plain", func(w io.Writer, r *rekha.Result, o rekha.Options, extra map[string]string) error {
+		_, err := io.WriteString(w, "mine")
+		return err
+	}))
+	for _, q := range []string{"", "?format=svg", "?format=SVG", "?format=.svg"} {
+		rec := post(t, h, "/v1/trace"+q, "image/png", bytes.NewReader(discPNG(t)))
+		if rec.Code != 200 || rec.Body.String() != "mine" {
+			t.Fatalf("%q: %d %q", q, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// Built-in names are case-insensitive in the Content-Type too.
+func TestServeBuiltinFormatCase(t *testing.T) {
+	rec := post(t, New(limits(), ""), "/v1/trace?format=PDF", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 200 || rec.Header().Get("Content-Type") != "application/pdf" {
+		t.Fatalf("%d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+}
+
+// A writer that panics is isolated like a panicking trace: a 500, not a
+// dropped connection.
+func TestServeWriterPanicIsolated(t *testing.T) {
+	h := New(limits(), "", WithFormat("dxf", "application/dxf", func(w io.Writer, r *rekha.Result, o rekha.Options, extra map[string]string) error {
+		panic("no pen")
+	}))
+	rec := post(t, h, "/v1/trace?format=dxf", "image/png", bytes.NewReader(discPNG(t)))
+	if rec.Code != 500 || !strings.Contains(rec.Body.String(), "no pen") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}

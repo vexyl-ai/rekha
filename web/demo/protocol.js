@@ -6,7 +6,7 @@
   'use strict';
 
   // Keys of the options object that change Segment; anything else only
-  // changes Finish. Pinned by internal/apiopts.SegmentKeys in Go.
+  // changes Finish. Pinned by apiopts.SegmentKeys in Go.
   const SEGMENT_KEYS = ['auto', 'preset', 'threshold', 'colorPrecision', 'colorTolerance', 'maxColors', 'palette', 'filterSpeckle', 'gradients', 'gradientTolerance'];
 
   // needsResegment reports whether moving from options prev to next

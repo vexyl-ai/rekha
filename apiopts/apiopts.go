@@ -1,6 +1,8 @@
-// Package apiopts turns the option fields of the WebAssembly and HTTP
-// entry points into rekha.Options: a JSON object (wasm) or string fields
-// (HTTP form or query), seeded by the preset exactly as the CLI does.
+// Package apiopts turns option fields given as text into rekha.Options,
+// for the HTTP API, the playground and any embedder: a JSON object
+// (Parse) or string fields (FromStrings, for an HTTP form or query),
+// keyed by the CLI flag names in camelCase and seeded by the preset
+// exactly as the CLI does.
 package apiopts
 
 import (
