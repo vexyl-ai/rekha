@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" data-generator="rekha dev">
 <!-- Traced by Rekha dev, https://github.com/vexyl-ai/rekha -->
 <path fill="#1f3cdb" d="M32 32H224V224H32Z"/>
-<path fill="#db1e1f" d="M171.98 70.99C203.47 95.28 209.3 140.5 185.01 171.98C160.72 203.47 115.5 209.3 84.01 185.01C52.53 160.72 46.7 115.5 70.99 84.02C95.28 52.53 140.5 46.7 171.98 70.99Z"/>
+<path fill="#db1e1f" d="M171.98 71C203.46 95.29 209.29 140.5 185 171.98C160.71 203.46 115.5 209.29 84.02 185C52.54 160.71 46.71 115.5 71 84.02C95.29 52.54 140.5 46.71 171.98 71Z"/>
 <path fill="#ffffff" d="M104 104H152V152H104Z"/>
 </svg>

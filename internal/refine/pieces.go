@@ -182,8 +182,11 @@ func rotateLoop(b Bezigon, o Options, s int) (Bezigon, Options) {
 
 // splitPieces appends the pieces of span first..first+count-1 to out:
 // the span itself when one fit holds, else the pieces of its two halves,
-// cut at the joint nearest the span's worst sample; a single segment
-// nothing fits is free.
+// cut at the joint nearest the span's worst sample, kept within the
+// span's middle half so that a smooth curve no circle fits (an ellipse,
+// a limaçon), whose worst sample is always at an end, is halved rather
+// than peeled one segment at a time (quadratic in the segment count); a
+// single segment nothing fits is free.
 func splitPieces(b Bezigon, first, count int, tol float64, out []piece) []piece {
 	if p, ok := fitSpan(b, first, count, tol); ok {
 		return append(out, p)
@@ -200,7 +203,8 @@ func splitPieces(b Bezigon, first, count int, tol float64, out []piece) []piece 
 				worst, k = d, i
 			}
 		}
-		at = min(max(int(math.Round(float64(k)/circleSamples)), 1), count-1)
+		lo, hi := max(1, count/4), min(count-1, count-count/4)
+		at = min(max(int(math.Round(float64(k)/circleSamples)), lo), hi)
 	}
 	out = splitPieces(b, first, at, tol, out)
 	return splitPieces(b, first+at, count-at, tol, out)

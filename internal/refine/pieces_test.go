@@ -199,3 +199,26 @@ func TestPiecesSplitDepthBounded(t *testing.T) {
 		t.Fatalf("512 jittered segments took %v", d)
 	}
 }
+
+// TestPiecesSplitIsNotQuadratic: a smooth loop no circle fits (a limaçon)
+// has no hard cuts, so split-and-fit alone must cut it into pieces; the
+// cut must not peel one segment at a time, which made the split quadratic
+// in the segment count and left the merge step to heal a thousand pieces.
+func TestPiecesSplitIsNotQuadratic(t *testing.T) {
+	const n = 2000
+	pts := make([]geom.Vec2, n+1)
+	for i := range pts {
+		a := 2 * math.Pi * float64(i%n) / n
+		r := 200 + 120*math.Cos(a)
+		pts[i] = v(400+r*math.Cos(a), 400+r*math.Sin(a))
+	}
+	var segs []fit.Segment
+	for i := 0; i < n; i++ {
+		segs = append(segs, ln(pts[i], pts[i+1]))
+	}
+	b := FromSegments(segs)
+	ps := splitPieces(b, 0, n, 0.5, nil)
+	if len(ps) > 128 {
+		t.Fatalf("split-and-fit cut a %d-segment limaçon into %d pieces before the merge; want at most 128", n, len(ps))
+	}
+}

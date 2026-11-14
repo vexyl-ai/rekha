@@ -116,18 +116,19 @@ func TestTraceGoldenRefine(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v (run with -update)", path, err)
 		}
-		// The optimiser amplifies last-bit differences (the plain fit
-		// itself differs by ulps between amd64 and arm64) into different
-		// merge decisions, and the primitive pass searches a radius
-		// against the rendered energy, so the two arches land 0.01 px
-		// apart on a large circle and snap a differently merged loop into
-		// different arcs. The refined goldens are therefore compared as
-		// quality: same paths and fills, at most 20 % (+2) more nodes
-		// than the golden, and either the two renderings at 4× within
-		// 36 dB of each other (the same geometry) or the trace rendering
-		// within 1 dB of the golden's PSNR against the source image (an
-		// equivalent trace of different geometry: fillet-arc's two-radius
-		// fillet cubics measure 33.5 dB between arches at equal PSNR).
+		// The goldens hold arm64's output. The optimiser amplifies
+		// last-bit differences (the plain fit itself differs by ulps
+		// between amd64 and arm64) into different merge decisions, and the
+		// primitive pass searches a radius against the rendered energy, so
+		// the two arches land 0.01 px apart on a large circle and snap a
+		// differently merged loop into different arcs. The primary check
+		// is the geometry: same paths and fills, the two renderings at 4×
+		// within 36 dB of each other. When that fails the trace must be an
+		// equivalent one of different geometry: at most 10 % (+1) more
+		// nodes than the golden and a rendering within 0.3 dB of the
+		// golden's PSNR against the source image (fillet-arc's two-radius
+		// fillet cubics measure 33.5 dB between arches at equal PSNR). On
+		// the golden's own architecture the primary check holds exactly.
 		got := parseSVGPaths(t, buf.Bytes())
 		exp := parseSVGPaths(t, want)
 		if len(got) != len(exp) {
@@ -141,13 +142,13 @@ func TestTraceGoldenRefine(t *testing.T) {
 			}
 			ng, ne = ng+nodeCount(got[i]), ne+nodeCount(exp[i])
 		}
-		if float64(ng) > 1.2*float64(ne)+2 {
-			t.Errorf("%s: %d nodes, golden %d", path, ng, ne)
-		}
 		if d := renderPSNR(t, got, exp, r.Width, r.Height); d < 36 {
+			if float64(ng) > 1.1*float64(ne)+1 {
+				t.Errorf("%s: rendering %.1f dB from golden with %d nodes, golden %d", path, d, ng, ne)
+			}
 			goldenRes := &Result{Width: r.Width, Height: r.Height, Paths: exp}
 			pg, pn := superPSNR(t, img, s, goldenRes), superPSNR(t, img, s, r)
-			if pn < pg-1 {
+			if pn < pg-0.3 {
 				t.Errorf("%s: rendering %.1f dB from golden and %.2f dB against the source, golden %.2f", path, d, pn, pg)
 			}
 		}
