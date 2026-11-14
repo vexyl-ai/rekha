@@ -8,6 +8,9 @@ import (
 
 const (
 	maxIterations = 12
+	// fitImproveMin is the least relative drop in the worst squared error
+	// for a reparameterised iterate to replace the best one.
+	fitImproveMin = 1e-9
 	minFitPoints  = 4
 	// tangentWindow is the least number of points on each side that feed
 	// a tangent estimate. Traced pixel boundaries zigzag, so adjacent
@@ -199,7 +202,12 @@ func fitCubic(pts []geom.Vec2, t0, t1 geom.Vec2, errSq float64, out *[]Segment) 
 		u = reparameterize(pts, u, bez)
 		bez = generateBezier(pts, u, t0, t1)
 		maxSq, worst, bias = maxError(pts, bez, u)
-		if maxSq < bestSq {
+		// An iterate counts as better only when it lowers the error by
+		// more than a rounding margin: once the worst point sits at a
+		// fixed distance (a pixel corner the curve cannot reach) the
+		// error plateaus, and the last bits would pick the iterate, one
+		// way on arm64 and another on amd64.
+		if maxSq < bestSq*(1-fitImproveMin) {
 			best, bestSq, bestWorst, bestBias = bez, maxSq, worst, bias
 		} else if maxSq > bestSq*1.01 {
 			break
