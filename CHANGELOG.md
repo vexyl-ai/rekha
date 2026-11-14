@@ -23,12 +23,13 @@ pipeline builds every artefact from the tag.
   it asks whether a box hides a subject, so a small object shaded over
   several cells keeps a palette entry at the poster tolerance (a
   cartoon's skin and orange shoes were each merged into a grey). A
-  group counts only above a 512th of the image and its halo is taken
-  around the whole group, so noise and gradient ramps split no further
-  than before. Three goldens change, `gradient-shapes-poster-*`, each
-  about 1.9 dB closer to the image with one more fill; the 21-image
-  bench is in `bench/results/2026-11-14-wu-groups.md` (mean +0.51 dB,
-  no losses).
+  group counts only above a 512th of the image, a subject group's halo
+  is taken around the whole group, and a far group with a matching cap
+  opposite it is read as noise, so grainy fields and plain ramps trace
+  as before. Three goldens change, `gradient-shapes-poster-*`, each
+  about 1.9 dB closer to the image with one more fill (the bright end
+  of one ramp crossing into the white box); the 21-image bench is in
+  `bench/results/2026-11-14-wu-groups.md` (mean +0.51 dB, no losses).
 
 ## v0.2.0
 

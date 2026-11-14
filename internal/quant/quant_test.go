@@ -2,6 +2,7 @@ package quant
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/vexyl-ai/rekha/internal/bitmap"
@@ -332,8 +333,9 @@ func TestWuKeepsRampPlateauInItsBox(t *testing.T) {
 	}
 }
 
-// field is a w×h sRGB buffer of one colour with a ±amp deterministic
-// texture on every channel.
+// field is a w×h sRGB buffer of one colour with a bounded ±amp texture,
+// the same offset on every channel, so every pixel stays within reach
+// of the colour's cell.
 func field(w, h int, c [3]uint8, amp int) []uint8 {
 	rgb := make([]uint8, w*h*3)
 	for p := 0; p < w*h; p++ {
@@ -419,12 +421,39 @@ func TestWuGroupFloorKeepsRamp(t *testing.T) {
 	}
 }
 
-// Noise on a flat field is not a subject: its far cells group, but the
-// group is the field's own halo.
+// grain is a w×h sRGB buffer of one colour under Gaussian luminance
+// noise of the given sigma, seeded, so its far tail reaches past the
+// tolerance in both directions the way film grain and sensor noise do.
+func grain(w, h int, c [3]uint8, sigma float64) []uint8 {
+	r := rand.New(rand.NewSource(1))
+	rgb := make([]uint8, w*h*3)
+	for p := 0; p < w*h; p++ {
+		d := int(math.Round(r.NormFloat64() * sigma))
+		for k := 0; k < 3; k++ {
+			rgb[3*p+k] = uint8(min(max(int(c[k])+d, 0), 255))
+		}
+	}
+	return rgb
+}
+
+// Noise on a flat field is not a subject. Its far tail groups (a cap of
+// the noise at one end holds a quarter of the far mass within the
+// tolerance of one cell) and clears the floor on any field of size, so
+// the far rule needs the group halo too: the cells next to a noise group
+// are the field's own tail, and they are heavy.
 func TestWuGroupIgnoresNoise(t *testing.T) {
-	rgb := field(256, 256, [3]uint8{0x80, 0x80, 0x80}, 20)
-	if pal := Wu(Cells(rgb, 6), 0, 0.08); len(pal) != 1 {
-		t.Fatalf("got %d entries for a noisy flat field: %v", len(pal), pal)
+	for _, tc := range []struct {
+		c     [3]uint8
+		sigma float64
+		tol   float64
+	}{
+		{[3]uint8{0x30, 0x60, 0xa0}, 20, 0.08},
+		{[3]uint8{0xcf, 0xc6, 0xbf}, 16, 0.06},
+	} {
+		rgb := grain(512, 512, tc.c, tc.sigma)
+		if pal := Wu(Cells(rgb, 6), 0, tc.tol); len(pal) != 1 {
+			t.Errorf("%v sigma %v tol %v: got %d entries for a noisy flat field: %v", tc.c, tc.sigma, tc.tol, len(pal), pal)
+		}
 	}
 }
 
@@ -447,5 +476,21 @@ func TestWuGroupHaloSeesRampNeighbours(t *testing.T) {
 	// tolerance; the group rules may not add to it.
 	if got := len(Wu(Cells(rgb, 6), 0, 0.08)); got != 5 {
 		t.Fatalf("ramp palette has %d entries, want 5", got)
+	}
+}
+
+// A hidden object shaded past the tolerance has a heavy halo of its own:
+// the shades beyond the group's reach sit next to it. The far rule cannot
+// use the halo to tell it from noise, so it looks across the centroid
+// instead: noise has a mirror cap, an object has nothing opposite.
+func TestWuFarGroupSplitsShadedObjectWithHalo(t *testing.T) {
+	rgb := field(512, 512, [3]uint8{0x80, 0x7a, 0x74}, 2)
+	disc(rgb, 512, 256, 256, 32, [3]uint8{0xff, 0xff, 0xff}, [3]uint8{0xc0, 0xc0, 0xc0})
+	pal := Wu(Cells(rgb, 6), 0, 0.08)
+	if len(pal) < 2 {
+		t.Fatalf("got %d entries, want the field and the disc apart: %v", len(pal), pal)
+	}
+	if d := palDist(pal, [3]uint8{0xf0, 0xf0, 0xf0}); d > 0.08 {
+		t.Fatalf("nearest entry to the disc is %.3f away: %v", d, pal)
 	}
 }

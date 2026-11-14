@@ -140,18 +140,26 @@ func (m *moments) split(bx box) (box, box, bool) {
 // in one box dilute each other, so no single cell passes either test.
 // Each pile is therefore also judged by its heaviest colour group: the
 // cells within tol of a seed, seeds tried heaviest first. A far group is
-// coherent on the same terms as a cell; a tail or mixture group is a
-// subject on the same terms, with the halo taken outside the group. A
-// group counts only when it holds 1/groupFloor of the image: the far tail
-// of a gradient ramp on a large image is a few hundred pixels spread thin,
-// and splitting on it cuts the ramp. A flat colour puts its mass in one cell
-// and only its anti-aliased rim in the cells beside it; a noise tail
-// spreads its mass over the neighbours, and a plateau at the end of a
-// ramp trails a share of its mass up the ramp (cutting that plateau out
-// would run a region boundary through the ramp, where the gradient fit
-// wants the box whole). Such a subject becomes a palette entry of its
-// own and its box is done: splitting the box by variance instead would
-// cut the edge's mixture cells into boxes of their own on the way to it.
+// coherent on the same terms as a cell, unless the far pile holds a
+// quarter as much again in the cap opposite it across the centroid, the
+// mark of the box's own noise; a tail or mixture group is a subject on
+// the same terms, with the halo test below taken around the whole group:
+// the box's mass in the cells next to any of its members. A group counts
+// only when it holds 1/groupFloor of the image: the far tail of a
+// gradient ramp on a large image is a few hundred pixels spread thin,
+// and splitting on it cuts the ramp.
+//
+// The halo tells a subject from the edge of the box's own colour. A flat
+// colour puts its mass in one cell and only its anti-aliased rim in the
+// cells beside it; a noise tail spreads its mass over the neighbours, and
+// a plateau at the end of a ramp trails a share of its mass up the ramp
+// (cutting that plateau out would run a region boundary through the
+// ramp, where the gradient fit wants the box whole). A group of ramp
+// cells shields its seed from the ramp's neighbours, which is why the
+// halo is taken around every member. A subject becomes a palette entry
+// of its own and its box is done: splitting the box by variance instead
+// would cut the edge's mixture cells into boxes of their own on the way
+// to it.
 const (
 	coherentShare = 0.25
 	coherentMin   = 4
@@ -255,10 +263,10 @@ type wuBox struct {
 // split order.
 //
 // A box is within tolerance when its RMS radius sqrt(SSE/weight) is below
-// tol and none of its unexplained far cells is coherent (see
-// coherentShare): the RMS test alone lets a large background absorb a
-// small subject, since weight normalisation hides anything under
-// (tol/distance)² of the pixels. The test is run when a box is next in
+// tol and none of its unexplained far cells, nor their heaviest colour
+// group, is coherent (see coherentShare): the RMS test alone lets a large
+// background absorb a small subject, since weight normalisation hides
+// anything under (tol/distance)² of the pixels. The test is run when a box is next in
 // line to be split, so the other boxes it is judged against exist.
 func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 	if len(cells) == 0 {
@@ -279,6 +287,20 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 		total += c.Weight
 	}
 	near := adjacentCells*cellStep(cells) + 1
+	srgb := make([][3]uint8, len(cells))
+	for i, c := range cells {
+		srgb[i][0], srgb[i][1], srgb[i][2] = c.Lab.ToSRGB8()
+	}
+	adjacent := func(i, j int) bool {
+		a, b := srgb[i], srgb[j]
+		for k := range a {
+			if int(max(a[k], b[k])-min(a[k], b[k])) > near {
+				return false
+			}
+		}
+		return true
+	}
+	mark := make([]bool, len(cells))
 	// within reports whether the box is within tolerance, and, when it is
 	// but for one explained subject cell, that cell's index (else -1).
 	within := func(bx box, idx []int, others []colour.OKLab) (bool, int) {
@@ -308,52 +330,74 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 			}
 			far.add(i, cells[i].Weight)
 		}
-		if far.coherent() {
-			return false, -1
-		}
-		if gm, _, _ := far.group(cells, tol); gm >= coherentMin && float64(gm) >= coherentShare*float64(far.mass) && gm*groupFloor >= total {
-			return false, -1
-		}
-		// subject reports whether the pile's heaviest cell is a flat
-		// colour of its own: heavy enough, with little of the box's
-		// mass in the cells around it; failing that, whether its
-		// heaviest colour group is. It returns the cell to promote.
-		subject := func(p pile) (int, bool) {
-			if p.heaviest > 0 && p.heaviest*subjectShare >= total {
-				halo := 0
-				for _, j := range idx {
-					if j != p.cell && chebyshev(cells[j].Lab, cells[p.cell].Lab) <= near {
-						halo += cells[j].Weight
-					}
-				}
-				if halo*haloShare < p.heaviest {
-					return p.cell, true
-				}
+		// sparse reports whether the box's mass next to the group (its
+		// cells not in the group within near of any member) is under
+		// 1/haloShare of the group's mass, stopping as soon as it is not.
+		sparse := func(group []int, mass int) bool {
+			for _, k := range group {
+				mark[k] = true
 			}
-			gm, seed, group := p.group(cells, tol)
-			if gm == 0 || gm*subjectShare < total || gm*groupFloor < total {
-				return -1, false
-			}
-			in := make(map[int]bool, len(group))
-			for _, j := range group {
-				in[j] = true
-			}
-			// The halo is the box's mass next to any cell of the group,
-			// not just the seed: a run of ramp cells shields its seed
-			// from the ramp's neighbours, a hidden object has none.
 			halo := 0
 			for _, j := range idx {
-				if in[j] {
+				if mark[j] {
 					continue
 				}
 				for _, k := range group {
-					if chebyshev(cells[j].Lab, cells[k].Lab) <= near {
+					if adjacent(j, k) {
 						halo += cells[j].Weight
 						break
 					}
 				}
+				if halo*haloShare >= mass {
+					break
+				}
 			}
-			return seed, halo*haloShare < gm
+			for _, k := range group {
+				mark[k] = false
+			}
+			return halo*haloShare < mass
+		}
+		if far.coherent() {
+			return false, -1
+		}
+		// A far group that clears the floor splits the box unless it is
+		// a cap of the box's own noise. The halo cannot tell the two
+		// apart (an object shaded past the group's reach has a heavy
+		// halo of its own shades), but noise is symmetric about the
+		// centroid: its far pile has as much mass in the cap opposite
+		// the group as in the group, where an object has nothing.
+		if far.mass >= coherentMin && far.mass*groupFloor >= total {
+			if gm, seed, _ := far.group(cells, tol); gm >= coherentMin && float64(gm) >= coherentShare*float64(far.mass) && gm*groupFloor >= total {
+				sl := cells[seed].Lab
+				mirror := colour.OKLab{L: 2*c.L - sl.L, A: 2*c.A - sl.A, B: 2*c.B - sl.B}
+				opposite := 0
+				for _, j := range far.members {
+					if colour.Dist(cells[j].Lab, mirror) <= tol {
+						opposite += cells[j].Weight
+					}
+				}
+				if float64(opposite) < coherentShare*float64(gm) {
+					return false, -1
+				}
+			}
+		}
+		// subject reports whether the pile's heaviest cell is a flat
+		// colour of its own: heavy enough, with little of the box's
+		// mass in the cells around it; failing that, whether its
+		// heaviest colour group is (1/subjectShare of the image is
+		// above the group floor). It returns the cell to promote.
+		subject := func(p pile) (int, bool) {
+			if p.heaviest > 0 && p.heaviest*subjectShare >= total && sparse([]int{p.cell}, p.heaviest) {
+				return p.cell, true
+			}
+			if p.mass*subjectShare < total {
+				return -1, false
+			}
+			gm, seed, group := p.group(cells, tol)
+			if gm == 0 || gm*subjectShare < total {
+				return -1, false
+			}
+			return seed, sparse(group, gm)
 		}
 		if cell, ok := subject(tail); ok {
 			return true, cell
