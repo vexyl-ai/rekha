@@ -287,3 +287,52 @@ func TestSegmentFlatLightnessKeepsCloseShades(t *testing.T) {
 		t.Fatalf("palette %v, want two browns", s.Palette)
 	}
 }
+
+// shadowScene is a 128×128 skin field with an ink band across y 50..64
+// and, under it, a 100×20 band 0.10 darker in OKLab lightness: a shadow
+// too small for the quantiser to grant a colour group at tolerance 0.04.
+func shadowScene() (image.Image, color.NRGBA, color.NRGBA) {
+	skinLab := colour.OKLab{L: 0.86, A: 0.045, B: 0.075}
+	shadowLab := colour.OKLab{L: 0.76, A: 0.045, B: 0.075}
+	toNRGBA := func(c colour.OKLab) color.NRGBA {
+		r, g, b := c.ToSRGB8()
+		return color.NRGBA{r, g, b, 255}
+	}
+	skin, shadow := toNRGBA(skinLab), toNRGBA(shadowLab)
+	img := image.NewNRGBA(image.Rect(0, 0, 128, 128))
+	for y := 0; y < 128; y++ {
+		for x := 0; x < 128; x++ {
+			c := skin
+			switch {
+			case y >= 50 && y < 64:
+				c = color.NRGBA{20, 16, 12, 255}
+			case y >= 64 && y < 84 && x >= 14 && x < 114:
+				c = shadow
+			}
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	return img, skin, shadow
+}
+
+// TestSegmentKeepsShadeBesideInk: the band under the ink line gets a
+// palette entry of its own, not the skin's: a darker shade of a colour
+// lies near the mixture line to a black outline, and the quantiser must
+// still tell a flat band from anti-aliasing.
+func TestSegmentKeepsShadeBesideInk(t *testing.T) {
+	img, _, shadow := shadowScene()
+	o := PresetOptions(PresetPoster)
+	o.ColorTolerance = 0.04
+	s, err := Segment(img, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := func(x, y int) color.NRGBA { return s.Palette[s.Labels[y*128+x]] }
+	band, skin := at(60, 74), at(60, 20)
+	if d := colour.Dist(labOf(band), labOf(shadow)); d > 0.02 {
+		t.Fatalf("band colour %v is %.3f from the shadow %v; skin is %v", band, d, shadow, skin)
+	}
+	if band == skin {
+		t.Fatalf("band and skin share %v", band)
+	}
+}

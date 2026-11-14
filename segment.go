@@ -131,7 +131,7 @@ func segmentColour(img image.Image, o Options) *Segmentation {
 			pal[i] = colour.FromSRGB8(c.R, c.G, c.B)
 		}
 	} else {
-		pal = quant.KMeans(cells, quant.Wu(cells, o.MaxColors, o.ColorTolerance), kmeansIters)
+		pal = quant.KMeans(cells, quant.Wu(cells, o.MaxColors, o.ColorTolerance, o.ColorPrecision), kmeansIters)
 	}
 
 	o.report("label")

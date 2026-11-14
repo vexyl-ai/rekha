@@ -40,7 +40,7 @@ func cluster(c [3]uint8, weight int) Cell {
 
 func TestWuRecoversThreeClusters(t *testing.T) {
 	cells := []Cell{cluster([3]uint8{255, 0, 0}, 100), cluster([3]uint8{0, 255, 0}, 50), cluster([3]uint8{0, 0, 255}, 25)}
-	pal := Wu(cells, 8, 0.01)
+	pal := Wu(cells, 8, 0.01, 6)
 	if len(pal) != 3 {
 		t.Fatalf("got %d entries %v", len(pal), pal)
 	}
@@ -62,12 +62,12 @@ func TestWuToleranceStopsAtTwo(t *testing.T) {
 	red, blue := colour.FromSRGB8(255, 0, 0), colour.FromSRGB8(0, 0, 255)
 	nearRed := colour.OKLab{L: red.L + 0.03, A: red.A, B: red.B}
 	cells := []Cell{{Lab: red, Weight: 1000}, {Lab: blue, Weight: 1000}, {Lab: nearRed, Weight: 40}}
-	if pal := Wu(cells, 16, 0.08); len(pal) != 2 {
+	if pal := Wu(cells, 16, 0.08, 6); len(pal) != 2 {
 		t.Fatalf("got %d entries %v, want 2", len(pal), pal)
 	}
 	green := colour.FromSRGB8(0, 255, 0)
 	cells = []Cell{{Lab: red, Weight: 1000}, {Lab: blue, Weight: 1000}, {Lab: green, Weight: 40}}
-	if pal := Wu(cells, 16, 0.08); len(pal) != 3 {
+	if pal := Wu(cells, 16, 0.08, 6); len(pal) != 3 {
 		t.Fatalf("got %d entries %v, want 3", len(pal), pal)
 	}
 }
@@ -77,7 +77,7 @@ func TestWuToleranceStopsAtTwo(t *testing.T) {
 // weight-normalised stop would call the single box "within tolerance".
 func TestWuKeepsSmallFeature(t *testing.T) {
 	cells := []Cell{cluster([3]uint8{255, 255, 255}, 256*256-400), cluster([3]uint8{0, 0, 0}, 400)}
-	if pal := Wu(cells, 0, 0.08); len(pal) != 2 {
+	if pal := Wu(cells, 0, 0.08, 6); len(pal) != 2 {
 		t.Fatalf("got %d entries %v, want black and white", len(pal), pal)
 	}
 	// Likewise a small red/blue object on a lightly noisy background.
@@ -87,7 +87,7 @@ func TestWuKeepsSmallFeature(t *testing.T) {
 		cells = append(cells, cluster([3]uint8{v, uint8(235 + i/16*4), uint8(240 + i%8)}, 1000))
 	}
 	cells = append(cells, cluster([3]uint8{220, 30, 30}, 500), cluster([3]uint8{30, 60, 220}, 500))
-	pal := Wu(cells, 0, 0.08)
+	pal := Wu(cells, 0, 0.08, 6)
 	for _, want := range [][3]uint8{{220, 30, 30}, {30, 60, 220}} {
 		best := 10.0
 		for _, p := range pal {
@@ -107,7 +107,7 @@ func TestWuCapsAt256(t *testing.T) {
 		lab.A += float64(i%16) * 0.025 // spread over more than 256 histogram bins
 		cells = append(cells, Cell{Index: i, Lab: lab, Weight: 1})
 	}
-	if pal := Wu(cells, 0, 0); len(pal) != 256 {
+	if pal := Wu(cells, 0, 0, 6); len(pal) != 256 {
 		t.Fatalf("got %d entries, want 256", len(pal))
 	}
 }
@@ -161,8 +161,8 @@ func TestWuDeterministic(t *testing.T) {
 	var img = corpus.Render(corpus.All()[len(corpus.All())-1]) // noisy-disc
 	rgb, _, _ := bitmap.Flatten(img)
 	cells := Cells(rgb, 6)
-	a := KMeans(cells, Wu(cells, 0, 0.04), 10)
-	b := KMeans(cells, Wu(cells, 0, 0.04), 10)
+	a := KMeans(cells, Wu(cells, 0, 0.04, 6), 10)
+	b := KMeans(cells, Wu(cells, 0, 0.04, 6), 10)
 	if len(a) != len(b) {
 		t.Fatalf("%d vs %d entries", len(a), len(b))
 	}
@@ -234,7 +234,7 @@ func TestWuIgnoresAABand(t *testing.T) {
 	for i := 1; i < 16; i++ {
 		cells = append(cells, cluster(mixRGB(red, blue, float64(i)/16), 100))
 	}
-	if pal := Wu(cells, 0, 0.08); len(pal) != 2 {
+	if pal := Wu(cells, 0, 0.08, 6); len(pal) != 2 {
 		t.Fatalf("got %d entries %v, want red and blue", len(pal), pal)
 	}
 }
@@ -244,7 +244,7 @@ func TestWuIgnoresAABand(t *testing.T) {
 func TestWuIgnoresNoiseTail(t *testing.T) {
 	img := corpus.Render(corpus.All()[len(corpus.All())-1]) // noisy-disc
 	rgb, _, _ := bitmap.Flatten(img)
-	pal := Wu(Cells(rgb, 6), 0, 0.08)
+	pal := Wu(Cells(rgb, 6), 0, 0.08, 6)
 	if len(pal) > 3 {
 		t.Fatalf("got %d entries %v, want black, white and at most an edge band", len(pal), pal)
 	}
@@ -303,7 +303,7 @@ func TestWuKeepsHeavyMixtureCell(t *testing.T) {
 	for i := 1; i < 16; i++ {
 		cells = append(cells, cluster(mixRGB(black, white, float64(i)/16), 30))
 	}
-	pal := Wu(cells, 0, 0.08)
+	pal := Wu(cells, 0, 0.08, 6)
 	want := colour.FromSRGB8(grey[0], grey[1], grey[2])
 	best := math.Inf(1)
 	for _, c := range pal {
@@ -328,7 +328,7 @@ func TestWuKeepsRampPlateauInItsBox(t *testing.T) {
 	for k := 1; k <= 6; k++ {
 		cells = append(cells, cluster([3]uint8{0, uint8(158 - 4*k), uint8(223 - 4*k)}, 10000))
 	}
-	if pal := Wu(cells, 0, 0.04); len(pal) != 2 {
+	if pal := Wu(cells, 0, 0.04, 6); len(pal) != 2 {
 		t.Fatalf("got %d entries %v, want white and one cyan box", len(pal), pal)
 	}
 }
@@ -379,7 +379,7 @@ func TestWuGroupsTwoShadedSubjects(t *testing.T) {
 	rgb := field(w, h, [3]uint8{0xcf, 0xc6, 0xbf}, 2)
 	disc(rgb, w, 128, 256, 24, [3]uint8{0xf7, 0x75, 0x2a}, [3]uint8{0xc8, 0x5a, 0x1c})
 	disc(rgb, w, 384, 256, 24, [3]uint8{0xff, 0xff, 0xff}, [3]uint8{0xe8, 0xe8, 0xe8})
-	pal := Wu(Cells(rgb, 6), 0, 0.08)
+	pal := Wu(Cells(rgb, 6), 0, 0.08, 6)
 	if len(pal) < 3 {
 		t.Fatalf("got %d entries, want the field, orange and white: %v", len(pal), pal)
 	}
@@ -405,7 +405,7 @@ func TestWuGroupFloorKeepsRamp(t *testing.T) {
 		}
 		return rgb
 	}
-	plain := len(Wu(Cells(ramp(), 6), 0, 0.08))
+	plain := len(Wu(Cells(ramp(), 6), 0, 0.08, 6))
 	// The patch is shaded over eight levels so no single cell holds a
 	// quarter of the far pile: only a colour group could force a split.
 	rgb := ramp()
@@ -416,7 +416,7 @@ func TestWuGroupFloorKeepsRamp(t *testing.T) {
 		rgb[i+1] = uint8(0x75 - t*(0x75-0x5a))
 		rgb[i+2] = uint8(0x2a - t*(0x2a-0x1c))
 	}
-	if got := len(Wu(Cells(rgb, 6), 0, 0.08)); got != plain {
+	if got := len(Wu(Cells(rgb, 6), 0, 0.08, 6)); got != plain {
 		t.Fatalf("150-pixel patch changed the palette from %d to %d entries", plain, got)
 	}
 }
@@ -451,7 +451,7 @@ func TestWuGroupIgnoresNoise(t *testing.T) {
 		{[3]uint8{0xcf, 0xc6, 0xbf}, 16, 0.06},
 	} {
 		rgb := grain(512, 512, tc.c, tc.sigma)
-		if pal := Wu(Cells(rgb, 6), 0, tc.tol); len(pal) != 1 {
+		if pal := Wu(Cells(rgb, 6), 0, tc.tol, 6); len(pal) != 1 {
 			t.Errorf("%v sigma %v tol %v: got %d entries for a noisy flat field: %v", tc.c, tc.sigma, tc.tol, len(pal), pal)
 		}
 	}
@@ -474,7 +474,7 @@ func TestWuGroupHaloSeesRampNeighbours(t *testing.T) {
 	}
 	// Five is what the RMS test alone gives this ramp at the poster
 	// tolerance; the group rules may not add to it.
-	if got := len(Wu(Cells(rgb, 6), 0, 0.08)); got != 5 {
+	if got := len(Wu(Cells(rgb, 6), 0, 0.08, 6)); got != 5 {
 		t.Fatalf("ramp palette has %d entries, want 5", got)
 	}
 }
@@ -486,11 +486,42 @@ func TestWuGroupHaloSeesRampNeighbours(t *testing.T) {
 func TestWuFarGroupSplitsShadedObjectWithHalo(t *testing.T) {
 	rgb := field(512, 512, [3]uint8{0x80, 0x7a, 0x74}, 2)
 	disc(rgb, 512, 256, 256, 32, [3]uint8{0xff, 0xff, 0xff}, [3]uint8{0xc0, 0xc0, 0xc0})
-	pal := Wu(Cells(rgb, 6), 0, 0.08)
+	pal := Wu(Cells(rgb, 6), 0, 0.08, 6)
 	if len(pal) < 2 {
 		t.Fatalf("got %d entries, want the field and the disc apart: %v", len(pal), pal)
 	}
 	if d := palDist(pal, [3]uint8{0xf0, 0xf0, 0xf0}); d > 0.08 {
 		t.Fatalf("nearest entry to the disc is %.3f away: %v", d, pal)
+	}
+}
+
+// A flat image of three colours and no anti-aliasing: skin, a black
+// outline across it, and under the outline a band of skin 0.10 darker,
+// 12 % of the pixels and 2.5 tolerances from the skin. The band lies near
+// the skin-to-ink mixture line, as every darker shade of a colour does
+// beside a black outline, so it is explained as anti-aliasing; it is
+// still a subject, heavy and with nothing next to it, and keeps its
+// entry. (The cell width must come from the precision: inferred from the
+// spacing of the three cells it was the gap to the skin, and the skin
+// counted as the band's halo.)
+func TestWuKeepsShadeBesideInkWithoutAA(t *testing.T) {
+	const w = 128
+	skin, ink, band := [3]uint8{248, 192, 147}, [3]uint8{20, 16, 12}, [3]uint8{219, 164, 121}
+	rgb := field(w, w, skin, 0)
+	paint := func(x0, y0, x1, y1 int, c [3]uint8) {
+		for y := y0; y < y1; y++ {
+			for x := x0; x < x1; x++ {
+				copy(rgb[3*(y*w+x):], c[:])
+			}
+		}
+	}
+	paint(0, 50, w, 64, ink)
+	paint(14, 64, 114, 84, band)
+	pal := Wu(Cells(rgb, 6), 0, 0.04, 6)
+	if len(pal) != 3 {
+		t.Fatalf("got %d entries %v, want skin, ink and the band", len(pal), pal)
+	}
+	if d := palDist(pal, band); d > 0.02 {
+		t.Fatalf("band not in palette (nearest %.3f)", d)
 	}
 }

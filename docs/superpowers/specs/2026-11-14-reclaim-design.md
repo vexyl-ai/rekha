@@ -87,3 +87,9 @@ Flatten afterwards may fold the reclaimed shade back when it is within `FlatLigh
 Root package: `TestSegmentReclaimsShadow` (a synthetic 128×128: a skin field, an ink line, a 100×20 band at 2.5 tol under it, labelled by the poster preset: the band is its own palette entry and its pixels carry it). Goldens: run the full suite; any change is reported in the bench file with its PSNR.
 
 Bench `bench/results/2026-11-14-reclaim.md`: the 21 images, plain and refined, before and after, plus the boy's chin box PSNR under poster 0.04 and photo.
+
+## What building it found (same day)
+
+The premise above was wrong for the boy. At poster 0.04 the quantiser already holds the neck shadow (entry L 0.788 against the skin's 0.863) and labels the band with it; the plain poster render carries it, subtly, and only the flat preset folds it, under its lightness rule. The Reclaim pass was built, measured and dropped: on the boy it added 47 paths for 0.02 dB and left the chin box unchanged.
+
+The synthetic miss was real and lives in `quant.Wu`: the cell width was inferred from the spacing of the occupied cells, which on an image of a few flat colours and no anti-aliasing is the gap between two real colours; the halo test then counted the skin cell as the band's neighbour, and the band, explained as skin-to-ink anti-aliasing, was never promoted. The width now comes from the precision (`cellStep(bits)`, passed to `Wu`). Exit tests `TestWuKeepsShadeBesideInkWithoutAA` and `TestSegmentKeepsShadeBesideInk`; every golden byte-identical.

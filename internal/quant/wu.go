@@ -170,25 +170,15 @@ const (
 	groupFloor    = 512
 )
 
-// cellStep is the sRGB width of a cell, taken as the smallest positive
-// Chebyshev distance between the centres of cells consecutive in index
-// order (neighbours along blue, in an image with any two).
-func cellStep(cells []Cell) int {
-	step := 256
-	for i := 1; i < len(cells); i++ {
-		if d := chebyshev(cells[i-1].Lab, cells[i].Lab); d > 0 && d < step {
-			step = d
-		}
-	}
-	return step
-}
-
-// chebyshev is the largest per-channel sRGB difference between a and b.
-func chebyshev(a, b colour.OKLab) int {
-	ar, ag, ab := a.ToSRGB8()
-	br, bg, bb := b.ToSRGB8()
-	d := func(x, y uint8) int { return int(max(x, y) - min(x, y)) }
-	return max(d(ar, br), d(ag, bg), d(ab, bb))
+// cellStep is the sRGB width of a cell at bits per channel: the distance
+// between the centres of neighbouring cells (CellCentre), 4 at six bits.
+// It was once inferred from the spacing of the occupied cells, which on
+// an image of a few flat colours and no anti-aliasing is the gap between
+// two real colours, so that a band lying near the mixture line to a
+// black outline counted its own parent as its halo and was never a
+// subject.
+func cellStep(bits int) int {
+	return max(1, 255/(1<<bits-1))
 }
 
 // pile accumulates the mass of one explanation and its heaviest cell.
@@ -261,6 +251,7 @@ type wuBox struct {
 // (MaxColors when maxK is 0), when every box is within tolerance, or when
 // no remaining box can be split. The palette is the box centroids, in
 // split order.
+// bits is the precision the cells were binned at (Cells).
 //
 // A box is within tolerance when its RMS radius sqrt(SSE/weight) is below
 // tol and none of its unexplained far cells, nor their heaviest colour
@@ -268,7 +259,7 @@ type wuBox struct {
 // background absorb a small subject, since weight normalisation hides
 // anything under (tol/distance)² of the pixels. The test is run when a box is next in
 // line to be split, so the other boxes it is judged against exist.
-func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
+func Wu(cells []Cell, maxK int, tol float64, bits int) []colour.OKLab {
 	if len(cells) == 0 {
 		return nil
 	}
@@ -286,7 +277,7 @@ func Wu(cells []Cell, maxK int, tol float64) []colour.OKLab {
 	for _, c := range cells {
 		total += c.Weight
 	}
-	near := adjacentCells*cellStep(cells) + 1
+	near := adjacentCells*cellStep(bits) + 1
 	srgb := make([][3]uint8, len(cells))
 	for i, c := range cells {
 		srgb[i][0], srgb[i][1], srgb[i][2] = c.Lab.ToSRGB8()

@@ -55,7 +55,7 @@ func Rescue(labels, rgb []uint8, w, h int, palette []colour.OKLab, minArea int, 
 		}
 		m := meanLab(rgb, c.pixels)
 		d := colour.Dist(m, palette[c.label])
-		if d <= tol || (!coherent(rgb, c.pixels, m, tol, rescueCoherence) && coherent(rgb, c.pixels, palette[c.label], tol, rescueCoherence)) {
+		if d <= tol || (!coherent(rgb, c.pixels, m, tol) && coherent(rgb, c.pixels, palette[c.label], tol)) {
 			continue
 		}
 		best, bd := -1, tol
@@ -118,14 +118,14 @@ func meanLab(rgb []uint8, pixels []int32) colour.OKLab {
 	return colour.OKLab{L: l / n, A: a / n, B: b / n}
 }
 
-// coherent reports whether at least share of the pixels are within tol
-// of m.
-func coherent(rgb []uint8, pixels []int32, m colour.OKLab, tol, share float64) bool {
+// coherent reports whether at least rescueCoherence of the pixels are
+// within tol of m.
+func coherent(rgb []uint8, pixels []int32, m colour.OKLab, tol float64) bool {
 	within := 0
 	for _, p := range pixels {
 		if colour.Dist(colour.FromSRGB8(rgb[3*p], rgb[3*p+1], rgb[3*p+2]), m) <= tol {
 			within++
 		}
 	}
-	return float64(within) >= share*float64(len(pixels))
+	return float64(within) >= rescueCoherence*float64(len(pixels))
 }
