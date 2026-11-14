@@ -99,7 +99,15 @@ func refineConstrained(segs []fit.Segment, fixed, frozen []bool, m refine.Mask, 
 		tol := 0.5 * o.FitTolerance
 		free := !anyTrue(ro.Fixed) && !anyTrue(ro.Frozen)
 		if free {
-			b, _ = refine.SnapCircle(b, m, img, tol)
+			var ok bool
+			if b, ok = refine.SnapCircle(b, m, img, tol); !ok {
+				if eb, ok := refine.SnapEllipse(b, m, img, tol); ok {
+					// An ellipse loop is final: the pieces pass, the
+					// common radius and the rectangle would only cut
+					// its quadrants into arcs.
+					return eb.Segments(lineTol), ro.Fixed
+				}
+			}
 		}
 		b, ro = refine.SnapPieces(b, m, img, tol, ro)
 		b, ro = refine.CommonRadius(b, m, img, tol, ro)

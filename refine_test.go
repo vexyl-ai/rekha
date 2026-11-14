@@ -522,3 +522,31 @@ func TestRingIsTwoCircles(t *testing.T) {
 		}
 	}
 }
+
+// TestEllipsesAreFourCubics: the two ellipse synthetics come out of the
+// refinement as exactly four curved segments, every point of them
+// within 0.2 px of the true ellipse.
+func TestEllipsesAreFourCubics(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		geom func() (geom.Vec2, float64, float64, float64)
+	}{{"ellipse-aa", corpus.EllipseAAGeometry}, {"ellipse-rot", corpus.EllipseRotGeometry}} {
+		segs := bwRefined(t, tc.name)
+		if len(segs) != 4 {
+			t.Fatalf("%s: %d segments, want 4", tc.name, len(segs))
+		}
+		c, a, b, th := tc.geom()
+		e := fit.Ellipse{Centre: c, A: a, B: b, Theta: th}
+		for _, sg := range segs {
+			if sg.Line {
+				t.Fatalf("%s: a line among the segments", tc.name)
+			}
+			for i := 0; i <= 16; i++ {
+				p := sg.P.At(float64(i) / 16)
+				if d := e.Dist(p); d > 0.2 {
+					t.Errorf("%s: %v is %.3f px off the ellipse", tc.name, p, d)
+				}
+			}
+		}
+	}
+}
