@@ -66,7 +66,8 @@ func chordFactor(theta float64) float64 {
 // every line piece becomes one line cubic between the anchors its
 // neighbours settled, a joint between two lines first moved to their
 // intersection (rebuildLines), so collinear refined segments collapse
-// into one. Each rebuild is one snap under the energy guard
+// into one; between the two, a fillet of a pixel or three between two
+// lines becomes their corner (sharpenCorners). Each rebuild is one snap under the energy guard
 // (withinBudget) over the window of what it changes; a rejected piece
 // keeps its control points and anchors, so the loop stays continuous.
 // The loop as a whole is never a piece (see FitCircle). The options come
@@ -89,6 +90,7 @@ func SnapPieces(b Bezigon, m Mask, img Window, tol float64, o Options) (Bezigon,
 		shiftPieces(ps, i+1, sn.pieces-ps[i].count)
 		ps[i].count, ps[i].centre, ps[i].r, ps[i].snapped = sn.pieces, sn.centre, sn.r, true
 	}
+	b, o, ps = sharpenCorners(b, o, ps, m, img, tol)
 	return rebuildLines(b, o, m, img, ps, tol)
 }
 
