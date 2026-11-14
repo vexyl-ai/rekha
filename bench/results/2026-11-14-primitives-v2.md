@@ -8,12 +8,12 @@ Twenty-one images (the character, nine logos, synthetics from the corpus, six ca
 | black-green-angular-geometric-logo | 37.20 / 12 | 36.99 / 12 |
 | black-red-circle-symmetric-logo | 42.61 / 5 | 41.83 / 5 |
 | blue-green-letter-v-dots-stylized-logo | 40.90 / 20 | 40.93 / 20 |
-| blue-letter-u-shield-floral-logo | 38.24 / 2 | 38.34 / 2 |
+| blue-letter-u-shield-floral-logo | 38.24 / 2 | 38.35 / 2 |
 | blue-purple-letter-m-abstract-floral-logo | 32.50 / 159 | 32.56 / 159 |
-| blue-purple-letter-q-ribbon-gradient-logo | 47.35 / 7 | 47.44 / 7 |
+| blue-purple-letter-q-ribbon-gradient-logo | 47.35 / 7 | 47.45 / 7 |
 | boy-render | 28.57 / 107 | 28.56 / 107 |
 | cat-dog | 26.76 / 30 | 26.82 / 30 |
-| fusion-logo | 29.31 / 40 | 29.27 / 40 |
+| fusion-logo | 29.31 / 40 | 29.30 / 40 |
 | gradient-shapes | 42.72 / 5 | 42.72 / 5 |
 | mr-bean | 24.76 / 120 | 24.73 / 120 |
 | noisy-disc | 29.72 / 22 | 29.64 / 22 |
@@ -37,10 +37,10 @@ Nodes are the anchors of the SVG; an arc is a cubic whose four control points li
 | black-green-angular-geometric-logo | 119 / 14 (18 % of 76 cubics) | 110 / 41 (59 % of 69 cubics) |
 | black-red-circle-symmetric-logo | 105 / 44 (47 % of 93 cubics) | 53 / 33 (73 % of 45 cubics) |
 | blue-green-letter-v-dots-stylized-logo | 116 / 11 (10 % of 110 cubics) | 122 / 24 (21 % of 113 cubics) |
-| blue-letter-u-shield-floral-logo | 1246 / 80 (7 % of 1166 cubics) | 1130 / 165 (16 % of 1058 cubics) |
-| blue-purple-letter-m-abstract-floral-logo | 3292 / 108 (3 % of 3133 cubics) | 3014 / 328 (12 % of 2824 cubics) |
-| blue-purple-letter-q-ribbon-gradient-logo | 183 / 74 (45 % of 165 cubics) | 122 / 70 (58 % of 121 cubics) |
-| fusion-logo | 636 / 22 (4 % of 606 cubics) | 651 / 59 (10 % of 585 cubics) |
+| blue-letter-u-shield-floral-logo | 1246 / 80 (7 % of 1166 cubics) | 1130 / 164 (16 % of 1058 cubics) |
+| blue-purple-letter-m-abstract-floral-logo | 3292 / 108 (3 % of 3133 cubics) | 3011 / 329 (12 % of 2822 cubics) |
+| blue-purple-letter-q-ribbon-gradient-logo | 183 / 74 (45 % of 165 cubics) | 118 / 65 (56 % of 117 cubics) |
+| fusion-logo | 636 / 22 (4 % of 606 cubics) | 651 / 58 (10 % of 585 cubics) |
 | red-yellow-letter-g-minimalistic-circular-logo | 470 / 178 (42 % of 421 cubics) | 322 / 153 (52 % of 294 cubics) |
 | teal-blue-abstract-modern-logo | 418 / 79 (21 % of 374 cubics) | 387 / 99 (28 % of 348 cubics) |
 
@@ -48,7 +48,51 @@ Every logo but two has fewer nodes and every logo has more of its curves as exac
 
 ## The synthetic shapes
 
-Refined output on the corpus fixtures the pass was built for, against the source image: half-disc 8 nodes at 44.14 dB before, 3 nodes at 51.13 after (one line, two arc cubics meeting it at the corners); annular-sector 11 nodes at 49.64 before, 6 at 51.94 (two radial lines, two arcs each of two cubics, one shared centre); poster-discs 76 nodes at 43.82 before, 53 at 44.24; fillet-arc 12 nodes at 37.52 before, 6 at 40.01 (the fixture's own geometry was corrected on the way, see the commit). Plain traces move with the corner placement alone: half-disc 31.97 to 43.95 dB, annular-sector 33.01 to 36.78, poster-discs at the poster preset 32.94 to 34.27 with 84 to 74 nodes.
+Refined output on the corpus fixtures the pass was built for, against the source image: half-disc 8 nodes at 44.14 dB before, 3 nodes at 51.13 after (one line, two arc cubics meeting it at the corners); annular-sector 11 nodes at 49.64 before, 6 at 51.94 (two radial lines, two arcs each of two cubics, one shared centre); poster-discs 76 nodes at 43.82 before, 58 at 44.93 (the blue disc's arc snap is refused at the committed guard constants and its cubics stay); fillet-arc 12 nodes at 37.52 before, 6 at 40.01 (the fixture's own geometry was corrected on the way, see the commit). Plain traces move with the corner placement alone: half-disc 31.97 to 43.95 dB, annular-sector 33.01 to 36.78, poster-discs at the poster preset 32.94 to 34.27 with 84 to 74 nodes.
+
+## Without `--refine`
+
+The corner placement (`cornerOf` in trace.go: a corner between a straight edge and a curve is put where the line meets the circle) and the Schneider tie-break (`fitImproveMin`) change the plain spline trace as well, which is the default mode, so the same 21 images were run without `--refine`.
+
+| image | before dB / paths | after dB / paths |
+|---|---|---|
+| character | 28.54 / 527 | 28.67 / 527 |
+| black-green-angular-geometric-logo | 36.27 / 12 | 36.27 / 12 |
+| black-red-circle-symmetric-logo | 38.73 / 5 | 38.95 / 5 |
+| blue-green-letter-v-dots-stylized-logo | 39.66 / 20 | 39.71 / 20 |
+| blue-letter-u-shield-floral-logo | 30.55 / 2 | 30.63 / 2 |
+| blue-purple-letter-m-abstract-floral-logo | 30.78 / 159 | 30.75 / 159 |
+| blue-purple-letter-q-ribbon-gradient-logo | 42.80 / 7 | 42.95 / 7 |
+| boy-render | 27.74 / 107 | 27.74 / 107 |
+| cat-dog | 24.49 / 30 | 24.66 / 30 |
+| fusion-logo | 28.03 / 40 | 28.39 / 40 |
+| gradient-shapes | 36.63 / 5 | 36.63 / 5 |
+| mr-bean | 22.85 / 120 | 22.92 / 120 |
+| noisy-disc | 28.75 / 22 | 28.75 / 22 |
+| overheat-type | 26.67 / 23 | 26.59 / 23 |
+| red-yellow-letter-g-minimalistic-circular-logo | 37.17 / 24 | 37.69 / 24 |
+| small-glyphs | 33.09 / 2 | 33.09 / 2 |
+| teal-blue-abstract-modern-logo | 37.47 / 25 | 37.68 / 25 |
+| thin-lines | 28.17 / 1 | 28.17 / 1 |
+| tom-jerry | 25.82 / 565 | 25.82 / 565 |
+| unicorn | 23.20 / 666 | 23.20 / 666 |
+| 8_1sasa11 | 43.03 / 69 | 43.64 / 69 |
+
+Mean +0.12 dB, 13 wins, 2 losses (the M logo −0.03, overheat-type −0.08), 6 unchanged; path counts the same throughout.
+
+| logo | before nodes / arcs | after nodes / arcs |
+|---|---|---|
+| black-green-angular-geometric-logo | 134 / 4 (9 % of 43 cubics) | 139 / 4 (9 % of 43 cubics) |
+| black-red-circle-symmetric-logo | 118 / 47 (70 % of 67 cubics) | 75 / 35 (67 % of 52 cubics) |
+| blue-green-letter-v-dots-stylized-logo | 137 / 3 (3 % of 110 cubics) | 134 / 3 (3 % of 110 cubics) |
+| blue-letter-u-shield-floral-logo | 1569 / 47 (5 % of 902 cubics) | 1504 / 42 (5 % of 852 cubics) |
+| blue-purple-letter-m-abstract-floral-logo | 3248 / 129 (8 % of 1563 cubics) | 2775 / 113 (8 % of 1504 cubics) |
+| blue-purple-letter-q-ribbon-gradient-logo | 189 / 58 (57 % of 102 cubics) | 156 / 55 (61 % of 90 cubics) |
+| fusion-logo | 352 / 25 (13 % of 198 cubics) | 343 / 23 (12 % of 192 cubics) |
+| red-yellow-letter-g-minimalistic-circular-logo | 576 / 144 (59 % of 246 cubics) | 453 / 134 (66 % of 204 cubics) |
+| teal-blue-abstract-modern-logo | 421 / 83 (36 % of 230 cubics) | 404 / 79 (36 % of 220 cubics) |
+
+Seven of the nine logos have fewer nodes without `--refine` as well (the Pokéball 118 to 75, the G 576 to 453, the M 3248 to 2775); the arc counts here are the plain fit's own near-circular cubics, since the primitive pass runs only under `--refine`. The plain-mode change is the corner placement, which the spec listed as outside its scope and Task 7 brought in by ruling because the primitive pass could not sharpen a corner the trace had already rounded.
 
 ## Speed
 
