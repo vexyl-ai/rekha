@@ -348,3 +348,177 @@ func TestPrimitivesNeverLoseOnGoalImages(t *testing.T) {
 		t.Errorf("primitives raise the node count: %d → %d", nodesOff, nodesOn)
 	}
 }
+
+// circleThrough is the centre and radius of the circle through three
+// points; ok is false when they are collinear.
+func circleThrough(a, b, c geom.Vec2) (geom.Vec2, float64, bool) {
+	d := 2 * (a.X*(b.Y-c.Y) + b.X*(c.Y-a.Y) + c.X*(a.Y-b.Y))
+	if math.Abs(d) < 1e-9 {
+		return geom.Vec2{}, 0, false
+	}
+	a2, b2, c2 := a.LenSq(), b.LenSq(), c.LenSq()
+	centre := geom.Vec2{
+		X: (a2*(b.Y-c.Y) + b2*(c.Y-a.Y) + c2*(a.Y-b.Y)) / d,
+		Y: (a2*(c.X-b.X) + b2*(a.X-c.X) + c2*(b.X-a.X)) / d,
+	}
+	return centre, a.Sub(centre).Len(), true
+}
+
+// arcOf is the circle a cubic lies on: the circle through its ends and
+// its midpoint; ok is false when the cubic is not an arc of it, i.e.
+// when its quarter points leave the circle by more than max(0.02 px,
+// 3e-4·r), the radial error of the 4/3·tan(θ/4) cubic over a quarter
+// circle (2.7e-4·r at its worst).
+func arcOf(c fit.Cubic) (centre geom.Vec2, r float64, ok bool) {
+	centre, r, ok = circleThrough(c[0], c.At(0.5), c[3])
+	if !ok {
+		return
+	}
+	lim := math.Max(0.02, 3e-4*r)
+	for _, t := range []float64{0.25, 0.75} {
+		if math.Abs(c.At(t).Sub(centre).Len()-r) > lim {
+			return centre, r, false
+		}
+	}
+	return centre, r, true
+}
+
+// isArc reports whether the cubic is a circular arc (see arcOf).
+func isArc(c fit.Cubic) bool {
+	_, _, ok := arcOf(c)
+	return ok
+}
+
+// arcShare counts the curved segments of segs and how many of them are
+// circular arcs.
+func arcShare(segs []fit.Segment) (curved, arcs int) {
+	for _, sg := range segs {
+		if sg.Line {
+			continue
+		}
+		curved++
+		if isArc(sg.P) {
+			arcs++
+		}
+	}
+	return
+}
+
+// bwRefinedPaths is the refined bw trace of a synthetic with any number
+// of paths and subpaths.
+func bwRefinedPaths(t *testing.T, name string) *Result {
+	t.Helper()
+	_, _, _, refined, _ := tracePair(t, name, PresetBW)
+	return refined
+}
+
+func TestHalfDiscIsLineAndArcs(t *testing.T) {
+	segs := bwRefined(t, "half-disc")
+	if len(segs) != 3 {
+		t.Fatalf("%d segments, want 3", len(segs))
+	}
+	lines := 0
+	for _, sg := range segs {
+		if sg.Line {
+			lines++
+			continue
+		}
+		c, r, ok := arcOf(sg.P)
+		if !ok || math.Abs(r-80) > 0.2 || c.Sub(geom.Vec2{X: 128, Y: 128}).Len() > 0.2 {
+			t.Errorf("curved segment: arc %v, r %.3f, centre %v", ok, r, c)
+		}
+	}
+	if lines != 1 {
+		t.Fatalf("%d lines, want 1", lines)
+	}
+}
+
+func TestAnnularSectorIsLinesAndArcs(t *testing.T) {
+	segs := bwRefined(t, "annular-sector")
+	if len(segs) != 6 {
+		t.Fatalf("%d segments, want 6", len(segs))
+	}
+	lines := 0
+	var centres []geom.Vec2
+	for _, sg := range segs {
+		if sg.Line {
+			lines++
+			continue
+		}
+		c, r, ok := arcOf(sg.P)
+		if !ok || (math.Abs(r-60) > 0.3 && math.Abs(r-100) > 0.3) {
+			t.Errorf("curved segment: arc %v, r %.3f", ok, r)
+		}
+		centres = append(centres, c)
+	}
+	if lines != 2 || len(centres) != 4 {
+		t.Fatalf("%d lines, %d arcs, want 2 and 4", lines, len(centres))
+	}
+	for _, c := range centres[1:] {
+		if c.Sub(centres[0]).Len() > 0.3 {
+			t.Errorf("centres %v and %v differ", centres[0], c)
+		}
+	}
+}
+
+// TestFilletArcRadii: the D's straight side is one line and its large
+// arc comes out as arc cubics within 2 % of r = 100, in at most 7
+// nodes. The r = 12 fillets are not pinned: the refinement merges each
+// with the start of the large arc into one cubic holding two radii, and
+// the pieces model does not split a cubic (a spec non-goal), so that
+// cubic stays free-form.
+func TestFilletArcRadii(t *testing.T) {
+	segs := bwRefined(t, "fillet-arc")
+	lines, large := 0, 0
+	for _, sg := range segs {
+		if sg.Line {
+			lines++
+			continue
+		}
+		if _, r, ok := arcOf(sg.P); ok && math.Abs(r-100) <= 0.02*100 {
+			large++
+		}
+	}
+	if lines != 1 || large < 2 || len(segs) > 7 {
+		t.Fatalf("%d lines, %d large arcs, %d segments; want 1, ≥ 2 and ≤ 7", lines, large, len(segs))
+	}
+}
+
+func TestTriangleThreeNodes(t *testing.T) {
+	segs := bwRefined(t, "triangle")
+	if len(segs) != 3 {
+		t.Fatalf("%d segments, want 3", len(segs))
+	}
+	for _, sg := range segs {
+		if !sg.Line {
+			t.Errorf("segment %v is not a line", sg.P)
+		}
+		best := math.Inf(1)
+		for _, c := range corpus.TriangleCorners() {
+			best = math.Min(best, sg.P[0].Sub(c).Len())
+		}
+		if best > 0.15 {
+			t.Errorf("node %v is %.3f px from any corner", sg.P[0], best)
+		}
+	}
+}
+
+func TestRingIsTwoCircles(t *testing.T) {
+	r := bwRefinedPaths(t, "ring")
+	if len(r.Paths) != 1 || len(r.Paths[0].Subpaths) != 2 {
+		t.Fatalf("%d paths, want 1 with 2 subpaths", len(r.Paths))
+	}
+	outer, inner := corpus.RingRadii()
+	for i, sp := range r.Paths[0].Subpaths {
+		if len(sp.Segs) != 4 {
+			t.Errorf("subpath %d: %d cubics, want 4", i, len(sp.Segs))
+			continue
+		}
+		for _, sg := range sp.Segs {
+			_, rad, ok := arcOf(sg.P)
+			if !ok || (math.Abs(rad-outer) > 0.1 && math.Abs(rad-inner) > 0.1) {
+				t.Errorf("subpath %d: arc %v, r %.3f", i, ok, rad)
+			}
+		}
+	}
+}
