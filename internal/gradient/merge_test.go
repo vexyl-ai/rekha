@@ -422,9 +422,14 @@ func TestMergeDirectionIgnoresOutline(t *testing.T) {
 	}
 }
 
-// capImage is a white page with three two-band grey ramps A, B (12
-// counts above A at the same x) and C, and one speck of every other
-// label on the last row, so n = 254 leaves room for two merged groups.
+// capImage is a page with three two-band grey ramps A, B (20 counts
+// above A at the same x: a step the ramps' slope lets through the
+// gate, an offset no one model of the union reproduces within tol) and
+// C, and one speck of every other label on the last rows, so n = 254
+// leaves room for two merged groups. A and B together are a fifth of
+// the page, so neither their union nor any part of it rejoined in the
+// replay gets the slack a small region does (slackTol): the union is
+// judged at tol and dissolves.
 func capImage(w, h int) (rgb, labels []uint8) {
 	const bg = 253
 	rgb = make([]uint8, 3*w*h)
@@ -440,22 +445,22 @@ func capImage(w, h int) (rgb, labels []uint8) {
 		}
 	}
 	for y := 0; y < 20; y++ { // A: labels 0,1
-		for x := 0; x < 30; x++ {
-			set(x, y, uint8(20+7*x), uint8(x/15))
+		for x := 0; x < 48; x++ {
+			set(x, y, uint8(20+4*x), uint8(x/24))
 		}
 	}
 	for y := 20; y < 40; y++ { // B: labels 2,3
-		for x := 0; x < 30; x++ {
-			set(x, y, uint8(40+7*x), uint8(2+x/15))
+		for x := 0; x < 48; x++ {
+			set(x, y, uint8(40+4*x), uint8(2+x/24))
 		}
 	}
-	for y := 48; y < 66; y++ { // C: labels 4,5
+	for y := 42; y < 60; y++ { // C: labels 4,5
 		for x := 0; x < 30; x++ {
 			set(x, y, uint8(20+8*x), uint8(4+x/15))
 		}
 	}
 	for k := 0; k < bg; k++ {
-		set(2*k+1, h-1, 128, uint8(k))
+		set(2*(k%64)+1, h-1-2*(k/64), 128, uint8(k))
 	}
 	return rgb, labels
 }
@@ -465,7 +470,7 @@ func TestMergeDissolveKeepsLabelBudget(t *testing.T) {
 	// (which would free a label) and then C; A+B's model misses B and
 	// dissolves. The labels must still fit in 256 and distinct regions
 	// must keep distinct labels.
-	const w, h, n = 520, 72, 254
+	const w, h, n = 130, 72, 254
 	rgb, labels := capImage(w, h)
 	r := Merge(rgb, labels, w, h, n, 0.03)
 	if r.N > 256 {
@@ -478,7 +483,7 @@ func TestMergeDissolveKeepsLabelBudget(t *testing.T) {
 	}
 	a := r.Labels[5*w+5]
 	for p, l := range r.Labels {
-		if x, y := p%w, p/w; l == a && !(y < 20 && x < 30) {
+		if x, y := p%w, p/w; l == a && !(y < 20 && x < 48) {
 			t.Fatalf("pixel (%d,%d) outside A carries A's label %d (N %d)", x, y, a, r.N)
 		}
 	}
@@ -689,14 +694,14 @@ func TestModelFitsWalksGivenPixels(t *testing.T) {
 	for _, p := range all {
 		m.add(float64(p%w)+0.5, float64(p/w)+0.5, colourOf(rgb, p))
 	}
-	if modelFits(rgb, comp, w, h, r1, in, all, &m, 0.03) {
+	if modelFits(rgb, comp, w, h, r1, in, all, &m, 0.03, 0.03) {
 		t.Errorf("the noisy right half must fail")
 	}
 	m = moments{}
 	for _, p := range left {
 		m.add(float64(p%w)+0.5, float64(p/w)+0.5, colourOf(rgb, p))
 	}
-	if !modelFits(rgb, comp, w, h, r1, in, left, &m, 0.03) {
+	if !modelFits(rgb, comp, w, h, r1, in, left, &m, 0.03, 0.03) {
 		t.Errorf("the clean left half alone must fit")
 	}
 }
@@ -950,5 +955,86 @@ func TestMergePlateauBehindBlurStaysApart(t *testing.T) {
 	r := Merge(rgb, labels, w, h, 3, 0.03)
 	if r.Labels[16*w+64] == r.Labels[16*w+200] {
 		t.Fatalf("plateau behind a blur joined the ramp: ramps %v", r.Ramps)
+	}
+}
+
+// shadedPatch is a flat page of grey 220 with one patch of a ramp from
+// v0 to v1 along x, quantised into two bands at its middle, rippled
+// across y by two periods of a sine of amplitude amp (counts): a
+// two-dimensional shading no field along one direction reproduces, so
+// the bands' union leaves about amp/√2 RMS against any ramp. The patch
+// is the labels 1 and 2; the page is 0.
+func shadedPatch(w, h, x0, y0, pw, ph int, v0, v1, amp float64) (rgb, labels []uint8) {
+	rgb = make([]uint8, 3*w*h)
+	labels = make([]uint8, w*h)
+	for p := range labels {
+		rgb[3*p], rgb[3*p+1], rgb[3*p+2] = 220, 220, 220
+	}
+	for y := y0; y < y0+ph; y++ {
+		for x := x0; x < x0+pw; x++ {
+			p := y*w + x
+			t := float64(x-x0) / float64(pw-1)
+			v := v0 + (v1-v0)*t + amp*math.Sin(4*math.Pi*float64(y-y0)/float64(ph))
+			c := clamp8(int(math.Round(v)))
+			rgb[3*p], rgb[3*p+1], rgb[3*p+2] = c, c, c
+			labels[p] = 1
+			if x >= x0+pw/2 {
+				labels[p] = 2
+			}
+		}
+	}
+	return rgb, labels
+}
+
+// A small patch (3 % of the image) whose two bands fit one ramp only
+// to about 0.039 RMS joins at tol 0.03: a region that small may spend
+// up to twice the tolerance, since its error is a small share of the
+// image's and the seam between its bands would be a visible step.
+func TestMergeSmallPatchGetsSlack(t *testing.T) {
+	rgb, labels := shadedPatch(256, 256, 64, 64, 64, 32, 120, 180, 14)
+	r := Merge(rgb, labels, 256, 256, 3, 0.03)
+	if r.N != 2 || r.Ramps[1] == nil {
+		t.Fatalf("N %d ramps %v: the patch's bands should join into one ramp", r.N, r.Ramps)
+	}
+	if r.OldToNew[1] != r.OldToNew[2] {
+		t.Errorf("OldToNew %v", r.OldToNew)
+	}
+}
+
+// The same patch filling a quarter of a small image gets no slack: its
+// error is a quarter of the image's, and the bands stay apart at tol
+// 0.03.
+func TestMergePatchOfQuarterImageGetsNoSlack(t *testing.T) {
+	rgb, labels := shadedPatch(128, 64, 32, 16, 64, 32, 120, 180, 14)
+	r := Merge(rgb, labels, 128, 64, 3, 0.03)
+	if r.N != 3 {
+		t.Fatalf("N %d ramps %v: the bands should stay apart", r.N, r.Ramps)
+	}
+	for i, rp := range r.Ramps {
+		if rp != nil {
+			t.Errorf("label %d got a ramp %+v", i, rp)
+		}
+	}
+}
+
+func TestSlackTolerance(t *testing.T) {
+	np := 1 << 20
+	cases := []struct {
+		n    int
+		want float64
+	}{
+		{np, 0.03},                   // the page
+		{np / 8, 0.03},               // an eighth: no slack yet
+		{np / 16, 0.03 * math.Sqrt2}, // a sixteenth: √2
+		{np / 32, 0.06},              // a thirty-second: the cap
+		{16, 0.06},                   // a speck: still the cap
+	}
+	for _, c := range cases {
+		if got := slackTol(0.03, c.n, np); math.Abs(got-c.want) > 1e-9 {
+			t.Errorf("slackTol(0.03, %d, %d) = %.4f, want %.4f", c.n, np, got, c.want)
+		}
+	}
+	if got := slackTol(0, 16, np); got != 0 {
+		t.Errorf("tol 0 stays 0, got %v", got)
 	}
 }

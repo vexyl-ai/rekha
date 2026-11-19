@@ -9,6 +9,30 @@ import (
 // maxLabels is the palette size a uint8 label map can address.
 const maxLabels = 256
 
+// A region's share of the image's error is its share of the pixels, so
+// a small region may miss its model by more than tol and still cost
+// the image less than a large one within tol does, while the seam
+// between two flat bands it would otherwise stay as is a visible step
+// whatever its size. slackTol is the tolerance a region of n interior
+// pixels in an image of np gets: tol up to a slackShare-th of the
+// image, growing as the square root of the inverse share beyond that
+// (the region's squared error stays what a slackShare-th of the image
+// at tol would leave) and capped at slackMax·tol so a speck never
+// carries a model far from its pixels. The page and a subject's body
+// get tol; the shaded strands and folds inside them get up to twice
+// that.
+const (
+	slackShare = 8
+	slackMax   = 2
+)
+
+func slackTol(tol float64, n, np int) float64 {
+	if n <= 0 || n*slackShare >= np {
+		return tol
+	}
+	return tol * math.Min(slackMax, math.Sqrt(float64(np)/float64(slackShare*n)))
+}
+
 // maxReplay caps the model checks spent re-joining one dissolved group.
 const maxReplay = 32
 
@@ -285,7 +309,9 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 			}
 		}
 	}
-	passes(func(ga, gb *group, e *edge, f fitted, _ float64) bool { return f.rms <= tol && sidesFollow(ga, gb, f) })
+	passes(func(ga, gb *group, e *edge, f fitted, _ float64) bool {
+		return f.rms <= slackTol(tol, ga.m.n+gb.m.n, np) && sidesFollow(ga, gb, f)
+	})
 	// Snapshot the linear groups, then join across bends.
 	r1 := make([]int32, ncomp)
 	for i := range r1 {
@@ -313,7 +339,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 	ext := sample(rgb, comp, w, h, r2, groups, tol)
 	var dissolved []int32
 	for r, e := range ext {
-		if groups[r].comps != groups1[r].comps && e.fails(tol) {
+		if groups[r].comps != groups1[r].comps && e.fails(slackTol(tol, groups[r].m.n, np)) {
 			dissolved = append(dissolved, r)
 		}
 	}
@@ -431,7 +457,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 				for _, x := range under[rb] {
 					inGroup[x] = true
 				}
-				ok := modelFits(rgb, comp, w, h, r1, inGroup, pix, &m, tol)
+				ok := modelFits(rgb, comp, w, h, r1, inGroup, pix, &m, tol, slackTol(tol, m.n, np))
 				for _, x := range under[ra] {
 					inGroup[x] = false
 				}
@@ -797,7 +823,7 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 	// as a layered ramp along its direction.
 	retry := map[int32][]int{}
 	for r, e := range ext {
-		if groups[r].merged && e.fails(tol) {
+		if groups[r].merged && e.fails(slackTol(tol, groups[r].m.n, np)) {
 			retry[r] = nil
 		}
 	}
@@ -813,8 +839,9 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 	}
 	for r, pix := range retry {
 		member := func(p int) bool { return find(comp[p]) == r }
+		slack := slackTol(tol, groups[r].m.n, np)
 		if cx, cy, ok := groups[r].m.centre(); ok {
-			if e := measure(rgb, pix, member, w, h, field{radial: true, cx: cx, cy: cy}, tol); !e.fails(tol) {
+			if e := measure(rgb, pix, member, w, h, field{radial: true, cx: cx, cy: cy}, tol); !e.fails(slack) {
 				e.f = ext[r].f
 				ext[r] = e
 				continue
@@ -823,7 +850,7 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 		if tol <= 0 {
 			continue
 		}
-		if l := fitLayered(rgb, pix, member, w, h, ext[r].fld, tol); l != nil && l.rms <= tol {
+		if l := fitLayered(rgb, pix, member, w, h, ext[r].fld, tol); l != nil && l.rms <= slack {
 			ext[r].lay = l
 		}
 	}
@@ -835,8 +862,9 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 // ramp sampled along the union's direction or, failing that, about its
 // centre: the same measure sample applies to a joined group, over the
 // union's interior pixels. pix is the pixels to walk (a superset of the
-// union's), so a check costs the dissolved group, not the image.
-func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, pix []int, m *moments, tol float64) bool {
+// union's), so a check costs the dissolved group, not the image. The
+// model is sampled at tol and judged against slack (slackTol).
+func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, pix []int, m *moments, tol, slack float64) bool {
 	f := m.fitWithin(tol)
 	if !f.ok {
 		return false
@@ -848,11 +876,11 @@ func modelFits(rgb []uint8, comp []int32, w, h int, r1 []int32, in []bool, pix [
 			mine = append(mine, p)
 		}
 	}
-	if !measure(rgb, mine, member, w, h, field{u: f.u}, tol).fails(tol) {
+	if !measure(rgb, mine, member, w, h, field{u: f.u}, tol).fails(slack) {
 		return true
 	}
 	cx, cy, ok := m.centre()
-	return ok && !measure(rgb, mine, member, w, h, field{radial: true, cx: cx, cy: cy}, tol).fails(tol)
+	return ok && !measure(rgb, mine, member, w, h, field{radial: true, cx: cx, cy: cy}, tol).fails(slack)
 }
 
 // interior reports whether every in-image 4-neighbour of pixel p carries

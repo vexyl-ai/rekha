@@ -5,6 +5,21 @@ pipeline builds every artefact from the tag.
 
 ## Unreleased
 
+### Changed
+
+- Gradient merging gives a small region slack: a region of under an
+  eighth of the image may miss its ramp by up to twice
+  `--gradient-tolerance`, growing as the square root of the inverse
+  share (`slackTol` in `internal/gradient`), since its error is a small
+  share of the image's while the seam between two flat bands is a
+  visible step whatever its size. The page and a subject's body are
+  judged at the tolerance as before. On a white wolf logo whose fur was
+  shaded in soft greys, the shading under the chin and down the neck
+  had quantised into flat bands with hard steps that no one model
+  reproduced within 0.03; it is now one ramp a step. Auto 31.51 →
+  31.29 dB, 517 → 486 kB; nine other logos byte-identical; every golden
+  byte-identical. `bench/results/2026-11-19-slack.md`.
+
 ### Fixed
 
 - The quantiser took the width of a colour cell from the spacing of the
