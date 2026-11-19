@@ -62,3 +62,14 @@ script, no explanation.
 - Existing output is skipped, so a long run can be resumed.
 
 Articles: [AI vectorizer for 1,000 images](https://rekhasvg.com/ai-vectorizer-batch/), [with Claude Code](https://rekhasvg.com/claude-code-vectorize-images/), [with ChatGPT](https://rekhasvg.com/chatgpt-convert-images-to-svg/). Video: https://youtu.be/QqvRiD66Org
+
+## One request
+
+`trace.py` is the smallest client: one image in, one file out, standard library only.
+
+```
+REKHA_KEY=... python3 trace.py logo.png svg      # or pdf, eps, dxf
+REKHA_API=http://localhost:8080/v1/trace REKHA_KEY=test python3 trace.py logo.png   # the open-source server, any key
+```
+
+It prints the output name with the `X-Rekha-Paths` and `X-Rekha-Millis` headers. Video: https://www.youtube.com/@rekhasvg
