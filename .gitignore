@@ -8,3 +8,4 @@
 /web/demo/rekha.wasm
 /web/demo/wasm_exec.js
 /dist/
+__pycache__/
