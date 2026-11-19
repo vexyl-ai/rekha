@@ -572,7 +572,10 @@ func TestMergePartialDissolveKeepsGoodMembers(t *testing.T) {
 	c.wander(256, 8)
 	r := Merge(c.rgb, c.labels, c.w, c.h, 9, 0.03)
 	ramps, stops := rampLabels(r)
-	if r.N != 2 || ramps != 1 || stops < 3 {
+	// The wandering band, reverted to a lone band, is then fitted on
+	// its own (a layered ramp follows it within tol), so it carries a
+	// ramp of its own: two labels, both ramps.
+	if r.N != 2 || ramps != 2 || stops < 3 {
 		t.Errorf("N %d ramps %d stops %d: the bent ramp must stay one group while the wandering band reverts", r.N, ramps, stops)
 	}
 }
@@ -596,7 +599,9 @@ func TestMergePartialDissolveSplits(t *testing.T) {
 	}
 	r := Merge(c.rgb, c.labels, c.w, c.h, 17, 0.03)
 	ramps, stops := rampLabels(r)
-	if r.N != 3 || ramps != 2 || stops < 3 {
+	// Three labels: the two bent ramps and the wandering band, which
+	// carries a layered ramp of its own once it is a lone band again.
+	if r.N != 3 || ramps != 3 || stops < 3 {
 		t.Errorf("N %d ramps %d stops %d: both bent ramps must survive as groups of their own", r.N, ramps, stops)
 	}
 }
@@ -1036,5 +1041,74 @@ func TestSlackTolerance(t *testing.T) {
 	}
 	if got := slackTol(0, 16, np); got != 0 {
 		t.Errorf("tol 0 stays 0, got %v", got)
+	}
+}
+
+// A lone band gets the same slack a joined group does: the shadedPatch
+// as one label, rippled so that it leaves 0.041 RMS against its linear
+// fit, is a ramp at tol 0.03 when it is 3 % of the image, and stays
+// flat when it fills a quarter of a small one.
+func TestMergeLoneBandGetsSlack(t *testing.T) {
+	rgb, labels := shadedPatch(256, 256, 64, 64, 64, 32, 120, 180, 9)
+	for p, l := range labels {
+		if l == 2 {
+			labels[p] = 1
+		}
+	}
+	r := Merge(rgb, labels, 256, 256, 2, 0.03)
+	if r.N != 2 || r.Ramps[1] == nil {
+		t.Fatalf("N %d ramps %v: the lone band should carry a ramp", r.N, r.Ramps)
+	}
+	rgb, labels = shadedPatch(128, 64, 32, 16, 64, 32, 120, 180, 9)
+	for p, l := range labels {
+		if l == 2 {
+			labels[p] = 1
+		}
+	}
+	r = Merge(rgb, labels, 128, 64, 2, 0.03)
+	if r.N != 2 || r.Ramps[1] != nil {
+		t.Fatalf("N %d ramps %v: a quarter of the image gets no slack", r.N, r.Ramps)
+	}
+}
+
+// A lone band that no direction fits is tried about its centre and as
+// a layered ramp, as a joined group is: the sphere (a ramp under a
+// highlight and a rim light) as one label carries a layered ramp.
+func TestMergeLoneBandFitsLayered(t *testing.T) {
+	const w, h = 200, 200
+	rgb, pix, _ := sphereImage(w, h)
+	labels := make([]uint8, w*h)
+	for _, p := range pix {
+		labels[p] = 1
+	}
+	r := Merge(rgb, labels, w, h, 2, 0.03)
+	if r.N != 2 || r.Ramps[1] == nil {
+		t.Fatalf("N %d ramps %v: the sphere should carry a ramp", r.N, r.Ramps)
+	}
+	if len(r.Ramps[1].Overlays) == 0 {
+		t.Errorf("ramp %+v: want overlays", r.Ramps[1])
+	}
+}
+
+// A lone band of noise spreads in colour but fits no model, and stays
+// flat.
+func TestMergeLoneNoiseBandStaysFlat(t *testing.T) {
+	const w, h = 128, 128
+	rgb := make([]uint8, 3*w*h)
+	labels := make([]uint8, w*h)
+	seed := uint32(7)
+	for p := range labels {
+		x, y := p%w, p/w
+		c := uint8(200)
+		if x >= 32 && x < 96 && y >= 32 && y < 96 {
+			labels[p] = 1
+			seed = seed*1664525 + 1013904223
+			c = uint8(100 + seed>>27) // 100..131, white noise
+		}
+		rgb[3*p], rgb[3*p+1], rgb[3*p+2] = c, c, c
+	}
+	r := Merge(rgb, labels, w, h, 2, 0.03)
+	if r.N != 2 || r.Ramps[1] != nil {
+		t.Fatalf("N %d ramps %v: noise is no ramp", r.N, r.Ramps)
 	}
 }

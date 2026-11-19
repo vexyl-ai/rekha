@@ -3,6 +3,23 @@
 Notable changes to Rekha. Versions are tags on `main`; the release
 pipeline builds every artefact from the tag.
 
+## Unreleased
+
+### Changed
+
+- A lone band (a region no neighbour joined) gets what a joined group
+  already had: the slack of `slackTol` on its linear fit, and when that
+  misses, a try about its centre and as a layered ramp, with the planes'
+  direction rather than the tensor's (a lone band is judged on its
+  linear fit, not on a bend). A band that no model reproduces stays
+  flat as before. On the white wolf the soft greys of the cheek and the
+  thin strands of the fur had each quantised into one band whose shading
+  ran two ways inside it; they are ramps now. Photo + gradients 29.10 →
+  29.26 dB, 46 → 111 gradients; auto 31.29 → 31.59 dB, 486 → 365 kB (a
+  ramp a band costs fewer paths than the flat steps it replaces); nine
+  other logos byte-identical; every golden byte-identical.
+  `bench/results/2026-11-19-lone-bands.md`.
+
 ## v0.2.3
 
 ### Changed

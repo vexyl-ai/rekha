@@ -529,7 +529,7 @@ func Merge(rgb []uint8, labels []uint8, w, h, n int, tol float64) Result {
 		if e == nil || e.b == nil {
 			return nil
 		}
-		if !groups[r].merged && float64(e.f.slope*(e.tmax-e.tmin)) < math.Max(tol, minSpan) {
+		if !groups[r].merged && e.lay == nil && float64(e.f.slope*(e.tmax-e.tmin)) < math.Max(tol, minSpan) {
 			return nil
 		}
 		if e.lay != nil {
@@ -762,7 +762,8 @@ func measure(rgb []uint8, pix []int, member func(p int) bool, w, h int, fld fiel
 
 // sample measures every root group (root[i] per component) that may
 // carry a ramp: a merged group, or a lone band with enough interior
-// pixels that is linear within tol. The extent along u is measured over all the group's
+// pixels that is linear within its slack (slackTol: tol, or more for a
+// small band). The extent along u is measured over all the group's
 // pixels; the colour is sampled from the pixels interior to the group
 // (every 4-neighbour in the same group), so a band boundary's blend and
 // the group's own anti-aliased edge do not pull a stop.
@@ -770,12 +771,31 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 	np := w * h
 	find := func(i int32) int32 { return root[i] }
 	ext := map[int32]*extent{}
+	tried := map[int32]bool{} // lone bands beyond their slack, to retry
 	for i := range groups {
 		g := &groups[i]
 		if find(int32(i)) != int32(i) || g.m.n < minPixels {
 			continue
 		}
-		if f := g.m.fitWithin(tol); f.ok && (g.merged || f.rms <= tol) {
+		f := g.m.fitWithin(tol)
+		if !g.merged && !(f.ok && f.rms <= tol) {
+			// A lone band beyond tol takes the planes' direction, not
+			// the tensor's (fitWithin turns to the tensor above tol,
+			// for a bend). Within its slack it is a ramp; beyond it,
+			// when its colour spreads by tol or more, it is tried
+			// about its centre and as a layered ramp below, as a
+			// joined group is, and dropped when neither fits.
+			if f = g.m.fit(); !f.ok {
+				continue
+			}
+			if f.rms > slackTol(tol, g.m.n, np) {
+				if g.m.spread() < tol {
+					continue
+				}
+				tried[int32(i)] = true
+			}
+		}
+		if f.ok {
 			ext[int32(i)] = &extent{f: f, fld: field{u: f.u}, tmin: math.Inf(1), tmax: math.Inf(-1)}
 		}
 	}
@@ -818,18 +838,26 @@ func sample(rgb []uint8, comp []int32, w, h int, root []int32, groups []group, t
 		e.err += float64(d * d)
 		e.cnt++
 	}
-	// A merged group that no direction reproduces is measured about its
-	// centre, when its gradients point through one, and failing that
-	// as a layered ramp along its direction.
+	// A merged group, or a lone band beyond its slack, that no
+	// direction reproduces is measured about its centre, when its
+	// gradients point through one, and failing that as a layered ramp
+	// along its direction. A lone band that still fails is no ramp.
 	retry := map[int32][]int{}
 	for r, e := range ext {
-		if groups[r].merged && e.fails(slackTol(tol, groups[r].m.n, np)) {
+		if (groups[r].merged || tried[r]) && e.fails(slackTol(tol, groups[r].m.n, np)) {
 			retry[r] = nil
 		}
 	}
 	if len(retry) == 0 {
 		return ext
 	}
+	defer func() {
+		for r := range tried {
+			if ext[r].fails(slackTol(tol, groups[r].m.n, np)) {
+				delete(ext, r)
+			}
+		}
+	}()
 	for p := 0; p < np; p++ {
 		if r := find(comp[p]); r >= 0 {
 			if pix, ok := retry[r]; ok {
